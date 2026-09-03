@@ -28,6 +28,9 @@ CERT_PEM = KEY_DIR / "debug-cert.pem"
 
 SIG_ALGO_RSA_PKCS1_SHA256 = 0x0103
 V2_BLOCK_ID = 0x7109871A
+V3_BLOCK_ID = 0xF05368C0
+VERITY_PADDING_BLOCK_ID = 0x42726577
+STRIPPING_PROTECTION_ATTR_ID = 0xBEEFF00D
 CHUNK = 1024 * 1024
 SKIP_META = {".SF", ".RSA", ".DSA", ".EC"}
 
@@ -257,15 +260,19 @@ def chunk_digest(parts: list[bytes]) -> bytes:
     raise RuntimeError("use chunk_digest2")
 
 
-def apk_chunk_digest(data: bytes) -> bytes:
+def apk_chunk_digest_sections(*sections: bytes) -> bytes:
+    """APK v2/v3 chunked digest: each section is chunked independently."""
     digests = []
-    for i in range(0, len(data), CHUNK):
-        piece = data[i : i + CHUNK]
-        h = hashlib.sha256()
-        h.update(b"\xa5")
-        h.update(struct.pack("<I", len(piece)))
-        h.update(piece)
-        digests.append(h.digest())
+    for data in sections:
+        if not data:
+            continue
+        for i in range(0, len(data), CHUNK):
+            piece = data[i : i + CHUNK]
+            h = hashlib.sha256()
+            h.update(b"\xa5")
+            h.update(struct.pack("<I", len(piece)))
+            h.update(piece)
+            digests.append(h.digest())
     top = hashlib.sha256()
     top.update(b"\x5a")
     top.update(struct.pack("<I", len(digests)))
@@ -287,6 +294,11 @@ def find_eocd(apk: bytes) -> int:
     raise ValueError("EOCD not found")
 
 
+def _id_value_pair(block_id: int, value: bytes) -> bytes:
+    pair = struct.pack("<I", block_id) + value
+    return struct.pack("<Q", len(pair)) + pair
+
+
 def sign_v2(apk: bytes, key, cert) -> bytes:
     eocd_off = find_eocd(apk)
     cd_off = struct.unpack_from("<I", apk, eocd_off + 16)[0]
@@ -294,33 +306,58 @@ def sign_v2(apk: bytes, key, cert) -> bytes:
     contents = apk[:cd_off]
     cd = apk[cd_off : cd_off + cd_size]
     eocd = bytearray(apk[eocd_off:])
-    # EOCD used for digest must have CD offset = len(contents)
+    # Each of contents / CD / EOCD is chunked separately; EOCD's CD offset
+    # is patched to the signing-block offset (len(contents)).
     eocd_digest = bytearray(eocd)
     struct.pack_into("<I", eocd_digest, 16, len(contents))
-
-    # We need digest of contents + cd + eocd_digest, but the signing block
-    # is not included. Compute after we know we digest those three parts as one.
-    to_digest = bytes(contents) + bytes(cd) + bytes(eocd_digest)
-    digest = apk_chunk_digest(to_digest)
+    digest = apk_chunk_digest_sections(bytes(contents), bytes(cd), bytes(eocd_digest))
 
     cert_der = cert.public_bytes(serialization.Encoding.DER)
     pub_der = key.public_key().public_bytes(
         serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
     )
+    digest_item = struct.pack("<I", SIG_ALGO_RSA_PKCS1_SHA256) + u32pref(digest)
+    digest_seq = u32pref(u32pref(digest_item))
+    cert_seq = u32pref(u32pref(cert_der))
 
-    digest_pair = u32pref(struct.pack("<I", SIG_ALGO_RSA_PKCS1_SHA256) + u32pref(digest))
-    signed_data = u32pref(digest_pair) + u32pref(u32pref(cert_der)) + u32pref(b"")
+    # v2 additional attribute: stripping protection -> scheme v3 (0x03)
+    strip_attr = struct.pack("<I", STRIPPING_PROTECTION_ATTR_ID) + struct.pack("<I", 3)
+    v2_signed = digest_seq + cert_seq + u32pref(u32pref(strip_attr))
+    v2_sig = key.sign(v2_signed, padding.PKCS1v15(), hashes.SHA256())
+    v2_sig_item = struct.pack("<I", SIG_ALGO_RSA_PKCS1_SHA256) + u32pref(v2_sig)
+    v2_signer = u32pref(v2_signed) + u32pref(u32pref(v2_sig_item)) + u32pref(pub_der)
+    v2_value = u32pref(u32pref(v2_signer))
 
-    signature = key.sign(signed_data, padding.PKCS1v15(), hashes.SHA256())
-    sig_pair = u32pref(struct.pack("<I", SIG_ALGO_RSA_PKCS1_SHA256) + u32pref(signature))
-    signer = u32pref(signed_data) + u32pref(sig_pair) + u32pref(pub_der)
-    v2_value = u32pref(u32pref(signer))
+    min_sdk, max_sdk = 24, 0x7FFFFFFF
+    v3_signed = digest_seq + cert_seq + struct.pack("<II", min_sdk, max_sdk) + u32pref(b"")
+    v3_sig = key.sign(v3_signed, padding.PKCS1v15(), hashes.SHA256())
+    v3_sig_item = struct.pack("<I", SIG_ALGO_RSA_PKCS1_SHA256) + u32pref(v3_sig)
+    v3_signer = (
+        u32pref(v3_signed)
+        + struct.pack("<II", min_sdk, max_sdk)
+        + u32pref(u32pref(v3_sig_item))
+        + u32pref(pub_der)
+    )
+    v3_value = u32pref(u32pref(v3_signer))
 
-    pair = struct.pack("<I", V2_BLOCK_ID) + v2_value
-    pair_with_len = struct.pack("<Q", len(pair)) + pair
+    pairs = _id_value_pair(V2_BLOCK_ID, v2_value) + _id_value_pair(V3_BLOCK_ID, v3_value)
     magic = b"APK Sig Block 42"
-    size_of_block = len(pair_with_len) + 8 + 16
-    block = struct.pack("<Q", size_of_block) + pair_with_len + struct.pack("<Q", size_of_block) + magic
+    # First uint64 + pairs + second uint64 + magic, then pad so the whole
+    # signing block is 4096-aligned (verity padding block).
+    def build(pairs_bytes: bytes) -> bytes:
+        size_of_block = len(pairs_bytes) + 8 + 16
+        return struct.pack("<Q", size_of_block) + pairs_bytes + struct.pack("<Q", size_of_block) + magic
+
+    block = build(pairs)
+    pad_needed = (4096 - (len(block) % 4096)) % 4096
+    if pad_needed:
+        # pair: uint64 length + uint32 id + value. Need pad_needed extra bytes.
+        # If pad_needed < 12, add another 4096.
+        if pad_needed < 12:
+            pad_needed += 4096
+        value_len = pad_needed - 12  # 8 (len) + 4 (id)
+        pairs += _id_value_pair(VERITY_PADDING_BLOCK_ID, b"\x00" * value_len)
+        block = build(pairs)
 
     new_cd_off = len(contents) + len(block)
     eocd_out = bytearray(eocd)
