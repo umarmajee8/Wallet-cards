@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CardWallet APK download</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+      max-width: 720px;
+      margin: 40px auto;
+      padding: 0 20px 60px;
+      line-height: 1.45;
+    }
+    h1 { font-size: 1.6rem; margin-bottom: 0.3rem; }
+    .sub { opacity: 0.7; margin-top: 0; }
+    a.btn {
+      display: inline-block;
+      margin: 8px 8px 8px 0;
+      padding: 12px 18px;
+      border-radius: 12px;
+      background: #0a84ff;
+      color: #fff;
+      text-decoration: none;
+      font-weight: 700;
+    }
+    a.btn.secondary { background: #3a3a3c; }
+    .card {
+      border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+      border-radius: 16px;
+      padding: 16px 18px;
+      margin: 18px 0;
+    }
+    .gone { color: #ff3b30; text-decoration: line-through; }
+    .keep { color: #34c759; }
+    code { font-size: 0.92em; }
+  </style>
+</head>
+<body>
+  <h1>CardWallet — Auto-detect removed</h1>
+  <p class="sub">Installable APK. Uninstall any previous CardWallet first (signing key is different).</p>
+
+  <p>
+    <a class="btn" href="./CardWallet_no_autodetect.apk" download>Download new APK</a>
+    <a class="btn secondary" href="./CardWallet_no_pouch.apk" download>Download previous APK (with auto-detect)</a>
+  </p>
+
+  <div class="card">
+    <h2>What changed</h2>
+    <ul>
+      <li class="gone">Settings → Auto-detect details (Beta toggle)</li>
+      <li class="gone">Card screen → “Fill in from picture”</li>
+      <li class="gone">OCR auto-fill when you photograph a card</li>
+      <li class="keep">Camera / gallery add still works — you type details yourself</li>
+      <li class="keep">Pouch styles (Frosted / Steel / Emerald) still there</li>
+    </ul>
+  </div>
+</body>
+</html>
