@@ -192,16 +192,16 @@ untested.
 | L2 | Compare the three options side by side | Same visual weight — the loupe and the bars read as large as the disc (26px vs 23px in the disc). If they look small, raise `size` for bare glyphs in patch7 |
 | L3 | Tap each option | All three respond on the first tap; the hit area is 44px even for the bare glyphs (nothing to "miss" because there is no chip) |
 | L4 | Open the `+` menu, then the hamburger | Black panel, white rows, rows dim on press; the open option shows its active state (halo on the disc, `var(--chip)` circle on the bare one) |
-| L5 | Long-press / scroll a bright card photo under the header | **The failure mode to look for:** bare black glyphs over a dark photo or the dark pouch can vanish. If they do, `"tone": "ink"` in `repo_export/header_options.json` makes them follow the theme — one word, then rebuild |
-| L6 | Switch Appearance to Dark, back to the wallet | Same configured tones are rendered verbatim (black stays black). Confirm whether that is acceptable or L5's `ink` flip is wanted — this is a design call, not a bug |
+| L5 | Long-press / scroll a bright card photo under the header | Bare glyphs stay legible over a dark photo and the dark pouch. (Reported and fixed: literal `#000` glyphs disappeared on the dark theme — `tone` now defaults to `auto`.) If contrast is still marginal over a bright photo, that is a scrim question, not a token one |
+| L6 | Switch Appearance to Dark, back to the wallet | Header **inverts**: light = near-black disc + white plus; dark = white disc + black plus, and the search/menu glyphs flip to near-white. Nothing may go invisible. Then re-check the black dropdown panel on the light theme — it is deliberately still black and does not invert |
 | L7 | `Delete all cards` row | Still red (`#ff453a`) on the black panel, not white |
 | L8 | Rotate the phone / split-screen with the header open | Menu stays anchored under the row, no clipping at 520px max width |
 | L9 | Any device with a notch/cutout | Header clears the status bar (`safe-area-inset-top` + 6px) and the disc is not overlapped by the clock |
 | L10 | 120 Hz device, open and close both menus | The spring in/out still feels like the rest of the app — the styling changed, the animation did not |
 
-If L5/L6 come back as "icons disappear", that is the known trade-off called out
-in `FINAL_REPORT.md` §6 — the mock is a light-theme design and `tone: black` was
-requested literally; `ink` is the fix.
+L5/L6 are the regression pair for the on-device report in `FINAL_REPORT.md` §6:
+the mock's literal `#000` was invisible on the dark theme, and the header now
+rides the app's own `--solid`/`--on-solid`/`--ink` tokens so it inverts.
 
 ---
 

@@ -1,57 +1,67 @@
 #!/usr/bin/env python3
-"""Header look for Card Wallet: one filled black disc, the rest plain black ink.
+"""Header look for Card Wallet: one filled disc, the rest bare glyphs.
 
-Matching the reference picture: the add button is a solid black disc with a
-white `+`, while search and the menu button are bare black glyphs on the page
-(no chip behind them). So the button component grows three props instead of one
-hard-coded style, and patch8 feeds them from header_options.json:
+Matching the reference mock, the three options are drawn three different ways,
+so the button component takes the look per option instead of hard-coding one,
+and patch8 feeds it from header_options.json:
 
-  chip  - true  -> filled disc: bg #000, white glyph, 14% white hairline so the
-                   disc still reads on the dark theme's pure-black app bg, and a
-                   soft halo while its menu is open
-          false -> bare glyph: transparent, a subtle var(--chip) circle only
-                   while its menu is open
-  tone  - `black` (#000, what the picture shows) / `white` (#fff) /
-           `ink` (var(--ink): black on the light theme, white on the dark one)
-  size  - glyph size; disc glyphs stay at 23px, bare glyphs get 26px so the
-           three options carry the same visual weight as in the picture
+  chip  - true  -> filled disc; false -> bare glyph on the page, with a subtle
+                   circle only while its menu is open
+  tone  - `auto` (default, see below) / `black` / `white` / `ink`
+  size  - glyph size: 23px inside a disc, 26px bare, so all three carry the same
+                   visual weight as in the mock
 
-The dropdown stays a black panel (#0b0b0d) with white rows - "black" was asked
-for the header options themselves, and inverting the sheet keeps the two states
-consistent with each other. The destructive row keeps the app's red.
+Why `auto` is the default: the mock is a light-theme drawing, but the app has a
+dark theme whose background is #000 (and the default pouch is near-black too).
+A literal `#000` glyph on that is invisible - on device the dark theme showed the
+`+` as a muddy circle and the search/menu glyphs not at all. So `auto` uses the
+tokens the app already inverts for its own solid controls:
 
-Note on `tone:black`: bare black glyphs go unreadable on the dark theme, whose
-app background is #000 (and the default pouch is near-black too). The picture is
-a light-theme design, so black is what ships here; flip an option to
-"tone": "ink" in header_options.json for theme-following glyphs.
+  token        light theme          dark theme
+  --solid      #111113 (near-black) #fff        -> disc fill
+  --on-solid   #fff                 #111113     -> disc glyph
+  --ink        #111113              #f5f5f7     -> bare glyph
+  --chip       #f2f2f5              #2c2c2e     -> active circle / halo
+  --line       6% black             12% white   -> hairline
+
+Net effect: black disc + white glyph on the light theme (what the mock shows, in
+the app's own near-black rather than pure #000), inverted to a white disc + black
+glyph on the dark theme. `black` / `white` are still there for a literal colour
+that must not follow the theme; `ink` inverts the glyphs but keeps the disc black.
 
 Everything is inline styles on purpose: index.css is byte-compared against the
 CSS entry inside the base APK by build_release_apk.py, so adding a class there
 would break the build pipeline. `sheet-bg` is dropped from the dropdown for the
-same reason - the inline background wins anyway and leaving a contradicting
-class is confusing.
+same reason - the inline background wins anyway and leaving a contradicting class
+is confusing. The dropdown itself stays a black panel with white rows (the
+destructive row keeps the app's red) - that was an explicit choice, not an
+oversight, so it does not invert.
+
+Re-runnable: each edit lists the shapes it may find (stock bundle, or an earlier
+version of this patch) and rewrites them to the current one, so upgrading the
+look does not need a pristine checkout.
 
 Run:  python3 repo_export/patches/patch7_header_black.py [--check]
 """
 from pathlib import Path
-
 import sys
 
 path = Path(__file__).resolve().parents[1] / "app" / "index.js"
 data = path.read_text(encoding="utf-8")
 CHECK = "--check" in sys.argv
 
-# --------------------------------------------------------------- svg + button
+# ------------------------------------------------------------------ svg wrapper
 OLD_H = "let h=({children:e})=>(0,U.jsx)(`svg`,{width:`23`,height:`23`,viewBox:`0 0 24 24`,fill:`none`,children:e})"
 NEW_H = "let h=({children:e,size:sz=23})=>(0,U.jsx)(`svg`,{width:sz,height:sz,viewBox:`0 0 24 24`,fill:`none`,children:e})"
 
-OLD_BTN = (
+# ------------------------------------------------------------- header buttons
+# v1 = the app as shipped; v2 = this patch when the colour was literal #000.
+OLD_BTN_V1 = (
     "g=({label:e,onClick:t,active:n,children:r})=>(0,U.jsx)(`button`,{\"aria-label\":e,onClick:t,"
     "className:`flex h-11 w-11 items-center justify-center rounded-full ink`,"
     "style:{background:n?`var(--chip)`:`transparent`},children:(0,U.jsx)(h,{children:r})})"
 )
-# `text` (icon + label chip) is kept for header_options.json's showText.
-NEW_BTN = (
+OLD_BTN_V2 = (
     "g=({label:e,onClick:t,active:n,chip:cp,tone:tn,text:a,children:r})=>(0,U.jsx)(`button`,{\"aria-label\":e,onClick:t,"
     "className:`flex h-11 items-center justify-center rounded-full active:opacity-70 ${a?``:`w-11`}`,"
     "style:cp?"
@@ -60,6 +70,25 @@ NEW_BTN = (
     "boxShadow:n?`0 0 0 4px rgba(17,17,19,0.10)`:`0 6px 16px -8px rgba(0,0,0,0.65)`,"
     "...(a?{padding:`0 12px`,gap:`6px`}:{})}:"
     "{color:tn===`ink`?`var(--ink)`:tn===`white`?`#fff`:`#000`,"
+    "border:`1px solid transparent`,"
+    "background:n?`var(--chip)`:`transparent`,"
+    "...(a?{padding:`0 12px`,gap:`6px`}:{})},"
+    "children:(0,U.jsxs)(U.Fragment,{children:["
+    "(0,U.jsx)(h,{size:cp?23:26,children:r}),"
+    "a&&(0,U.jsx)(`span`,{style:{fontSize:`13.5px`,fontWeight:`600`,whiteSpace:`nowrap`},children:e})"
+    "]})})"
+)
+# `text` (icon + label chip) is kept for header_options.json's showText.
+NEW_BTN = (
+    "g=({label:e,onClick:t,active:n,chip:cp,tone:tn,text:a,children:r})=>(0,U.jsx)(`button`,{\"aria-label\":e,onClick:t,"
+    "className:`flex h-11 items-center justify-center rounded-full active:opacity-70 ${a?``:`w-11`}`,"
+    "style:cp?"
+    "{background:tn===`white`?`#fff`:tn===`black`?`#000`:`var(--solid)`,"
+    "color:tn===`white`?`#000`:tn===`black`?`#fff`:`var(--on-solid)`,"
+    "border:`1px solid ${tn===`black`||tn===`white`?`rgba(255,255,255,0.14)`:`var(--line)`}`,"
+    "boxShadow:n?`0 0 0 4px ${tn===`black`?`rgba(17,17,19,0.10)`:`var(--chip)`}`:`0 6px 16px -8px rgba(0,0,0,0.65)`,"
+    "...(a?{padding:`0 12px`,gap:`6px`}:{})}:"
+    "{color:tn===`white`?`#fff`:tn===`black`?`#000`:`var(--ink)`,"
     "border:`1px solid transparent`,"
     "background:n?`var(--chip)`:`transparent`,"
     "...(a?{padding:`0 12px`,gap:`6px`}:{})},"
@@ -90,26 +119,44 @@ NEW_ROW = (
     "style:{color:e.danger?`#ff453a`:`#fff`}"
 )
 
+# (already-applied shapes to migrate from, target, label)
 EDITS = [
-    (OLD_H, NEW_H, "svg size prop"),
-    (OLD_BTN, NEW_BTN, "header buttons"),
-    (OLD_PANEL, NEW_PANEL, "menu panel"),
-    (OLD_ROW, NEW_ROW, "menu rows"),
+    ([OLD_H], NEW_H, "svg size prop"),
+    ([OLD_BTN_V1, OLD_BTN_V2], NEW_BTN, "header buttons"),
+    ([OLD_PANEL], NEW_PANEL, "menu panel"),
+    ([OLD_ROW], NEW_ROW, "menu rows"),
 ]
 
-if CHECK:
-    stale = [label for old, new, label in EDITS if not (data.count(old) == 1 or data.count(new) == 1)]
-    print("clean (all anchors present)" if not stale else "STALE ANCHORS: " + ", ".join(stale))
-    raise SystemExit(1 if stale else 0)
 
-for old, new, label in EDITS:
-    count = data.count(old)
-    if count == 0 and data.count(new) == 1:
+def find_anchor(data: str, olds: list[str], new: str) -> str | None:
+    """The span to replace: the current output (already applied -> None) or the
+    first older shape present exactly once."""
+    if data.count(new) == 1 and all(data.count(o) == 0 for o in olds):
+        return None
+    hits = [o for o in olds if data.count(o) == 1]
+    if len(hits) != 1:
+        raise AssertionError(f"expected exactly 1 of {len(olds) + 1} shapes, found {len(hits)}")
+    return hits[0]
+
+
+if CHECK:
+    for olds, new, label in EDITS:
+        try:
+            find_anchor(data, olds, new)
+            print(f"ok    {label}")
+        except AssertionError as e:
+            print(f"STALE {label}: {e}")
+            raise SystemExit(1)
+    print("clean (all anchors present)")
+    raise SystemExit(0)
+
+for olds, new, label in EDITS:
+    anchor = find_anchor(data, olds, new)
+    if anchor is None:
         print(f"skip  {label}: already applied")
         continue
-    assert count == 1, f"{label}: expected 1 match, found {count}"
-    data = data.replace(old, new)
-    print(f"ok    {label}")
+    data = data.replace(anchor, new)
+    print(f"ok    {label}{' (migrated from an earlier patch7)' if anchor != olds[0] else ''}")
 
 path.write_text(data, encoding="utf-8")
 print("app/index.js written")

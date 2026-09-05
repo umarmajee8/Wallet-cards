@@ -239,12 +239,49 @@ const hdrChips = () => HEADER_CFG.options.map((o) => byLabel(o.label));
 
 check("header: every option in header_options.json renders a button",
   hdrChips().every(Boolean), HEADER_CFG.options.map((o, i) => `${o.id}=${hdrChips()[i] ? "y" : "n"}`).join(" "));
-// what the config says each option should look like (chip = filled disc)
-const toneOf = (o) => o.tone || HEADER_CFG.defaults?.tone || "black";
-const wantBg = (o) => (o.chip ? (toneOf(o) === "white" ? "#fff" : "#000") : "transparent");
-const wantGlyph = (o) => (o.chip ? (toneOf(o) === "white" ? "#000" : "#fff")
-  : toneOf(o) === "ink" ? "var(--ink)" : toneOf(o) === "white" ? "#fff" : "#000");
+// what the config says each option should look like (chip = filled disc).
+// "auto" (and "ink") declare the app's own theme tokens instead of a literal,
+// so the row inverts with the theme - the mock's literal #000 is kept for
+// "black", and it is exactly what disappeared on a dark-theme device.
+const toneOf = (o) => o.tone || HEADER_CFG.defaults?.tone || "auto";
+const literal = (t) => (t === "black" || t === "white" ? t : null);
+const wantBg = (o) => (o.chip ? (literal(toneOf(o)) === "white" ? "#fff" : literal(toneOf(o)) === "black" ? "#000" : "var(--solid)") : "transparent");
+const wantGlyph = (o) => (o.chip
+  ? (literal(toneOf(o)) === "white" ? "#000" : literal(toneOf(o)) === "black" ? "#fff" : "var(--on-solid)")
+  : (literal(toneOf(o)) ?? "var(--ink)"));
 const HEX = (v) => (["#000", "#000000"].includes(v) ? "#000" : ["#fff", "#ffffff"].includes(v) ? "#fff" : v);
+
+// The tokens themselves have to invert, or the check above is vacuous. index.css
+// is the source of truth here - this is what catches "white disc, white glyph".
+{
+  const css = fs.readFileSync(path.join(APP, "index.css"), "utf8");
+  const block = (re) => (re.exec(css)?.[1] || "");
+  const token = (b, name) => (new RegExp(`--${name}:([^;}]*)`).exec(b)?.[1] || "").trim();
+  const lum = (v) => {
+    let h = /^#([0-9a-f]{3})$/i.exec(v)?.[1];
+    if (h) h = [...h].map((c) => c + c).join("");   // #fff -> #ffffff
+    else h = /^#([0-9a-f]{6})$/i.exec(v)?.[1];
+    if (!h) return NaN;
+    const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const lt = block(/:root\{([^}]*)\}/), dk = block(/\.dark\{([^}]*)\}/);
+  const solidLt = lum(token(lt, "solid")), solidDk = lum(token(dk, "solid"));
+  const inkLt = lum(token(lt, "ink")), inkDk = lum(token(dk, "ink"));
+  check("header: the --solid/--ink tokens invert between themes (auto tone is meaningful)",
+    solidLt < 0.2 && solidDk > 0.8 && inkLt < 0.2 && inkDk > 0.8,
+    `solid ${token(lt, "solid")}->${token(dk, "solid")}, ink ${token(lt, "ink")}->${token(dk, "ink")}`);
+  check("header: auto-tone options declare tokens, not literals (so a theme flip re-colours them)",
+    HEADER_CFG.options.every((o) => {
+      const t = toneOf(o);
+      if (t === "black" || t === "white") return true;
+      const c = byLabel(o.label);
+      return o.chip
+        ? /var\(--solid\)/.test(styleDecl(c, "background")) && /var\(--on-solid\)/.test(styleDecl(c, "color"))
+        : /var\(--ink\)/.test(styleDecl(c, "color"));
+    }),
+    HEADER_CFG.options.map((o) => `${o.id}:${toneOf(o)}`).join(" "));
+}
 
 check("header: the picture's styling is applied per option (disc vs bare glyph)",
   HEADER_CFG.options.every((o, i) => {
@@ -509,11 +546,19 @@ for (const view of ["carousel", "stack"]) {
   const chips = HEADER_CFG.options
     .map((o) => [...Dk.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === o.label))
     .filter(Boolean);
-  check("header: dark theme renders the same configured tones (fill is not theme-derived)",
+  // with tone:auto the inline declarations are identical in both themes on purpose -
+  // they are var() tokens, and the browser resolves them to the opposite colours
+  check("header: dark theme keeps the same (token-driven) declarations, and no literal black glyph on a black bg",
     Dk.documentElement.classList.contains("dark") &&
     chips.length === HEADER_CFG.options.length &&
-    chips.every((c, i) => HEX(colorOf(c, "background")) === wantBg(HEADER_CFG.options[i]) &&
-                          HEX(colorOf(c, "color")) === wantGlyph(HEADER_CFG.options[i])),
+    chips.every((c, i) => {
+      const o = HEADER_CFG.options[i];
+      const bg = HEX(colorOf(c, "background")), fg = HEX(colorOf(c, "color"));
+      const literalBlack = toneOf(o) !== "black" && toneOf(o) !== "white";
+      // for auto/ink the declared value must be the token, never #000
+      if (literalBlack && (fg === "#000" || bg === "#000")) return false;
+      return bg === wantBg(o) && fg === wantGlyph(o);
+    }),
     chips.map((c) => `${HEX(colorOf(c, "color"))} on ${HEX(colorOf(c, "background"))}`).join(" | "));
   check("header: bare glyph size is set by patch7 (26px outside a disc)",
     (() => {

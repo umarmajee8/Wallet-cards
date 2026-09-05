@@ -54,7 +54,7 @@ offers. Per option:
 | key | meaning |
 |---|---|
 | `chip` | `true` = filled disc (black bg, white glyph, halo while its menu is open); `false` = bare glyph on the page, with a subtle `var(--chip)` circle only while its menu is open |
-| `tone` | `black` (`#000`, as in the mock) / `white` / `ink` (`var(--ink)`: black on the light theme, white on the dark one). `defaults.tone` covers the whole row |
+| `tone` | `auto` (default - follow the app's theme tokens: black disc + white glyph on light, white disc + black glyph on dark) / `black` / `white` (literal, does **not** invert) / `ink` (glyphs invert, disc stays black). `defaults.tone` covers the whole row |
 | `showText` | label beside the icon, chip grows to fit (also settable globally) |
 | `when` | `nfc` / `hasCards` - reuses the gates the app already has |
 | `icon` | plus, search, bars, dots-v, dots-h, gear, image, camera, nfc, trash, x, check, chevron-r, wallet, sliders, list, star, card, eye, share, lock |
@@ -63,9 +63,13 @@ offers. Per option:
 Tap targets stay 44px (`h-11 w-11`) either way, so the bare glyphs are not a
 smaller hit area than the disc.
 
-**Dark theme caveat:** the mock is light-theme, and `tone: black` means literally
-black - on the dark theme (app bg `#000`) bare black glyphs go unreadable. Set
-`"tone": "ink"` on those options if you want them to follow the theme instead.
+**Why `auto` is the default:** the mock is a light-theme drawing, so a literal
+`#000` is what it implies - and on the dark theme (app bg `#000`) that made the
+`+` a muddy circle and the search/menu glyphs disappear completely, which is
+exactly what a device screenshot caught. `auto` resolves through `--solid` /
+`--on-solid` / `--ink`, the same tokens the app's own solid buttons use, so the
+row flips with the theme instead of disappearing. Note `--solid` is `#111113`,
+the app's near-black, not the pure `#000` of the mock.
 
     python3 repo_export/patches/patch8_header_options.py   # JSON -> index.js
     python3 repo_export/patches/build_debug_apk.py          # -> installable APK
@@ -101,7 +105,7 @@ Verification gates:
 - `python3 patches/verify_release.py ../CardWallet_release.apk` - 29 package checks
   (the header ones read `header_options.json`, so a bundle that drifted from the
   config fails the build instead of shipping quietly)
-- `node patches/smoke_test_webview.mjs` - 62 web-layer checks (`npm i jsdom`)
+- `node patches/smoke_test_webview.mjs` - 64 web-layer checks (`npm i jsdom`)
 - `python3 patches/animation_audit.py` - static jank audit
 
 `verify_release.py` shells out to `apksigtool` for the v2/v3 checks

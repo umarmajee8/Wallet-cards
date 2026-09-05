@@ -27,7 +27,7 @@ previous span wholesale (idempotent):
 Usage:
   python3 repo_export/patches/patch8_header_options.py [--check]
 
-Per option: `chip` (filled disc vs bare glyph), `tone` (black / white / ink),
+Per option: `chip` (filled disc vs bare glyph), `tone` (auto / black / white / ink),
 `showText` (label beside the icon), `when` (nfc / hasCards). `defaults.tone`
 covers the whole row.
 """
@@ -111,7 +111,7 @@ ICONS: dict[str, str] = {
     ),
 }
 
-TONES = {"black", "white", "ink"}
+TONES = {"auto", "black", "white", "ink"}   # auto = follow the app's --solid/--ink tokens
 HANDLERS = {"gallery": "e", "camera": "t", "nfc": "n", "settings": "i", "studio": "a", "delete": "o"}
 GATES = {"nfc": "s", "hasCards": "c"}
 
@@ -203,7 +203,7 @@ def header_children(opts: list[dict], show_text: bool, default_tone: str) -> str
         props.append(f"onClick:{onClick_for(o['action'], in_menu=False, where=where)}")
         tone = o.get("tone", default_tone)
         if tone not in TONES:
-            raise SystemExit(f"header option {o['id']!r}: unknown tone {tone!r} (black / white / ink)")
+            raise SystemExit(f"header option {o['id']!r}: unknown tone {tone!r} (auto / black / white / ink)")
         props.append(f"chip:{'!0' if o.get('chip') else '!1'}")
         props.append(f"tone:`{tone}`")
         if show_text or o.get("showText"):
@@ -320,7 +320,10 @@ def main() -> int:
             )
 
     # 2) the header row
-    new_header = header_children(cfg["options"], show_text, str((cfg.get("defaults") or {}).get("tone", "black")))
+    default_tone = str((cfg.get("defaults") or {}).get("tone", "auto"))
+    if default_tone not in TONES:
+        raise SystemExit(f"defaults.tone {default_tone!r} is not one of {sorted(TONES)}")
+    new_header = header_children(cfg["options"], show_text, default_tone)
 
     wants_v2 = any(
         o.get("chip") or o.get("tone") or show_text or o.get("showText")
@@ -330,6 +333,13 @@ def main() -> int:
         raise SystemExit(
             "header_options.json asks for chip/tone/showText, but the button component does not\n"
             "                 support them - apply patch7_header_black.py first"
+        )
+    # `auto` leans on the tokens patch7 wires up; an older patch7 would silently
+    # render a literal black disc that vanishes on the dark theme.
+    if any((o.get("tone") or default_tone) == "auto" for o in cfg["options"]) and "`var(--solid)`" not in data:
+        raise SystemExit(
+            "tone 'auto' needs the theme tokens patch7 wires into the button component -\n"
+            "                 re-run patch7_header_black.py (it migrates its own older output)"
         )
     marked = replace_marked(data, HEADER_MARK, "children:", new_header)
     if marked is not data:

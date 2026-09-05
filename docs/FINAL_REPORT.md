@@ -321,3 +321,54 @@ Known trade-offs, deliberately left as asked:
 3. Still **device-unverified**: real contrast over the pouch/card photos, the
    44px tap feel, and the halo animation can only be judged on hardware
    (`docs/DEVICE_TEST_PLAN.md` section A + I).
+
+---
+
+## 7. First on-device report → dark-theme header fix (2026-09-05)
+
+**Khulasa (Urdu):** Aap ne phone par install karke screenshot bheja — dark theme
+mein `+` ka kaala disc kaale background par gum tha aur search/hamburger to bilkul
+hi nazar nahi aa rahe the. Yehi woh trade-off tha jo maine §6 mein "design call"
+likha tha; device ne saabit kar diya ke yeh bug hai. Ab header app ke apne
+theme tokens (`--solid` / `--on-solid` / `--ink`) use karta hai, is liye light
+theme mein mock jaisa kaala disc + safed plus hi rahega, aur dark theme mein palat
+kar safed disc + kaala plus ho jayega — gayab hona possible hi nahi.
+
+Also: **L5/L6 of `docs/DEVICE_TEST_PLAN.md` are now the regression pair for this**,
+and this is the first row of the plan that has actually been executed on hardware.
+
+What changed:
+
+| | before (literal, from the mock) | after (`tone: auto`, default) |
+|---|---|---|
+| disc fill | `#000` in both themes | `var(--solid)` → `#111113` light, `#fff` dark |
+| disc glyph | `#fff` | `var(--on-solid)` → `#fff` light, `#111113` dark |
+| bare glyph (search / ☰) | `#000` — **invisible on the dark theme** | `var(--ink)` → `#111113` light, `#f5f5f7` dark |
+| active halo | `rgba(17,17,19,.10)` | `var(--chip)` |
+| hairline | `rgba(255,255,255,.14)` | `var(--line)` (6% black light / 12% white dark) |
+
+Two deliberate non-inversions, both from the earlier "black background + white
+icons" decision: the dropdown stays a black panel with white rows in *both*
+themes, and `tone: "black"` / `"white"` remain available when something must not
+follow the theme.
+
+Fidelity note: `--solid` is the app's near-black `#111113`, not the pure `#000` of
+the mock. On a phone at 23px that is not a visible difference, and it is what the
+app's own solid buttons use; say the word if you want literal `#000` on light
+(`"tone": "black"`) and accept the dark-theme consequence, or a new token pair in
+`index.css` (needs the base APK's CSS entry regenerated).
+
+Gates re-run: smoke **64/64** (was 62) — the two new checks read `index.css`
+directly and assert (a) that `--solid`/`--ink` actually invert between the two
+theme blocks, so the "auto is meaningful" test cannot pass vacuously, and (b) that
+auto-tone options declare tokens rather than literals in the DOM. patch7 now
+migrates its own previous output (idempotent, re-run byte-identical), and patch8
+refuses to write `tone: "auto"` against an older patch7 that would silently render
+the disappearing black disc.
+
+New artifact: `CardWallet_header_black.apk` (11,648,422 bytes), debug-signed,
+sha256 `cc63bc965fa301e97b8cd7a43f0d31283636cdfe503377d4222462eeb7f061da`. Signed
+with the same throwaway key as the build you already installed, so this one
+updates over it (`adb install -r`) — no uninstall, no data loss this time. The
+dark theme is the thing to re-check; `docs/DEVICE_TEST_PLAN.md` §L has the full
+list. §6's `b2a36df6…` build is superseded by this.

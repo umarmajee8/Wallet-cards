@@ -3,28 +3,73 @@
     "Card Wallet header options - the top-bar buttons and the dropdowns they open.",
     "Edit this file, then: python3 repo_export/patches/patch8_header_options.py && python3 repo_export/patches/build_debug_apk.py",
     "chip: true = filled disc (bg + contrasting glyph), false = bare glyph on the page - the reference picture has only the + on a disc",
-    "tone: 'black' (#000, as drawn in the picture) | 'white' | 'ink' (follows the theme: black on light, white on dark - use this if bare black glyphs vanish on the dark pouch)",
+    "tone: 'auto' (default) follows the app's own --solid/--on-solid/--ink tokens, so it is a black disc with a white plus on the light theme and a white disc with a black plus on the dark one - a literal 'black' glyph is invisible on the dark theme's #000 background",
     "icons: plus, search, bars, dots-v, dots-h, gear, image, camera, nfc, trash, x, check, chevron-r, wallet, sliders, list, star, card, eye, share, lock",
     "actions: toggle:<add|more>, gallery, camera, nfc, search, settings, studio, delete, none",
     "when: 'nfc' (device has NFC) or 'hasCards' (something to delete) - gates the app already has",
     "showText: true puts the label next to the icon and the chip grows to fit"
   ],
-  "defaults": { "tone": "black" },
+  "defaults": {
+    "tone": "auto"
+  },
   "showText": false,
   "options": [
-    { "id": "add", "label": "Add card", "icon": "plus", "action": "toggle:add", "menu": "add", "chip": true },
-    { "id": "search", "label": "Search cards", "icon": "search", "action": "search", "chip": false },
-    { "id": "more", "label": "More", "icon": "bars", "action": "toggle:more", "menu": "more", "chip": false }
+    {
+      "id": "add",
+      "label": "Add card",
+      "icon": "plus",
+      "action": "toggle:add",
+      "menu": "add",
+      "chip": true
+    },
+    {
+      "id": "search",
+      "label": "Search cards",
+      "icon": "search",
+      "action": "search",
+      "chip": false
+    },
+    {
+      "id": "more",
+      "label": "More",
+      "icon": "bars",
+      "action": "toggle:more",
+      "menu": "more",
+      "chip": false
+    }
   ],
   "menus": {
     "add": [
-      { "label": "Add from gallery", "icon": "image", "action": "gallery" },
-      { "label": "Take a picture", "icon": "camera", "action": "camera" },
-      { "label": "Tap a bank card", "icon": "nfc", "action": "nfc", "when": "nfc" }
+      {
+        "label": "Add from gallery",
+        "icon": "image",
+        "action": "gallery"
+      },
+      {
+        "label": "Take a picture",
+        "icon": "camera",
+        "action": "camera"
+      },
+      {
+        "label": "Tap a bank card",
+        "icon": "nfc",
+        "action": "nfc",
+        "when": "nfc"
+      }
     ],
     "more": [
-      { "label": "Settings", "icon": "gear", "action": "settings" },
-      { "label": "Delete all cards", "icon": "trash", "action": "delete", "danger": true, "when": "hasCards" }
+      {
+        "label": "Settings",
+        "icon": "gear",
+        "action": "settings"
+      },
+      {
+        "label": "Delete all cards",
+        "icon": "trash",
+        "action": "delete",
+        "danger": true,
+        "when": "hasCards"
+      }
     ]
   }
 }
