@@ -1,20 +1,20 @@
 # Final production verification report — Card Wallet
 
 Date: 2026-09-05 · Branch: `arena/01a07196-wallet-cards`
-Artifact: `CardWallet_release.apk` (11,652,689 bytes)
-SHA-256: `0b08e0a0a06e84022e0d79a5bc5bea11552a3fb1e6b33d96b05f923e0dcbfbfc`
+Artifact: `CardWallet_release.apk` (11,652,949 bytes)
+SHA-256: `63dbd8b1929fdbcb673a19ebab585c0c723ae41518188ff437e84da0c2233e9a`
 
 ---
 
 ## Status: ❌ NOT production ready — device verification not executed
 
-**Khulasa (Urdu):** Release signing, `allowBackup` hardening aur release APK
-build — teenon mukammal ho gaye, aur signed APK package-level par 26/26 checks
-pass kar chuki hai. **Lekin kisi bhi asli Android device par ek bhi test nahi
+**Khulasa (Urdu):** Release signing, `allowBackup` hardening, naya **Wallet &
+cover** on/off option aur release APK build — sab mukammal ho gaye. Signed APK
+package-level par 26/26 checks aur web layer 50/50 checks pass kar chuki hai. **Lekin kisi bhi asli Android device par ek bhi test nahi
 chala** — is environment mein na koi phone hai, na `adb`, na emulator (Google
 ke Android SDK endpoints bhi block hain). Camera, NFC, gallery, WhatsApp,
-system Back, restart/persistence aur animation smoothness sirf asli device par
-verify ho sakte hain. Aap ne kaha tha ke production-ready status sirf tab dena
+system Back, restart/persistence, naye cover toggle ka asli look aur animation
+smoothness sirf asli device par verify ho sakte hain. Aap ne kaha tha ke production-ready status sirf tab dena
 jab release signed APK successfully verify ho — signature verify ho chuki hai,
 par device testing baqi hai, is liye status abhi **blocked** hai, "ready" nahi.
 
@@ -65,7 +65,28 @@ not enabled ✅, permission set unchanged (INTERNET, CAMERA, NFC,
 WRITE_EXTERNAL_STORAGE≤28, dynamic-receiver) ✅, no exported provider ✅,
 `targetSdk 35` ✅.
 
-### 1.3 Release APK built ✅
+### 1.3 New feature: "Wallet & cover" on/off switch ✅ (code-verified, device-unverified)
+
+Settings → **Pouch** → *Wallet & cover* (`wallet.settings.v1.cover`, default
+`true`). Applied by `repo_export/patches/patch6_cover_toggle.py`, 23 anchored
+edits, every one asserted to match exactly once.
+
+Off means:
+* **Carousel** — the pouch tray and the leather sleeve are not rendered; the
+  card is centred inside the same stage box, so carousel spacing, scroll
+  offsets and the title position are untouched.
+* **Stack** — the frosted glass cover is not rendered. That cover's animation
+  used to signal "card opened", so the hand-off now fires directly instead —
+  tested in both layouts (see §2.2).
+* **Both** — the card title stops being hard-coded white with a dark shadow and
+  uses `var(--ink)`: **black on the light theme, white on the dark theme**.
+* The pouch customisation controls (Name, Colour, Grading, Grain, Stitches)
+  are hidden while the cover is off, and come back unchanged when it is on.
+
+Installs whose saved settings predate the feature default to the pouch being
+on, so nobody's wallet changes appearance on update.
+
+### 1.4 Release APK built ✅
 
 `python3 repo_export/patches/build_release_apk.py` — new, reproducible
 pipeline (`apkbuilder.py` + `axml.py`), replacing the old debug-key
@@ -110,7 +131,7 @@ PASS  payload: dex present
 Signature verification uses `apksigtool`, an independent implementation from
 the one that produced the signature.
 
-### 2.2 Web-layer smoke test — **28/28 PASS** (headless jsdom, **not** a device)
+### 2.2 Web-layer smoke test — **50/50 PASS** (headless jsdom, **not** a device)
 
 This runs the exact JS bundle that ships inside the APK, in a simulated DOM.
 It proves logic and state transitions, **not** rendering or hardware.
@@ -142,6 +163,26 @@ PASS  ui: wallet is back to the card view after closing the sheet
 PASS  ui: no console errors across the whole interaction run
 PASS  ui: 'delete all' asks for confirmation before destroying data
 PASS  ui: confirming clears the wallet and persists the empty state
+PASS  cover ON: carousel draws the pouch
+PASS  cover ON: card title stays white over the pouch
+PASS  cover: Settings exposes a 'Wallet & cover' switch, on by default
+PASS  cover ON: pouch customisation controls are shown
+PASS  cover: switch flips to off
+PASS  cover OFF: pouch customisation controls are hidden
+PASS  cover OFF: subtitle explains the state
+PASS  cover: choice persists to wallet.settings.v1
+PASS  cover OFF: carousel pouch is gone
+PASS  cover OFF: cards themselves still render
+PASS  cover OFF: title colour follows the theme (var(--ink))
+PASS  cover OFF: dark drop-shadow on the title is dropped
+PASS  cover OFF: stack drops the frosted cover
+PASS  cover OFF: stack title follows the theme
+PASS  cover ON: stack keeps the frosted cover
+PASS  cover OFF + dark theme: title is var(--ink) (white on black)
+PASS  cover: settings saved before this feature default to pouch ON
+PASS  cover OFF: tapping a card still opens the detail sheet (carousel)
+PASS  cover OFF: tapping a card still opens the detail sheet (stack)
+PASS  cover OFF: no console errors in either open flow
 ```
 
 ### 2.3 Static animation audit — 1 warning, no blockers (build machine)
@@ -183,11 +224,12 @@ Not verified, all of it required before shipping:
 | Android system Back in every state | ⛔ not tested (**known risk, below**) |
 | App restart, force-stop, reboot, persistence at scale | ⛔ not tested |
 | Fresh install vs existing-install upgrade path | ⛔ not tested |
+| "Wallet & cover" switch: real look with the pouch hidden, text contrast | ⛔ not tested (plan section K) |
 | Animation smoothness: scroll, carousel, stack, sheets | ⛔ not tested |
 | `adb backup` refusal after the `allowBackup` change | ⛔ not tested |
 
 The full procedure is written up in **`docs/DEVICE_TEST_PLAN.md`** (sections
-A–J, ~60 numbered steps, with install commands and what to watch for).
+A–K, ~70 numbered steps, with install commands and what to watch for).
 
 ---
 
@@ -212,10 +254,10 @@ web bundle re-run in full after the rebuild (§2.2).
 ## 5. What "production ready" needs from here
 
 1. Install `CardWallet_release.apk` on a real phone (uninstall old build first).
-2. Work through `docs/DEVICE_TEST_PLAN.md` A–J, on a mid-range **and** a
+2. Work through `docs/DEVICE_TEST_PLAN.md` A–K, on a mid-range **and** a
    high-refresh device.
 3. Send me the failures with their section ids. I fix them, rebuild, re-run the
    26-check gate + 28-check smoke suite, and you re-test the affected areas.
-4. Only after A–J are green does this build get called production ready.
+4. Only after A–K are green does this build get called production ready.
 
 Until then the honest status is: **release-signed and package-verified, device-unverified.**

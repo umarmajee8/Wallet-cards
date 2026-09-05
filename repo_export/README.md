@@ -9,14 +9,19 @@ This repo contains the patched source for the CardWallet app.
    - **Steel** - dark slate/blue-grey look
    - **Emerald** - dark green look
 3. Removed the **Auto-detect details** feature (Settings toggle, “Fill in from picture” button, and OCR on new photos). Card details are only what you type in.
-4. Production hardening: release signing with a real RSA-4096 keystore
+4. Added a **Wallet & cover** on/off switch (Settings -> Pouch). Turning it off
+   hides the pouch in Carousel and the frosted cover in Stack, leaving plain
+   cards; the card title then follows the theme (black on light, white on dark)
+   instead of being hard-coded white. Default is on, and installs that predate
+   the setting keep the pouch.
+5. Production hardening: release signing with a real RSA-4096 keystore
    (the debug key is retired) and `android:allowBackup="false"` so card photos
    and details never leave the app sandbox via cloud/adb backup.
 
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.
-- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch5),
+- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch6),
   plus the release toolchain: `build_release_apk.py` (build + sign),
   `apkbuilder.py` (aligned zip, v1/v2/v3 signing, PKCS#12 keystore),
   `axml.py` (binary manifest reader/patcher), `verify_release.py`,
@@ -37,7 +42,7 @@ See `../docs/RELEASE.md`.
 
 Verification gates:
 - `python3 patches/verify_release.py ../CardWallet_release.apk` - 26 package checks
-- `node patches/smoke_test_webview.mjs` - 28 web-layer checks (`npm i jsdom`)
+- `node patches/smoke_test_webview.mjs` - 50 web-layer checks (`npm i jsdom`)
 - `python3 patches/animation_audit.py` - static jank audit
 
 On-device testing is **not** covered by any of the above - see

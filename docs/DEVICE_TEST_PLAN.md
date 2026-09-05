@@ -6,7 +6,7 @@ no `adb`, no emulator — the Android SDK/JDK download endpoints are blocked
 there). Nothing in this file has been marked as passed by the build pipeline.
 
 APK under test: `CardWallet_release.apk`
-SHA-256: `0b08e0a0a06e84022e0d79a5bc5bea11552a3fb1e6b33d96b05f923e0dcbfbfc`
+SHA-256: `63dbd8b1929fdbcb673a19ebab585c0c723ae41518188ff437e84da0c2233e9a`
 Signer cert SHA-256: `86383a7f13662e8b55885cb5331341f8db964ad065da074cc360082a3e436726`
 
 ## 0. Install
@@ -156,6 +156,26 @@ report which one and it can be converted to a transform-based animation.
 | J1 | Install the old debug build, add cards, then install the release APK **without** uninstalling | Install is expected to fail (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`) — document it for users |
 | J2 | Uninstall old → install release → restore nothing | Fresh state, demo cards, everything works |
 | J3 | Install release, add cards, install the **same** release APK again (`-r`) | Update succeeds, cards preserved |
+
+## K. Wallet & cover switch (new)
+
+Settings → **Pouch** → *Wallet & cover*. Default on; installs made before this
+build keep the pouch until the switch is touched.
+
+| # | Step | Expected |
+|---|---|---|
+| K1 | Settings → Pouch, switch is **On** | Pouch controls (Name, Colour, Grading, Grain, Stitches) are listed under it |
+| K2 | Turn it **Off** | Those controls disappear, subtitle reads "Off · plain cards in Carousel and Stack" |
+| K3 | Close Settings, Carousel layout | No pouch/sleeve behind the cards; the card sits centred in the same slot, neighbours do not shift |
+| K4 | Switch to Stack layout | No frosted glass cover over the cards |
+| K5 | Light appearance, cover off | Card title under the card is **black** and readable |
+| K6 | Dark appearance, cover off | Same title is **white** and readable |
+| K7 | Tap a card with cover off (Carousel) | Detail sheet opens as usual, card is not left stuck mid-eject |
+| K8 | Tap a card with cover off (Stack) | Same — the open hand-off no longer comes from the cover animation |
+| K9 | Turn the switch back **On** | Pouch/cover return with the previous colour, grain, grading and stitches |
+| K10 | Restart the app with the switch off | Still off (`wallet.settings.v1.cover === false`) |
+| K11 | Swipe the carousel and the stack with the cover off | Motion is at least as smooth as with the pouch on — fewer layers to paint |
+| K12 | Toggle the switch back and forth quickly | No flicker, no orphaned pouch layer, no crash |
 
 ---
 
