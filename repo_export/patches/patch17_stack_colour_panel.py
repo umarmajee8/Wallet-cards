@@ -104,6 +104,13 @@ EDITS = [
 ]
 
 
+# Patch 20 keeps this panel's colour work and re-tunes only the shadow alpha *inside*
+# the span it wrote, so this edit counts as applied when that successor text is present.
+DOWNSTREAM_KEEP = {
+    "stack cover: painted from the wallet colour, not glass": "(0.55*sh).toFixed(2)",
+}
+
+
 def status(data):
     """(pending, applied, unrecognised).
 
@@ -121,7 +128,7 @@ def status(data):
             done.append(label)
         elif data.count(old) == 1:
             todo.append((old, new, label))
-        elif data.count(new) >= 1:
+        elif data.count(new) >= 1 or (DOWNSTREAM_KEEP.get(label) or "") in data:
             done.append(label)
         else:
             bad.append(label)

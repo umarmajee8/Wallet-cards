@@ -133,6 +133,8 @@ EDITS = [
 # dropped outright, not only during the fold). The marker proves the rest of patch 13's
 # output is still in there, so `--check` and a chain replay stay quiet.
 DOWNSTREAM_KEEP = {
+    # patch 20 drives the corner radius from the pouch settings, inside this same span
+    "no animated clip": "style:{inset:0,borderRadius:16*rd,background:`#09090b`},children:",
     "flap: blur only at rest":
         "transition:{type:`tween`,duration:.26,ease:[.22,1,.28,1]},"
         "onAnimationComplete:()=>{s&&w&&w(rc.current)}}",

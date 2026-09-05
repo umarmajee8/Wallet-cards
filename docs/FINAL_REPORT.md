@@ -679,3 +679,78 @@ loader pin, migration, NFC row ka na hona, cover colour, purana glass `rgba` ka 
 wordmark + Apple stack, aur patch15/16 ke markers). `verify_release.py` 28/29 (soli FAIL =
 debug cert subject), `animation_audit` 10 checks / 1 pre-existing WARN. Device rows:
 `docs/DEVICE_TEST_PLAN.md` §Q (Q1-Q8).
+
+
+---
+
+## 14. Premium settings: glass + type, Custom Pouch panel, live preview, real plumbing (patches 18 + 19 + 20), 2026-09-05
+
+**Maqsad.** "UI aur settings experience ko premium minimalist Apple style mein enhance karo" -
+typography SF Pro (ya fallback), poori settings screen blurred glass, extra explanatory text
+hta do, har option ko bara button mat banao, aur saari Design + Layout customization **ek**
+Custom Pouch section me do jisme live preview ho - preview asli component ho, static image nahi.
+Hard line: functionality aur card/wallet data untouched, aur jo setting me se badlay woh wallet
+me bhi lage.
+
+**Teen patches, ek zimmedari.**
+
+1. *patch18 - type + glass (CSS + 4 span).* Font stack me `SF Pro Display` / `SF Pro Text`
+   fallbacks se pehle; `html,:host` par `-0.011em`; purana uppercase letter-spaced label
+   section khatam - `Settings` 20/700, card headings 15/600 `var(--ink)`, group labels
+   11.5/600, rows 14. Glass tokens (`--glass`, `--glass-blur:34px`, `--glass-line`,
+   `--glass-hi`, `--scrim-blur`, light + `html.dark`) aur `.cw-*` kit - `.cw-glass-sheet`,
+   `.cw-scrim`, `.cw-card/.cw-row/.cw-seg/.cw-dot/.cw-chip/.cw-range/.cw-preview`.
+   `prefers-reduced-transparency:reduce` par sab solid. Settings sheet ka panel `sheet-bg`
+   se `cw-glass-sheet` par, scrim ka inline rgba hataa kar class, aur title `cw-title`.
+   **Sirf** settings sheet convert hui - card editor (`zp`) `sheet-bg` hi rehta ha, taake
+   blur kahin card animation ke raste me na aa jaye.
+2. *patch19 - Custom Pouch sheet.* Purana `Np` (settings sheet) poori tarah replace; source
+   `patch19_settings.src.js` me ha (flat, ek node per line) aur patch usay minify karke
+   bundle me dalta ha. Andar: `Custom Pouch` card = **live preview** + `Design` + `Layout`,
+   aur ek alag `Appearance` card. Preview = wallet ka apna component (`Ed` / `__cwStack`,
+   pehli 3 cards, `pointer-events:none`, drag inert) - colour ya layout select karte hi
+   preview usi state par dobara render hota ha, koi screenshot nahi. Saare explanatory `<p>`
+   gaye; state control khud batata ha (chip `data-on`, slider ka read-out, switch). Cards
+   chips ka kaam sirf preview filter ha - `useState`, storage me ek byte nahi jaata.
+   `Xu` me naye neutral fields (`radius/shadow/material/depth/border/size/gap/stack`) -
+   default par sab 1 (gap 20), yaani **pehle jaisa hi** paint.
+3. *patch20 - jo setting badle woh wallet me lage (23 edits).* Ek `__cwTune(theme, custom)`
+   post-processor `ad()` par baitha ha (wallet aur preview dono ka single choke-point) jo
+   Slate/Classic/custom tray gradient, border alpha, sheen, shadow aur `cardRadius/pouchRadius`
+   ko scale karta ha; `__cwSlateTray` carousel tray ka literal gradient wahi fields khata ha;
+   canvas sleeve painter (`pd`) ke literals `depth/material/shadow/border` se multiply hote
+   hain; `xd(k)` me `cardW=bd.cardW*size`, `slide=n*u+gp`, radii `*radius`, aur `Sd(k)` un
+   teeno par recompute + resize; `Xd` (stack geo) + `__cwStack` + `__cwCoverCard` me
+   `size/gap/radius/shadow/stack(Fan)` lagte hain. Sab kuch `==null?1` se guard ha - naye
+   stored settings (jo `custom` me naye keys nahi rakhtay) par output **byte-for-byte**
+   patch17 wala rehta ha.
+
+**Gates.** Smoke **138 -> 178** (40 naye checks: 8 type/glass CSS, 7 DOM-glass/sheet,
+9 Custom Pouch + preview, 13 plumbing + slider end-to-end). Negative controls, ek-ek patch
+hataa kar (`patches/replay_chain.py --upto N --swap`): 20 ke bina **168/178** (theek 10
+`pouch:` checks girtay hain), 19+20 ke bina **156/178**, round-9 JS par **153/178** - aur
+teesre control me CSS-side checks isliye bachtay hain kyunke `index.css` rollback nahi hota.
+19/20 ke naye checks ab null-safe hain (`q()`), warna missing sheet par crash hota.
+Chain replay stock->7->8->12->13->14->15->16->17->18->19->20 **IDENTICAL** (458,900 B).
+Replay harness ne ek apni ghalti bhi pakri: wo scratch copies ki jagah repo ki scripts chala
+raha tha, yaani shipped bundle par patch chala raha tha - isse pehle "chain replay" ka hawala
+isliye kamzor tha; ab harness scratch tree se chalata ha aur `--check-each` bhi deta ha.
+patch13/17 ko `DOWNSTREAM_KEEP` markers dene pare (patch20 unhi spans ka shadow alpha / radius
+dobara tune karta ha - marker ke bithooye wo apni edits "stale" bol kar chain rok detay).
+
+**Naya test ne ek asli bug pakra.** `yd` ke card shadows me `((r&&r.shadow)||1)` tha -
+`shadow:0` "missing" ban kar 1 par wapas aa jata, yaani Shadow slider ka 0% kabhi kaam nahi
+karta. `!=null?+r.shadow:1` kiya, replay dobara chalaya, check ab
+`rgba(0,0,0,0.6) -> rgba(0,0,0,0.0)` dikhta ha.
+
+**Build.** `CardWallet_custom_pouch.apk` = 11,651,036 bytes, sha256
+`141f035e75dcacbbfe20db63e43a0e1c7415fbbee9e6b64039af23a12ce6b47d` - same debug key,
+`adb install -r` (data salamat). APK ke andar ka JS/CSS tree se byte-identical (md5
+`a5f3c5c1…` / `45b9a3ac…`) aur 15/15 content greps (helpers, fan factor, shadow guard, SF Pro,
+glass kit, reduced-transparency) ok. `verify_release.py` 28/29 (soli FAIL debug cert ha),
+`animation_audit.py` 10 checks / 1 pre-existing WARN - card/pouch path par koi naya
+transition nahi aaya, `.cw-*` controls hi animate hotay hain. Preview (:8080) symlinked
+files ki wajah se auto-updated.
+
+**Abhi bhi device par depend karti ha:** glass ka GPU cost (blur 34px mid-range Android par),
+slider drag karte waqt row ki smoothness, aur R1-R13 - `docs/DEVICE_TEST_PLAN.md` §R.

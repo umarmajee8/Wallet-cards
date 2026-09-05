@@ -302,9 +302,38 @@ choice - say so and include whether Appearance was ever touched on that device.
 
 ---
 
+## R. Premium settings: glass sheet, Custom Pouch, live preview (patches 18 + 19 + 20)
+
+The whole point of this round is that a control in Settings and the wallet on screen are the
+same state. Each row below therefore asks for the *pair*: what the sheet looks like, and what
+the wallet does right after.
+
+| # | Step | Expected |
+|---|---|---|
+| R1 | Open Settings (light theme) and scroll inside the sheet | The panel is frosted glass: the wallet's cards are visibly blurred *through* it and stay blurred while you scroll - no opaque grey rectangle. Text over it stays crisp and readable, including over a light-coloured pouch |
+| R2 | Same, in dark theme (Settings -> Appearance -> Dark) | The glass goes dark instead of white, hairlines and text stay legible, no halo or grey smudge around the panel edges |
+| R3 | Read the headings and rows | `Settings` is the biggest line, `Design` / `Layout` / `Cards` / `Appearance` are medium-bold black (not grey, not uppercase), row text is normal size. Nothing is wrapped in a full-width blue button - chips, dots, sliders and switches only |
+| R4 | System setting "Remove animations"/reduced-transparency on, or Accessibility -> reduce transparency if the phone has it | The sheet falls back to a solid panel and remains fully usable (no unreadable translucency, no invisible text) |
+| R5 | Settings -> Custom Pouch | Everything for the pouch is on this one screen: Design (material, colour, background, border, radius, shadow, grading, grain, stitching, name) then Layout (carousel/stack, Wallet & cover, size, spacing, stack style). No "next screen", no explanatory paragraphs |
+| R6 | With the preview visible at the top, tap a colour dot, then drag Radius and Background | The 3D cards inside the preview change in the same instant - colour, corner radius and gradient - and you never have to close the sheet to check |
+| R7 | Now close Settings and look at the real wallet | The real pouch matches the preview exactly: same colour, same corner radius, same gradient darkness. If the preview moved and the wallet did not, that is a fail (this is what patch 20 is for) |
+| R8 | Layout group: switch Stack style Flat -> Fan -> Deck, and drag Spacing | The real row spreads/stacks accordingly, in Stack view as well as the carousel. Sliders must stay reachable while the row keeps animating - no dropped frames while dragging |
+| R9 | Size down to ~85% and Radius up to ~150%, then kill the app and reopen | The pouch stays smaller and rounder after relaunch (values are stored in `wallet.settings.v1`); nothing clipped or overlapping the header or the bottom edge |
+| R10 | Shadow to 0% and Border to None, then turn Wallet & cover off and on | Shadows disappear from the card and the cover panel; the fold animation still plays and still looks like the old one, just without the drop shadow. Bring them back: identical to before |
+| R11 | Cards row: tap one card chip, then leave Settings | Only the *preview* narrows to that card. Your actual wallet still has every card, in the same order, and the selected one did not change |
+| R12 | Existing interactions: tap a Stack card to eject it, swipe the carousel, open a card, flip it | All behave exactly as before (this round touched geometry only at rest). The tapped card still lifts in place, the row still auto-settles, the flap still folds |
+| R13 | Small screen (360dp) and landscape, then a tablet if available | The sheet fits without horizontal scroll, sliders and dots stay tappable (nothing under the thumb or the notch), and the preview scales instead of clipping |
+
+If R7 fails, note which control: the theme fields (colour/background/border/radius/shadow/
+material/grading) all go through `ad()`/`__cwTune`, geometry (size/spacing/radius) through
+`xd()`/`Sd()`, and the sleeve texture through `pd()` - so one failing row tells us which of the
+three plumbing paths to look at.
+
+---
+
 ## Sign-off
 
-The build may only be called production-ready once A–Q are green on at least
+The build may only be called production-ready once A–R are green on at least
 one physical device. Record device model, Android version and result per row,
 and file anything that fails with the section id (e.g. "F3 fails: Back exits
 the app with Settings open").

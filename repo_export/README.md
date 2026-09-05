@@ -121,12 +121,51 @@ This repo contains the patched source for the CardWallet app.
    `var(--ink)` so it stays legible in the dark theme, and `margin-right:auto` so the three
    icons keep their place on the right. It is inserted *after* patch 8's
    `/*cardwallet:header*/` marker so that patch's verification keeps matching.
+14. **Premium settings: system type, a real frosted sheet, and one Custom Pouch panel that
+   drives the wallet** (patches 18, 19, 20). *"Wallet ki existing functionality ko change kiye
+   baghair UI aur settings experience ko premium minimalist Apple style mein enhance karo."*
+   - **Type** (18): the font stack now names `SF Pro Display` / `SF Pro Text` before the
+     existing fallbacks (system sans -> Inter -> Roboto), body copy carries `-0.011em`
+     tracking, and the uppercase letter-spaced label look is gone: `Settings` is 20px/700,
+     card headings 15px/600 in `var(--ink)`, group labels 11.5px/600, row text 14px. Where the
+     SF faces do not exist the fallbacks are the same ones the app already used, so no metric
+     or wrap behaviour changes.
+   - **Glass** (18): the settings sheet is a `.cw-glass-sheet` panel - translucent token fill
+     (`--glass` / `--glass-2`), `backdrop-filter: blur(34px) saturate(1.7)`, a hairline stroke
+     and a top highlight - over a scrim that blurs the wallet behind it (`--scrim-blur`).
+     Values are CSS custom properties with `html.dark` variants, so the dark theme gets its own
+     glass, and `@media (prefers-reduced-transparency:reduce)` puts every surface back to a
+     solid `var(--sheet)` / `var(--raised)` with `backdrop-filter:none`. Only the settings
+     sheet was converted; the card editor keeps `sheet-bg`, so no new blur sits anywhere the
+     cards animate.
+   - **One place** (19): Custom Pouch is a section *inside* Settings that carries every Design
+     and Layout control in the app - material, colour, background depth, border, radius,
+     shadow, grading, grain, stitching and name, then carousel/stack, Wallet & cover, size,
+     spacing and stack style - plus a Cards filter and Appearance. No option was dropped and no
+     screen was added; the explanatory sentences went away because the controls now show their
+     own state (selected chip, read-out value). The Cards chips filter the *preview only* -
+     they never touch stored cards.
+   - **Live preview** (19): the panel mounts the wallet's real component (`Ed` for carousel,
+     `__cwStack` for stack, first three cards) inside a `pointer-events:none` box. It is not an
+     image: it re-renders on the same state the wallet reads, so a colour or layout pick is on
+     the preview in the same frame it is committed.
+   - **Applied for real** (20): a `__cwTune` post-processor sits on the single theme
+     choke-point (`ad()`), so Background/Radius/Shadow/Material/Border/Grading apply to both
+     views; `__cwSlateTray` builds the carousel tray from the same fields; the canvas sleeve
+     painter reads depth/material/shadow/border; and `xd()` scales `pouchW`/`cardW` by Size,
+     `slide` by Spacing and both radii by Radius (with `Sd()` recomputing on change), so the
+     change lands on the wallet, not just the preview. Every new field defaults to the neutral
+     value, so an untouched install paints byte-for-byte what patch 17 painted.
 
 
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.
-- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch17),
+- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch20), plus
+  `patch19_settings.src.js` (readable source for the settings sheet; `patch19_custom_pouch.py`
+  minifies it - one flat node per line, no comments) and `replay_chain.py` (rebuild
+  `app/index.js` from the pristine bundle through the whole chain and compare, which is how a
+  shipped bundle is proven to contain no hand edits),
   plus the release toolchain: `build_release_apk.py` (build + sign),
   `build_debug_apk.py` (same bundle, throwaway debug key - for hands-on testing),
   `apkbuilder.py` (aligned zip, v1/v2/v3 signing, PKCS#12 keystore),
@@ -207,7 +246,7 @@ Verification gates:
 (`pip install --user apksigtool`); without it those 3 checks cannot run.
 
 **Test builds without the release key:** `python3 patches/build_debug_apk.py`
-writes `../CardWallet_cover_colour.apk`, signed with a throwaway key it creates
+writes `../CardWallet_custom_pouch.apk`, signed with a throwaway key it creates
 under `repo_export/signing/`. Same bundle, same manifest hardening, same
 alignment - only the signature differs, so Android will not update an existing
 install over it (`adb uninstall com.arena.cardwallet` first). Never distribute it.

@@ -481,7 +481,9 @@ check("cover ON: carousel draws the pouch", trayCount(cvOn.window.document) > 0 
   click(coverSwitch(D2)); await settle(W2, 700);
   check("cover: switch flips to off", coverSwitch(D2)?.getAttribute("aria-checked") === "false");
   check("cover OFF: pouch customisation controls are hidden", !/Grading/.test(D2.getElementById("root").textContent));
-  check("cover OFF: subtitle explains the state", /Off · plain cards/.test(D2.getElementById("root").textContent));
+  check("cover OFF: state is shown by the control, not by an explanation (patch19)",
+    !/Off · plain cards|On · pouch/.test(D2.getElementById("root").textContent) &&
+    coverSwitch(D2)?.getAttribute("aria-checked") === "false", "no subtitle, switch reads off");
   check("cover: choice persists to wallet.settings.v1",
     JSON.parse(W2.localStorage.getItem(SETTINGS_KEY) || "{}").cover === false);
   click(t(/^Done$/)); await settle(W2, 800);
@@ -1057,7 +1059,8 @@ for (const view of ["carousel", "stack"]) {
     const el = btnText(doc, group);
     if (!el) return null;
     const row = el.parentElement;
-    const on = [...row.children].find((b) => /rgb\(10,\s*132,\s*255\)/.test(styleOf(b)) || /#0a84ff/i.test(styleOf(b)));
+    const on = [...row.children].find((b) => b.getAttribute("data-on") === "true"
+      || /rgb\(10,\s*132,\s*255\)/.test(styleOf(b)) || /#0a84ff/i.test(styleOf(b)));
     return on ? (on.textContent || "").trim() : null;
   };
 
@@ -1178,6 +1181,223 @@ for (const view of ["carousel", "stack"]) {
     /n\.autoDetect=!1,n\.nfc=!1/.test(BUNDLE_SRC), "same idiom, no new machinery");
   check("defaults: the shipped settings object starts light and nfc-off",
     /Qp=\{autoDetect:!1,nfc:!1,appearance:`light`/.test(BUNDLE_SRC), "Qp literal");
+}
+
+
+// ---------------------------------------------------------------------------
+// Test 6k: premium settings - glass sheet, Custom Pouch panel, live preview, and
+// every pouch control actually reaching the wallet (patches 18, 19, 20)
+// ---------------------------------------------------------------------------
+{
+  const st = (el) => (el && el.getAttribute("style")) || "";
+  const rgbRe = (r, g, b) => new RegExp(`rgb\\(\\s*${r},\\s*${g},\\s*${b}\\s*\\)`);
+  const CARDS19 = JSON.stringify([
+    { id: "p1", src: "cards/one.jpg", title: "Alpha", subtitle: "1", fields: [] },
+    { id: "p2", src: "cards/two.jpg", title: "Beta", subtitle: "2", fields: [] },
+  ]);
+
+  const open = async (win, doc) => {
+    const btnLabel = (l) => [...doc.querySelectorAll("#root button[aria-label]")].find((b) => b.getAttribute("aria-label") === l);
+    const btnText = (re) => [...doc.querySelectorAll("#root button")].find((b) => re.test((b.textContent || "").trim()));
+    const click = (el) => el && el.dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+    click(btnLabel("More"));
+    await settle(win, 300);
+    click(btnText(/^Settings$/));
+    await settle(win, 600);
+    return { click, btnText, btnLabel };
+  };
+  const sheetOf = (doc) => [...doc.querySelectorAll("#root div")].find((d) => /cw-glass-sheet/.test(d.className || ""));
+  const tapEl = (win, el) => el && el.dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+  // null-safe query: with an earlier patch missing there is no sheet to read, and the suite
+  // has to report that as failed checks rather than crash on it
+  const q = (root, sel) => (root ? [...root.querySelectorAll(sel)] : []);
+  const mount19 = async (settings, cards = CARDS19) => {
+    const m = makeDom({ [CARDS_KEY]: cards, [SETTINGS_KEY]: JSON.stringify(settings) }, { withLayout: true });
+    runBundle(m.window, m.errors);
+    await settle(m.window, 900);
+    return m;
+  };
+
+  // ---- patch18: typography + real glass -----------------------------------
+  check("type: the app stack names the SF Pro faces before its fallbacks",
+    /font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","SF Pro",Inter/.test(CSS_SRC),
+    (CSS_SRC.match(/font-family:[^;]{0,80}/) || ["-"])[0]);
+  check("type: copy carries a hair of negative tracking",
+    /line-height:1\.5;letter-spacing:-\.011em/.test(CSS_SRC), "on html,:host");
+  check("glass: sheet, card and control tokens are themed, not hardcoded",
+    /:root\{--glass:/.test(CSS_SRC) && /html\.dark\{--glass:/.test(CSS_SRC) && /--glass-blur:34px/.test(CSS_SRC),
+    "light + dark values for --glass/--glass-blur");
+  check("glass: the panel blurs what is behind it (was an opaque sheet-bg)",
+    /\.cw-glass-sheet\{[^}]*backdrop-filter:blur\(var\(--glass-blur\)\) saturate\(1\.7\)/.test(CSS_SRC),
+    (CSS_SRC.match(/\.cw-glass-sheet\{[^}]{0,90}/) || ["-"])[0]);
+  check("glass: the scrim blurs the wallet too",
+    /\.cw-scrim\{[^}]*backdrop-filter:blur\(var\(--scrim-blur\)\)/.test(CSS_SRC), "-20px behind the sheet");
+  check("glass: reduced transparency falls back to solid fills",
+    /@media \(prefers-reduced-transparency:reduce\)\{[^@]*\.cw-glass-sheet\{background:var\(--sheet\)\}/.test(CSS_SRC),
+    "backdrop-filter:none + var(--sheet/--raised)");
+  check("glass: the preview box is display-only",
+    /\.cw-preview\{[^}]*pointer-events:none/.test(CSS_SRC), "no taps through the preview");
+
+  const g18 = await mount19({ cover: true });
+  {
+    const { D: doc, W: win } = { D: g18.window.document, W: g18.window };
+    const ui = await open(win, doc);
+    const sheet = sheetOf(doc);
+    check("settings: the sheet is the glass panel, not sheet-bg",
+      !!sheet && /cw-glass-sheet/.test(sheet?.className) && !/sheet-bg/.test(sheet?.className),
+      sheet ? sheet?.className.slice(0, 60) : "no glass panel found");
+    const scrim = [...doc.querySelectorAll("#root div")].find((d) => /cw-scrim/.test(d.className || ""));
+    check("settings: the scrim carries the blur, with no opaque inline background",
+      !!scrim && !/background/.test(st(scrim)), st(scrim).slice(0, 60) || "-");
+    check("settings: the title is a heading (.cw-title), not an uppercase label",
+      [...doc.querySelectorAll("#root .cw-title")].some((e) => (e.textContent || "").trim() === "Settings"),
+      [...doc.querySelectorAll("#root .cw-title")].map((e) => e.textContent).join(",") || "-");
+    check("settings: only the settings sheet got the glass treatment",
+      (BUNDLE_SRC.match(/cw-glass-sheet/g) || []).length === 1, "one use in the bundle");
+    check("settings: no bulky blue pill buttons left in the sheet",
+      !/background:#0a84ff/.test(st(sheet) + q(sheet, "button").map(st).join("|")),
+      "active state is a data-on attribute styled by CSS");
+  }
+
+  // ---- patch19: one Custom Pouch panel, no explanations, live preview -----
+  {
+    const win = g18.window;
+    const doc = win.document;
+    const sheet = sheetOf(doc);
+    const txt = sheet ? sheet?.textContent || "" : "";
+    check("settings: Design, Layout, Cards and Appearance sit in one panel",
+      ["Custom Pouch", "Design", "Layout", "Cards", "Appearance"].every((h) => txt.includes(h)),
+      [ "Custom Pouch", "Design", "Layout", "Cards", "Appearance"].filter((h) => !txt.includes(h)).join(",") || "all five present");
+    check("settings: every explanatory line is gone",
+      !/Original pouch shape|Folded Slate pouch|Swipe pouches left and right|Horizontal 3D carousel|Follows the phone|Always dark|Dashed seam|everything stays on this phone/.test(txt),
+      "controls carry the state instead");
+    check("settings: headings are typography now - medium bold ink, no uppercase grey",
+      q(sheet, ".cw-h,.cw-sub,.cw-title").length >= 6 &&
+      /\.cw-h\{font-size:15px;font-weight:600;letter-spacing:-\.3px;color:var\(--ink\)\}/.test(CSS_SRC) &&
+      /\.cw-title\{font-size:20px;font-weight:700/.test(CSS_SRC) &&
+      !q(sheet, ".cw-h,.cw-sub").some((e) => /uppercase/.test(e.className || "")),
+      `${q(sheet, ".cw-h").length} card headings, ${q(sheet, ".cw-sub").length} group labels, 1 title`);
+    const prevBox = sheet && q(sheet, "div").find((d) => /cw-preview/.test(d.className || ""));
+    const prevInner = prevBox && q(prevBox, "div").find((d) => /cw-preview-in/.test(d.className || ""));
+    check("preview: the panel mounts the wallet's own card tree",
+      !!prevInner && prevInner.querySelector("div.absolute.top-0[data-cwc]") !== null &&
+      q(prevInner, "div").some((d) => /left-0/.test(d.className || "") && /linear-gradient/.test(st(d))),
+      prevInner ? `${q(prevInner, "div.absolute.top-0").length} card(s) painted` : "no preview box");
+    check("preview: the wallet behind is separate from the preview",
+      [...doc.querySelectorAll("#root div.absolute.top-0[data-cwc]")].length >= 4,
+      `${[...doc.querySelectorAll("#root div.absolute.top-0[data-cwc]")].length} real card wrappers (wallet + preview)`);
+    const chips = q(sheet, "button.cw-chip");
+    check("settings: controls are compact chips and sliders, not full-width buttons",
+      chips.length >= 10 && q(sheet, "input[type=range]").length >= 5,
+      `${chips.length} chips, ${q(sheet, "input[type=range]").length} sliders`);
+    check("settings: the Cards row is a preview filter only (chip per card + All)",
+      ["All", "Alpha", "Beta"].every((l) => chips.some((c) => (c.textContent || "").trim() === l)),
+      chips.slice(0, 14).map((c) => c.textContent.trim()).join(",").slice(0, 70));
+    const before = win.localStorage.getItem(CARDS_KEY);
+    const beta = chips.find((c) => (c.textContent || "").trim() === "Beta");
+    tapEl(win, beta);
+    await settle(win, 500);
+    const prev2 = q(sheet, "cw-preview-in")[0] || q(sheet, "div").find((d) => /cw-preview-in/.test(d.className || ""));
+    check("settings: picking a card re-filters the preview, not the wallet",
+      (win.localStorage.getItem(CARDS_KEY) || "") === before &&
+      [...(prev2?.querySelectorAll("div.absolute.top-0") || [])].length === 1,
+      `${[...(prev2?.querySelectorAll("div.absolute.top-0") || [])].length} card in the preview, cards untouched`);
+    check("settings: no console errors from the new sheet", g18.errors.length === 0,
+      g18.errors.slice(0, 1).join("").slice(0, 160));
+  }
+
+  // ---- patch20: the controls drive geometry, theme and the painter ---------
+  const setValue = (win, el, v) => {
+    const set = Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, "value").set;
+    set.call(el, String(v));
+    el.dispatchEvent(new win.Event("input", { bubbles: true }));
+  };
+  const trayOf = (root) => [...root.querySelectorAll("div")].find(
+    (d) => /left-0/.test(d.className || "") && /linear-gradient/.test(st(d)),
+  );
+  const rowOf = (root, label) => q(root, ".cw-row").find((r) => (r.textContent || "").startsWith(label));
+
+  const base = await mount19({ cover: true, theme: "slate", slateColor: "#5c6574", custom: { color: "#5c6574", design: "slate", grain: 0.2, grade: 1 } });
+  const tuned = await mount19({
+    cover: true, theme: "slate", slateColor: "#5c6574",
+    custom: { color: "#5c6574", design: "slate", grain: 0.2, grade: 1, radius: 1.6, size: 0.9, shadow: 0, border: 0, material: 1.6, depth: 0.55 },
+  });
+  {
+    const bTray = trayOf(base.window.document.getElementById("root"));
+    const tTray = trayOf(tuned.window.document.getElementById("root"));
+    check("pouch: at neutral settings the tray is exactly the round-9 gradient",
+      /rgb\(66,\s*73,\s*84\)/.test(st(bTray)) && /rgb\(44,\s*48,\s*56\)/.test(st(bTray)),
+      (st(bTray).match(/background:[^;]*/) || ["-"])[0].slice(0, 96));
+    check("pouch: Background (depth) darkens the tray",
+      st(tTray) !== st(bTray) && !rgbRe(66, 73, 84).test(st(tTray)),
+      (st(tTray).match(/background:[^;]*/) || ["-"])[0].slice(0, 96));
+    const rad = (el) => parseFloat((st(el).match(/border-radius:\s*([\d.]+)px/) || [0, "0"])[1]);
+    check("pouch: Radius grows the pouch corners", rad(tTray) > rad(bTray) + 4, `${rad(bTray).toFixed(1)}px -> ${rad(tTray).toFixed(1)}px`);
+    const cardW = (m) => parseFloat((st(m.window.document.querySelector("#root div.relative.no-select")).match(/width:\s*([\d.]+)px/) || [0, "0"])[1]);
+    check("pouch: Size scales the real pouch, not just the preview", cardW(tuned) < cardW(base) - 10,
+      `${cardW(base).toFixed(0)}px -> ${cardW(tuned).toFixed(0)}px`);
+    const shadow = (m) => [...m.window.document.getElementById("root").querySelectorAll("div")].map(st).filter((x) => /box-shadow:\s*0 30px/.test(x))[0] || "";
+    check("pouch: Shadow off removes the card cast shadow",
+      /rgba\(0,\s*0,\s*0,\s*0(\.0+)?\)/.test(shadow(tuned)) && !/rgba\(0,\s*0,\s*0,\s*0(\.0+)?\)/.test(shadow(base)),
+      `${(shadow(base).match(/box-shadow:[^;]*/) || ["-"])[0].slice(0, 46)} -> ${(shadow(tuned).match(/box-shadow:[^;]*/) || ["-"])[0].slice(0, 46)}`);
+    check("pouch: Border None drops the tray edge alpha",
+      /border:\s*1px solid rgba\([^)]*,\s*0\)/.test(st(tTray)) && !/border:\s*1px solid rgba\([^)]*,\s*0\)/.test(st(bTray)),
+      `${(st(bTray).match(/border:[^;]*/) || ["-"])[0]} -> ${(st(tTray).match(/border:[^;]*/) || ["-"])[0]}`);
+    const sheen = (el) => (st(el.querySelector("div") || el).match(/background:[^;]*/) || ["-"])[0];
+    check("pouch: Material (Gloss) lifts the sheen over the tray",
+      sheen(tTray) !== sheen(bTray), `${sheen(bTray).slice(0, 46)} -> ${sheen(tTray).slice(0, 46)}`);
+  }
+  // spacing and fan show up on the stack, where each card's offset is set by them
+  {
+    const xOf = (el) => parseFloat((st(el).match(/translateX\((-?[\d.]+)px\)/) || [0, "0"])[1]);
+    const cardsOf = (m) => [...m.window.document.querySelectorAll("#root div.absolute.no-select")];
+    const mk = async (extra) => mount19({
+      view: "stack", cover: true, theme: "slate", slateColor: "#5c6574",
+      custom: { color: "#5c6574", design: "slate", grain: 0.2, grade: 1, ...extra },
+    });
+    const plain = await mk({});
+    const wide = await mk({ gap: 44, stack: 1.5 });
+    const flat = await mk({ stack: 0.5 });
+    const back2 = (m) => { const c = cardsOf(m); return c.length > 1 ? xOf(c[1]) : NaN; };
+    check("pouch: Spacing opens up the stack", Math.abs(back2(wide)) > Math.abs(back2(plain)) + 4,
+      `${back2(plain).toFixed(1)}px -> ${back2(wide).toFixed(1)}px`);
+    check("pouch: Stack style Flat pulls the fan in", Math.abs(back2(flat)) < Math.abs(back2(plain)) - 4,
+      `${back2(plain).toFixed(1)}px -> ${back2(flat).toFixed(1)}px`);
+    {
+      const roundy = await mk({ radius: 1.6 });
+      const inner = (el) => [...(el?.querySelectorAll("div") || [])].find((d) => /border-radius/.test(st(d)));
+      const rOf = (m) => parseFloat((st(inner(cardsOf(m)[0])).match(/border-radius:\s*([\d.]+)px/) || [0, "0"])[1]);
+      check("pouch: the stack card corners follow Radius", rOf(roundy) > rOf(plain) + 5,
+        `${rOf(plain).toFixed(1)}px -> ${rOf(roundy).toFixed(1)}px`);
+      check("pouch: no console errors from the reshaped stack", roundy.errors.length === 0,
+        roundy.errors.slice(0, 1).join("").slice(0, 120));
+    }
+    [plain, wide, flat].forEach((m) => check(`pouch: no console errors (${m === plain ? "plain" : m === wide ? "wide" : "flat"})`,
+      m.errors.length === 0, m.errors.slice(0, 1).join("").slice(0, 120)));
+  }
+  // driving a control from the sheet writes through to the wallet and to storage
+  {
+    const m = await mount19({ cover: true, theme: "slate", slateColor: "#5c6574", custom: { color: "#5c6574", design: "slate", grain: 0.2, grade: 1 } });
+    const win = m.window, doc = win.document;
+    await open(win, doc);
+    const sheet = sheetOf(doc);
+    const rng = q(sheet, "input[type=range]").find((i) => i.getAttribute("aria-label") === "Radius");
+    const sliderRow = rowOf(sheet, "Radius");
+    const input = rng || (sliderRow && sliderRow.querySelector("input[type=range]"));
+    check("settings: the Radius slider is reachable in the sheet", !!input,
+      q(sheet, "input[type=range]").map((i) => i.getAttribute("aria-label")).join(",").slice(0, 90));
+    if (input) setValue(win, input, 1.9);
+    await settle(win, 700);
+    const saved = JSON.parse(win.localStorage.getItem(SETTINGS_KEY) || "{}");
+    check("settings: the slider writes one field into wallet.settings.v1",
+      Math.abs((saved.custom || {}).radius - 1.9) < 0.001, `custom.radius=${(saved.custom || {}).radius}`);
+    const tray = trayOf(doc.getElementById("root"));
+    check("settings: and the wallet repaints without a reload", /border-radius:\s*4[0-9]\.[0-9]+px/.test(st(tray)),
+      (st(tray).match(/border-radius:[^;]*/) || ["-"])[0]);
+    check("settings: the read-out shows the value", /190%/.test((sheet?.textContent) || ""), (sheet?.textContent || "").match(/Radius[^A-Z]{0,12}/)?.[0] || "-");
+    check("settings: no console errors while driving a control", m.errors.length === 0,
+      m.errors.slice(0, 1).join("").slice(0, 160));
+  }
 }
 
 // ---------------------------------------------------------------------------
