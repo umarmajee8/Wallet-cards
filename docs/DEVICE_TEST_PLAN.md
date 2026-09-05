@@ -182,9 +182,9 @@ build keep the pouch until the switch is touched.
 ## L. Header options (restyled to the mock — patch 7/8)
 
 These are the checks the build machine cannot do: `smoke_test_webview.mjs` proves
-the *values* (fill `#000`, glyph `#fff`/`#000`, 26px bare glyphs, hamburger path,
-black dropdown) but it renders nothing, so contrast over real card photos is
-untested.
+the *values* (which token each control resolves to, 26px bare glyphs, the hamburger
+path, the black dropdown) and jsdom even paints the header, but it cannot show
+whether a near-black disc reads as "black" against a real card photo at phone DPI.
 
 | # | Step | Expected |
 |---|---|---|
@@ -205,9 +205,36 @@ rides the app's own `--solid`/`--on-solid`/`--ink` tokens so it inverts.
 
 ---
 
+## M. Pouch style picker, Paper preset, add-card pill (patches 9/10/11)
+
+The picker had been missing from the shipping bundle and the settings loader forced
+`theme=slate` on every read, so the first two rows are regression checks for work
+that was *advertised* before it was actually wired up.
+
+| # | Step | Expected |
+|---|---|---|
+| M1 | Settings -> Pouch style | The section exists (it was **absent** on `cc63bc96…`), with four preview cards: Frosted / Steel / Emerald / **Paper**, each showing its own gradient; the active one carries the blue ring |
+| M2 | Tap **Paper**, close Settings | Pouch turns into the mock: near-white felt tray, bright sheen across the flap, thin dark edge, **dashed grey seam** around the front pocket, no rivets. No layout shift, no flicker |
+| M3 | Force-stop, reopen the app | Still Paper. (This is the loader-pin fix — before patch 9 the pick saved to storage and snapped back to the Slate pouch on next start.) |
+| M4 | Settings -> Design: Slate, then Classic, with Paper on | Paper keeps its light felt tray in **both** (it is exempt from the Slate design's card-colour re-tint). Other presets do get re-tinted in Slate — that is existing behaviour |
+| M5 | After touching Design, look at the Pouch style row | Known stock quirk, unchanged: pressing a Design button writes `theme:"slate"`, so re-pick Paper if you want it back. Report if this reads as a bug to you |
+| M6 | Tap **Steel**, then **Emerald** | Tray gradient, edge and shadow change per preset; card titles stay legible in each |
+| M7 | **Delete all cards** (menu -> confirm) | The wide capsule appears over the lower-right of the wallet area — dark pill, slightly raised dark disc with a grey `+` at its left, **no "Add Card" text**. With cards present it must not be drawn at all |
+| M8 | Tap the pill | The same three capture routes open **above** it (bottom-anchored, animating in from below, not under the header). Tap outside or pick a route -> it closes; haptic tick on open and pick |
+| M9 | Appearance: Dark, then Light, repeating M7/M8 | Pill is a white capsule with a grey `+` on dark, near-black on light — never invisible, never a black hole on the Paper pouch. Same for the header `+` |
+| M10 | Small phone and tall phone | The pill sits 18px above the bottom safe area, right-aligned in the 520px column, and does not overlap the "Wallet is empty" caption or the nav bar. If it should sit *inside* the pouch instead, that bottom offset is one number (patch 11) |
+| M11 | Fresh install (4 demo cards) | Default pouch look is unchanged (still the Slate pouch); the pill is correctly **not** visible until the wallet is emptied |
+| M12 | Rotate / resize with the pill's menu open | Menu stays inside the 520px column and stays above the pill; nothing clipped |
+
+M1-M3 are the pair that proves the picker is real this time, and M7/M8 are the
+picture-match checks: size and `+` placement from the mock, label deliberately
+removed, empty-wallet-only visibility as chosen.
+
+---
+
 ## Sign-off
 
-The build may only be called production-ready once A–L are green on at least
+The build may only be called production-ready once A–M are green on at least
 one physical device. Record device model, Android version and result per row,
 and file anything that fails with the section id (e.g. "F3 fails: Back exits
 the app with Settings open").

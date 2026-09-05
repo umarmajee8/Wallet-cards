@@ -4,10 +4,19 @@ This repo contains the patched source for the CardWallet app.
 
 ## Changes made
 1. Removed the "Make your own pouch" custom color-picker feature (both the header menu entry and the Settings-screen row).
-2. Added two new fixed pouch presets, selectable from Settings -> **Pouch style**:
-   - **Frosted** (original default)
+2. Fixed pouch presets, selectable from Settings -> **Pouch style**:
+   - **Frosted** - the original dark frosted glass
    - **Steel** - dark slate/blue-grey look
    - **Emerald** - dark green look
+   - **Paper** - light felt pouch with a dashed seam, matching the reference mock
+     (patch 10). The app's own default stays whatever `wallet.settings.v1` says,
+     which is `slate`; picking a preset does not change anybody's look until they
+     ask for it.
+   Two things had to be repaired to make this row work at all (patch 9): the
+   section is missing from `app/index.js` even though the base APK has it (the
+   bundle and the APK had drifted, so builds silently shipped no pouch picker),
+   and the stock settings loader rewrote `theme` to `slate` on every read - so a
+   preset you picked was saved to storage and thrown away at the next start.
 3. Removed the **Auto-detect details** feature (Settings toggle, “Fill in from picture” button, and OCR on new photos). Card details are only what you type in.
 4. Added a **Wallet & cover** on/off switch (Settings -> Pouch). Turning it off
    hides the pouch in Carousel and the frosted cover in Stack, leaving plain
@@ -33,11 +42,21 @@ This repo contains the patched source for the CardWallet app.
    patch refuses to write a bundle that does not parse.
    Behaviour is unchanged from the stock app (same three actions, same two
    dropdowns), so this is styling plus plumbing, not a feature swap.
+8. **Repairs to the pouch picker** (patch 9): re-inserts the **Pouch style**
+   section into the bundle that actually ships, and stops the settings loader
+   from forcing `theme=slate`, so a chosen preset now survives a restart.
+9. **Add-card pill on the empty wallet** (patch 11): the mock's wide black
+   capsule with the grey `+` disc at its left, drawn over the lower-right of the
+   pouch area - **without** the "Add Card" label, as asked. Tapping it opens the
+   same capture routes as the header `+`, with the menu flipping to open upward
+   from the bottom. It renders only when the wallet is empty (the mock is an
+   empty wallet), so on a fresh install - which seeds demo cards - you see it
+   after **☰ -> Delete all cards**. The header `+` keeps working; both are there.
 
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.
-- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch8),
+- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch11),
   plus the release toolchain: `build_release_apk.py` (build + sign),
   `build_debug_apk.py` (same bundle, throwaway debug key - for hands-on testing),
   `apkbuilder.py` (aligned zip, v1/v2/v3 signing, PKCS#12 keystore),
@@ -72,7 +91,15 @@ row flips with the theme instead of disappearing. Note `--solid` is `#111113`,
 the app's near-black, not the pure `#000` of the mock.
 
     python3 repo_export/patches/patch8_header_options.py   # JSON -> index.js
+    python3 repo_export/patches/patch9_restore_pouch_picker.py
+    python3 repo_export/patches/patch10_paper_pouch.py      # needs 9
+    python3 repo_export/patches/patch11_pouch_add_pill.py
     python3 repo_export/patches/build_debug_apk.py          # -> installable APK
+
+Every patch above takes `--check` (anchor sanity, no writes) and is safe to re-run:
+they recognise their own output instead of stacking copies. `patch7 --check` also
+tolerates its output being re-worded by patch 11. Order matters once: patch 10's
+swatch edits are anchored inside patch 9's block.
 
 patch 8 is idempotent: it writes a `/*cardwallet:header*/` marker over the span it
 owns and re-runs replace that span instead of stacking copies. `--check` validates
@@ -105,7 +132,7 @@ Verification gates:
 - `python3 patches/verify_release.py ../CardWallet_release.apk` - 29 package checks
   (the header ones read `header_options.json`, so a bundle that drifted from the
   config fails the build instead of shipping quietly)
-- `node patches/smoke_test_webview.mjs` - 64 web-layer checks (`npm i jsdom`)
+- `node patches/smoke_test_webview.mjs` - 83 web-layer checks (`npm i jsdom`)
 - `python3 patches/animation_audit.py` - static jank audit
 
 `verify_release.py` shells out to `apksigtool` for the v2/v3 checks

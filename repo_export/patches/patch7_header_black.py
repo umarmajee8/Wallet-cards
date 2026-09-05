@@ -120,19 +120,25 @@ NEW_ROW = (
 )
 
 # (already-applied shapes to migrate from, target, label)
+# The 4th field is a substring that only *this* patch writes, so the check still
+# recognises "applied" after a later patch re-words the surrounding span (patch 11
+# puts the menu's margin under a ternary, which would otherwise look like a stale
+# anchor here even though patch 7's panel/row styling is fully in place).
 EDITS = [
-    ([OLD_H], NEW_H, "svg size prop"),
-    ([OLD_BTN_V1, OLD_BTN_V2], NEW_BTN, "header buttons"),
-    ([OLD_PANEL], NEW_PANEL, "menu panel"),
-    ([OLD_ROW], NEW_ROW, "menu rows"),
+    ([OLD_H], NEW_H, "svg size prop", "size:cp?23:26"),
+    ([OLD_BTN_V1, OLD_BTN_V2], NEW_BTN, "header buttons", "`var(--solid)`"),
+    ([OLD_PANEL], NEW_PANEL, "menu panel", "background:`#0b0b0d`"),
+    ([OLD_ROW], NEW_ROW, "menu rows", "color:e.danger?`#ff453a`:`#fff`"),
 ]
 
 
-def find_anchor(data: str, olds: list[str], new: str) -> str | None:
+def find_anchor(data: str, olds: list[str], new: str, done: str | None = None) -> str | None:
     """The span to replace: the current output (already applied -> None) or the
     first older shape present exactly once."""
     if data.count(new) == 1 and all(data.count(o) == 0 for o in olds):
         return None
+    if done and all(data.count(o) == 0 for o in olds) and done in data:
+        return None  # applied, then re-worded by a later patch
     hits = [o for o in olds if data.count(o) == 1]
     if len(hits) != 1:
         raise AssertionError(f"expected exactly 1 of {len(olds) + 1} shapes, found {len(hits)}")
@@ -140,9 +146,9 @@ def find_anchor(data: str, olds: list[str], new: str) -> str | None:
 
 
 if CHECK:
-    for olds, new, label in EDITS:
+    for olds, new, label, done in EDITS:
         try:
-            find_anchor(data, olds, new)
+            find_anchor(data, olds, new, done)
             print(f"ok    {label}")
         except AssertionError as e:
             print(f"STALE {label}: {e}")
@@ -150,8 +156,8 @@ if CHECK:
     print("clean (all anchors present)")
     raise SystemExit(0)
 
-for olds, new, label in EDITS:
-    anchor = find_anchor(data, olds, new)
+for olds, new, label, done in EDITS:
+    anchor = find_anchor(data, olds, new, done)
     if anchor is None:
         print(f"skip  {label}: already applied")
         continue
