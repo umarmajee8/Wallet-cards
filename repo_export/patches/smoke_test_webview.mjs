@@ -152,6 +152,12 @@ check("feature entry point: settings persisted key initialised",
 // The bundle as text, for the few facts that only live in code (a guard branch that
 // must not exist, a ref that must be released) rather than in the rendered DOM.
 const BUNDLE_SRC = fs.readFileSync(path.join(APP, "index.js"), "utf8");
+// the carousel component (Td) as a source slice, for the mechanism checks in Test 6f
+const BUNDLE_CAROUSEL_SRC = (() => {
+  const i = BUNDLE_SRC.indexOf("function Td({cards:");
+  const j = BUNDLE_SRC.indexOf("var Ed=", i);
+  return i < 0 ? "" : BUNDLE_SRC.slice(i, j < 0 ? i + 9000 : j);
+})();
 const CARDS_KEY = "wallet.cards.v2";
 const SETTINGS_KEY = "wallet.settings.v1";
 // Real persisted shape (see om() in the bundle: entries need id + src).
@@ -701,6 +707,89 @@ for (const view of ["carousel", "stack"]) {
     "card rect + fallback");
   check("stack: tap clears drag.current so the deck resyncs to index changes",
     /if\(f!==1\)\{drag\.current=null;/.test(STACK_SRC), "ref released in the tap path");
+}
+
+// ---------------------------------------------------------------------------
+// Test 6f: carousel - the row can never rest half-shifted (patch14)
+//
+// Device report: after dragging a card toward the bottom of the screen the row
+// stopped half a card sideways (front pouch clipped by the left screen edge) and
+// stayed there, because the row only re-centres when a settle animation finishes
+// and Android had taken the pointer stream away (no pointerup -> no settle ever
+// scheduled). So: drag, deliberately never release, and require the row to recover.
+// ---------------------------------------------------------------------------
+{
+  const CARDS3c = JSON.stringify([
+    { id: "k1", src: "cards/one.jpg", title: "Kilo One", subtitle: "1", fields: [] },
+    { id: "k2", src: "cards/two.jpg", title: "Lima Two", subtitle: "2", fields: [] },
+    { id: "k3", src: "cards/three.jpg", title: "Mike Three", subtitle: "3", fields: [] },
+  ]);
+  const st = makeDom(
+    { [CARDS_KEY]: CARDS3c, [SETTINGS_KEY]: JSON.stringify({ view: "carousel", cover: true }) },
+    { withLayout: true },
+  );
+  runBundle(st.window, st.errors);
+  await settle(st.window, 900);
+  const Wc = st.window, Dc = Wc.document;
+  const ptr = (type, x, y) => {
+    const e = new Wc.MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(e, "isPrimary", { value: true });
+    Object.defineProperty(e, "pointerId", { value: 1 });
+    return e;
+  };
+  const styleOf = (el) => el?.getAttribute("style") || "";
+  const tx = (el) => parseFloat(styleOf(el).match(/translateX\((-?[\d.]+)px\)/)?.[1] ?? "0");
+  const zOf = (el) => parseInt(styleOf(el).match(/z-index:\s*(\d+)/)?.[1] ?? "0", 10);
+  const cardEls = () => [...Dc.querySelectorAll("#root div.absolute.top-0")];
+  const front = () => cardEls().sort((a, b) => zOf(b) - zOf(a))[0];
+  const stage = [...Dc.querySelectorAll("#root div")].find((d) => /perspective:\s*1200/.test(styleOf(d)));
+  // the drag layer is the *child* of the perspective box - onPointerDown lives on it
+  const dragLayer = [...Dc.querySelectorAll("#root div")].find(
+    (d) => /cursor-grab/.test(d.className || "") && /absolute/.test(d.className || ""),
+  );
+
+  check("carousel: pouch renders the row component", !!stage && !!dragLayer && cardEls().length >= 3,
+    `${cardEls().length} card wrappers`);
+
+  // jsdom has no layout, so aim at the middle of the window: only the *delta*
+  // matters to the drag handler, hit-testing does not exist here
+  const cx = (Wc.innerWidth || 800) / 2, cy = (Wc.innerHeight || 600) / 2;
+  // `shifted` is measured while the row is still held off-centre - well inside the
+  // 340ms idle window - so this can never race the watchdog on a slow machine.
+  const drag = async (dx, release) => {
+    (dragLayer || stage)?.dispatchEvent(ptr("pointerdown", cx, cy));
+    for (let i = 1; i <= 4; i++) {
+      Wc.dispatchEvent(ptr("pointermove", cx + (dx * i) / 4, cy));
+      await settle(Wc, 30);
+    }
+    const shifted = tx(front());
+    if (release) {
+      Wc.dispatchEvent(ptr("pointerup", cx + dx, cy));
+      await settle(Wc, 1200);
+    }
+    return shifted;
+  };
+
+  const txAtRest = tx(front());
+  const txHeld = await drag(110, false);   // gesture stolen by the system: never released
+  check("carousel: an unreleased drag really does leave the row off-centre",
+    Math.abs(txHeld - txAtRest) > 4, `front card x ${txHeld.toFixed(1)}px (was ${txAtRest.toFixed(1)}px)`);
+
+  await settle(Wc, 1200);           // the idle watchdog gets ~0.7s of quiet
+  const txRecovered = tx(front());
+  check("carousel: watchdog re-centres the row with no pointerup", Math.abs(txRecovered) < 2,
+    `front card x ${txRecovered.toFixed(2)}px after the idle window`);
+
+  await drag(240, true);            // ordinary swipe still works
+  const txAfterSwipe = tx(front());
+  check("carousel: a normal drag+release still settles centred", Math.abs(txAfterSwipe) < 2,
+    `front card x ${txAfterSwipe.toFixed(2)}px`);
+
+  check("carousel: grabbing mid-glide finishes the settle instead of dropping it",
+    /T\.current\?\.\(\),g\.current&&y\(\);let sl=u\.slide\|\|1/.test(BUNDLE_CAROUSEL_SRC),
+    "pointerdown calls y()");
+  check("carousel: no console errors while the row recovers", st.errors.length === 0,
+    st.errors.slice(0, 1).join("").slice(0, 160));
 }
 
 // ---------------------------------------------------------------------------

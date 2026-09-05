@@ -506,3 +506,60 @@ byte-identical. `animation_audit`: same 10 checks / 1 pre-existing WARN.
 `ede71942680958b9bb500af25c202cb1fad6f447b1f1b581d4ac0356a5f4900d`, same debug key
 (`adb install -r`). **Device par abhi verify nahi hua** - `docs/DEVICE_TEST_PLAN.md`
 §N (N3/N4/N4b/N4c is round ke rows hain).
+
+---
+
+## 11. Carousel: row kabhi aadha hat kar nahi rukta (patch 14), 2026-09-05
+
+**Khulasa (Urdu):** Aap ne screenshot bheja ke card drag karte waqt "atak jata ha" aur
+"aik side pr ho jata ha", aur neeche walay grey pill ko hataane ko kaha. Do alag baatein
+saamne aayin:
+
+* woh grey pill **app ka element hi nahi** - yeh Android ki system gesture / nav bar ha.
+  Bundle mein app ke region mein koi bottom sheet / handle / `fixed inset-x-0 bottom`
+  element nahi (grep se confirm), is liye usay "remove" karna app se possible nahi.
+* card ka side par atakna **asli bug** ha, aur uski wajah bhi wohi area ha: jahan se
+  gesture system le leta ha.
+
+**Wajah (code).** Carousel ki poori row ek shared spring `d` se banti ha - har card
+`offset + d/slide` par rehta ha, yaani row sirf tab centre mein hoti ha jab `d == 0`. Aur
+`d` ko 0 par laane ki jagah sirf `y()` ha, jo settle animation ka `onComplete` ha:
+
+    b=e=>{...g.current=Ju(d,-e*u.slide,{...Cd,onComplete:y})}
+    y=()=>{g.current?.stop(),g.current=null;let e=_.current;_.current=0,e&&(h.current+=e,i(h.current)),d.jump(0)}
+
+Teen raste the jin mein wo kabhi chalta hi nahi: (1) **stolen gesture** - Android pointer
+stream le leta ha, hamara `end` hi nahi chalta, `b()` call nahi hoti, `d` adhuri value par
+ruk jata ha; (2) **mid-glide grab** - `onPointerDown` ka `g.current?.stop(),g.current=null`
+glide maarta ha magar `y()` nahi chalata, so pending index step drop; (3) 1-2px ka residual
+kabhi theek nahi hota.
+
+**Fix (do edits, sirf `function Td({cards:` ke andar).** pointerdown ab in-flight settle ko
+*finish* karta ha (`g.current&&y()`) - kuch drop nahi hota aur snap ki zaroorat hi nahi. Doosra:
+row par ek idle watchdog jo 340ms khamoshi ke baad nearest index commit karke `d.jump(0)` karta
+ha. Guard yeh ha ke glide chal rahi ho (`g.current`) to haath na lagaye, aur finger abhi move kar
+raha ho to ek baar 340ms aur intezaar (`grace++<1`) - warna user ka rok kar rakha hua card kheench
+diya jata. Watchdog window ke apne `pointermove`/`pointerdown` events se `last` stamp karta ha,
+live-pointer *count* is liye nahi rakha ke stolen gesture release kabhi report hi nahi karta -
+count hamesha "finger down" par atak jata.
+
+**Kya nahi badla:** spacing, `paddingBottom` (stock 58px), safe-area, colours, springs, snap
+targets. Aap ne safe-area wala option choose nahi kiya, so wo nahi kia.
+
+**Gates.** Smoke **85/85** (pehle 79). 6 naye carousel checks jsdom mein sachay pointer events
+chalate hain aur pehle *symptom reproduce* karte hain: drag ke baad jaan boojh `pointerup` na
+bhejein (system gesture le raha ha) → front card ka `translateX` **58.4px** par atak jata ha -
+yehi aap ki screenshot wala state ha - phir watchdog usay **0.00px** par le aata ha. patch14
+hata kar wahi run chalane par woh check **58.36px par FAIL** hota ha (83/85): yaani test waqai
+us bug ko pakadta ha, khud-bakhud pass nahi hota. Normal drag+release (240px swipe) ab bhi
+centre par settle karta ha, aur console errors zero.
+
+Patch discipline: chain replay stock→7→8→12→13→14 byte-identical; `--check` clean; re-run
+no-op. Yahan ek naya sabak mila - watchdog edit *insertion* ha (uska anchor usi ke naye text ka
+prefix ha), is liye "anchor maujood = pending" wala rule dobara lagane par **do watchdog** bana
+raha tha; `status()` ab pehle "applied" check karta ha. `verify_release.py` 28/29 (ek FAIL
+jaan boojh: debug cert subject). `animation_audit`: same 10 checks / 1 pre-existing WARN.
+
+**Build.** `CardWallet_header_black.apk` = 11,648,763 bytes, sha256
+`c5a8f69a8f18d54c1616d26cf3b059742d389a1f67ccf77ea2c1fde3bb3204ca`, same debug key
+(`adb install -r`, data salamat). Device rows: `docs/DEVICE_TEST_PLAN.md` §O (O1-O6).

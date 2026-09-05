@@ -230,11 +230,33 @@ in patch 13 (lift distance `.11`, spring `520/34/.6`, flap `.26s`, handoff `170m
 - and the remaining cost is the flap's blur at rest, which stays because it is the
 look.
 
+## O. Carousel: a card that stops half-shifted must recover on its own (patch 14)
+
+Context for these rows: the grey pill marked in the report is the phone's **system**
+gesture bar - there is no app element there to remove, and no padding/safe-area was
+touched. What patch 14 fixes is the *stuck row*: a swipe the system eats used to leave
+the pouch resting half a card sideways, with the front card clipped by the screen edge
+and its title cut (`...ar`).
+
+| # | Step | Expected |
+|---|---|---|
+| O1 | Carousel (default pouch view): drag a card sideways, release normally | Unchanged feel - snaps to a card, centred. This patch must not make the gesture heavier or add a second animation |
+| O2 | Drag a card only about half a card-width, then flick **down into the bottom gesture bar** so Android takes the swipe (or let a back-gesture / notification cancel it) | Within ~0.3-0.7s the row finishes settling by itself: the nearest card centres, nothing rests half-clipped by the screen edge |
+| O3 | Drag a card, then hold it still under your finger (~half a card out of place) | Not yanked while you are moving. After a long still hold (~0.7s) it may snap to the nearest card - that is the deliberate trade; note it if it feels intrusive |
+| O4 | Interrupt the row *while it is gliding* to a card (touch down mid-animation) | The pending step is committed, then your finger takes over. Used to stick sideways and then jump |
+| O5 | Leave the pouch alone for a second and look at the resting row | Exactly centred: no sub-pixel lean, front card's title not clipped by an offset |
+| O6 | Bottom of the screen | No visual change expected here (stock 58px padding kept). Confirm nothing new is clipped behind the gesture bar |
+
+If O2 still shows a stuck card, the useful detail is *which* gesture ate it (edge
+back-swipe, notification shade, recents) - the watchdog only gives up while a glide is
+already running, so a stuck row after ~1s would mean the row was left mid-animation by
+something else.
+
 ---
 
 ## Sign-off
 
-The build may only be called production-ready once A–N are green on at least
+The build may only be called production-ready once A–O are green on at least
 one physical device. Record device model, Android version and result per row,
 and file anything that fails with the section id (e.g. "F3 fails: Back exits
 the app with Settings open").

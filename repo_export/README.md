@@ -62,12 +62,25 @@ This repo contains the patched source for the CardWallet app.
    eject - and the motion is faster (flap .4 -> .26s, lift spring 240/18/.85 ->
    520/34/.6, cover-off handoff 240 -> 170ms). The sheet also now starts from the
    *card's* rect rather than the stage centre, which the in-place eject made visible.
+10. **The carousel row can no longer rest half-shifted** (patch 14). The pouch row is
+   positioned by one shared spring, and it is exactly centred only when that spring is back
+   at 0 - which happens in exactly one place: a settle animation's completion. So a swipe
+   whose pointer stream Android takes away (the bottom gesture strip - the region marked in
+   the device report) never reaches the release handler, nothing schedules a settle, and the
+   row just sat half a card sideways with no recovery. Two edits: grabbing the row
+   mid-glide now *finishes* the pending settle instead of stopping the animation and
+   silently dropping the index step (the "sticks, then jumps" feeling), and an idle watchdog
+   commits to the nearest index and re-centres ~0.3s after the row goes still - guarded by
+   one 340ms grace re-arm on the same window `pointermove`/`pointerdown` events the drag
+   itself uses, so an actively held card is never yanked. Sub-pixel drift is cleaned up too.
+   Same springs, same snap targets; no layout, padding or safe-area change (that part of the
+   report was the phone's own bar, which the app cannot remove).
 
 
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.
-- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch13),
+- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch14),
   plus the release toolchain: `build_release_apk.py` (build + sign),
   `build_debug_apk.py` (same bundle, throwaway debug key - for hands-on testing),
   `apkbuilder.py` (aligned zip, v1/v2/v3 signing, PKCS#12 keystore),
@@ -135,7 +148,9 @@ Verification gates:
 - `python3 patches/verify_release.py ../CardWallet_release.apk` - 29 package checks
   (the header ones read `header_options.json`, so a bundle that drifted from the
   config fails the build instead of shipping quietly)
-- `node patches/smoke_test_webview.mjs` - 79 web-layer checks (`npm i jsdom`)
+- `node patches/smoke_test_webview.mjs` - 85 web-layer checks (`npm i jsdom`);
+  6 of them drive the carousel with real pointer events and reproduce the stuck
+  half-shifted row (58.4px) before proving it recovers to 0.00px
 - `python3 patches/animation_audit.py` - static jank audit
 
 `verify_release.py` shells out to `apksigtool` for the v2/v3 checks
