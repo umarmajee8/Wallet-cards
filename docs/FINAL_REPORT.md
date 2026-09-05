@@ -458,3 +458,51 @@ deliberate metaphor, not a bug; say the word if you want side pouches tappable.
 Artifact: `CardWallet_header_black.apk` rebuilt (the filename is now just the
 link that is stable) - see the sha256 in the commit message. Still **not**
 verified on a device: `docs/DEVICE_TEST_PLAN.md` §N.
+
+## 10. Stack eject: in place, and cheaper (patch 13), 2026-09-05
+
+**Khulasa (Urdu):** Aap ne kaha *"thora sa laggy lagta ha card jab card nikalta ha,
+lakin side sy ata ha"*. Dono ka ilaaj ho gaya - ab card **wahin se bahir** aata hai
+jo card aap ne touch kiya (koi side-slide nahi), aur motion sasti + tez kar di.
+
+Side-entry kyun thi: patch 12 neighbour-tap par pehle `snap(n,.24)` karta tha -
+yaani poora fan tween ho ke us card ko centre laata. Centre se ~19% hat kar tap
+lagne par bhi wohi path chalta, is liye zyada tar taps "side se aate" dikhe.
+Ab tap kuch re-order nahi karta: card apni hi jagah se lift + 5% grow karta hai,
+aur deck ka index us waqt update hota hai jab detail sheet ka apna opaque backdrop
+(`rgba(9,9,11,.94)`) screen ko dhak chuka hota hai - wo re-order dikhta hi nahi.
+Sheet band karne par jo card khola tha wahi front par hota hai.
+
+Lag ke 3 asli cost, teeno hataye:
+
+| cost | pehle | ab |
+|---|---|---|
+| flap `backdrop-filter:blur(22px) saturate(1.6)` on an element animating `rotateX` | re-blurs the backdrop every frame - sab se mehnga | fold ke dauran `none`, rest par wapas (frosted look zinda hai) |
+| growth on the photo's `absolute overflow-hidden` box | scaling a clipped, rounded layer re-rasterises the clip each frame | rides the card's existing `scale` spring (`d`) - koi extra animated element nahi |
+| neighbours `blur(10px)` while the fan tweened | blur on *moving* layers | `blur(6px)` + they no longer move during the eject (a side effect of removing the sweep) |
+| timings | flap .4s, lift spring 240/18/.85, cover-off wait 240ms | .26s, 520/34/.6, 170ms |
+
+In-place eject ne ek chhupa hua bug bhi ubaala: `__cwStack` hand-off par detail sheet
+ko **stage-centre** rect deta tha, card ka apna rect nahi. Front card ke liye wo takreeban
+theek tha; ab card side mein uth raha tha to sheet beech se zoom karti (jump).
+`__cwCoverCard` ab khud `getBoundingClientRect()` nape kar bhejta hai, aur stage box
+sirf fallback hai.
+
+Gates: smoke **79/79** (was 72) - 15 stack checks ab real pointer events chalate
+hain aur DOM se proof lete hain: tapped neighbour eject hota hai (front nahi), uska
+`translateY` ~-46..-57px hai **jabke uska `translateX` apne slot par 229.5px hi rehta
+hai** (yaani koi side travel nahi), mid-motion par doosre cards ka `transform`
+bilkul nahi badalta (deck sweep not happening), flap ka `backdrop-filter: none`
+jab tak fold ho rahi hai aur `blur(22px) saturate(1.6)` wapas jab card neeche aaye,
+neighbours par `blur(6px)`, sheet khulti hai, **close karne par deck us card ko front
+par le aata hai aur lift release ho jata hai** (`y=0, x=0, z-index:12`), swipe se
+deck flip hota hai aur kuch nahi khulta, aur zero console errors.
+Code-level: `patch12`/`patch13` dono idempotent; patch 12 ko "superseded" marker
+dena pada kyunke patch 13 uski ek edit jaan boojh revert karti hai (warna re-run
+us edit ko dobara laga ke clip wapas le aata). Chain 7->8->12->13 stock se replay =
+byte-identical. `animation_audit`: same 10 checks / 1 pre-existing WARN.
+
+`CardWallet_header_black.apk` = 11,648,558 bytes, sha256
+`ede71942680958b9bb500af25c202cb1fad6f447b1f1b581d4ac0356a5f4900d`, same debug key
+(`adb install -r`). **Device par abhi verify nahi hua** - `docs/DEVICE_TEST_PLAN.md`
+§N (N3/N4/N4b/N4c is round ke rows hain).

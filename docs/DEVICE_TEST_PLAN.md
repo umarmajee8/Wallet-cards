@@ -205,7 +205,7 @@ rides the app's own `--solid`/`--on-solid`/`--ink` tokens so it inverts.
 
 ---
 
-## N. Stack layout: tap-to-eject (patch 12)
+## N. Stack layout: tap-to-eject (patches 12 + 13)
 
 The old behaviour was only visible on a real screen, so this is the row that
 matters most: the machine can prove the tap opens, but not whether it *reads* well.
@@ -214,8 +214,10 @@ matters most: the machine can prove the tap opens, but not whether it *reads* we
 |---|---|---|
 | N1 | Settings -> Layout -> Stack | Deck of cards fanned left/right, front card centred |
 | N2 | Tap the **front** card | It rises out of the deck (~57px on a phone) with the frosted flap folding back, then the detail sheet opens from that card |
-| N3 | Tap a card at the **left or right edge** of the deck (a neighbour, not the front one) | **That** card comes forward, lifts out and opens. Previously this was the bug: the whole fan swept sideways and nothing opened |
-| N4 | Watch N3 closely | One motion, not two - the neighbour slides in *while* lifting, no separate "rotate the deck" animation before the sheet, no bounce-back, no card landing in the wrong place |
+| N3 | Tap a card at the **left or right edge** of the deck (a neighbour, not the front one) | **That** card rises out of the slot it is in and opens. It must NOT travel sideways first (that was the original bug, then a slide-in - patch 13 removed the deck tween entirely) |
+| N4 | Watch the motion, slowly if you can | One move, straight out: lift + a 5% grow + the flap folding, ~a quarter second. No sideways entry, no bounce-back, no deck rotation, no frame hitch while the flap folds |
+| N4b | Frosted cover while folding | The flap may lose its background blur mid-fold (that is the deliberate cost cut) but must look frosted again once the card is back. If it flickers visibly, say so |
+| N4c | Close the sheet | Deck lands with the card you opened at the front, and the card is not stuck lifted/zoomed. The re-order happens behind the sheet, so you should not see cards shuffle |
 | N5 | Swipe horizontally on the deck | Still flips cards (that gesture must not open anything); the card you land on is the one a tap would open |
 | N6 | Close the sheet (swipe down / backdrop) | Deck is left with the card you opened at the front; that card is not stuck lifted/zoomed and not blurred |
 | N7 | Tidy-up check: open a card, close, open another 5-6 times | No drift - after the first tap the deck used to stop resyncing its position (a leaked `drag.current`); the fan should still follow card adds/selection changes |
@@ -223,7 +225,10 @@ matters most: the machine can prove the tap opens, but not whether it *reads* we
 | N9 | Carousel layout, tap a card in the pouch | Unchanged by this patch: card slides up out of the sleeve and opens. Only the middle pouch is tappable - side pouches need a swipe first (stock behaviour, tell me if you want it changed) |
 
 N2/N3/N4 are the acceptance rows for this change; N7 is the regression guard for
-the ref-leak fix.
+the ref-leak fix. If the motion still feels heavy on a low-end phone, the knobs are
+in patch 13 (lift distance `.11`, spring `520/34/.6`, flap `.26s`, handoff `170ms`)
+- and the remaining cost is the flap's blur at rest, which stays because it is the
+look.
 
 ---
 

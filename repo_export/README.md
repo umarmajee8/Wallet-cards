@@ -47,11 +47,27 @@ This repo contains the patched source for the CardWallet app.
    `drag.current` ref the tap path used to leave set, which is why the deck stopped
    resyncing to programmatic index changes after the first tap.
 
+9. **Stack eject comes straight out, and stops paying for blur mid-motion** (patch 13,
+   on top of 12): a tap no longer tweens the fan at all. The tapped card lifts out of
+   its own slot (`y:-11%` of the card box) and grows on the card's existing `scale`
+   spring; the deck's index is updated when the detail sheet hands over, i.e. behind
+   the sheet's own opaque backdrop, where the re-order cannot be seen - so "the card
+   comes in from the side" is gone, and closing leaves the card you opened at the
+   front. Cost fixes for the "laggy" feel: the flap's `backdrop-filter:blur(22px
+   saturate(1.6))` is dropped for the duration of the fold (re-blurring a backdrop
+   behind a moving layer is the most expensive thing here) and restored at rest, the
+   growth moved off the clipped photo box (scaling a rounded, `overflow-hidden`
+   element re-rasterises the clip every frame), neighbours dim with `blur(6px)`
+   instead of `blur(10px)` - affordable now that they no longer move during the
+   eject - and the motion is faster (flap .4 -> .26s, lift spring 240/18/.85 ->
+   520/34/.6, cover-off handoff 240 -> 170ms). The sheet also now starts from the
+   *card's* rect rather than the stage centre, which the in-place eject made visible.
+
 
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.
-- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch12),
+- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch13),
   plus the release toolchain: `build_release_apk.py` (build + sign),
   `build_debug_apk.py` (same bundle, throwaway debug key - for hands-on testing),
   `apkbuilder.py` (aligned zip, v1/v2/v3 signing, PKCS#12 keystore),
@@ -119,7 +135,7 @@ Verification gates:
 - `python3 patches/verify_release.py ../CardWallet_release.apk` - 29 package checks
   (the header ones read `header_options.json`, so a bundle that drifted from the
   config fails the build instead of shipping quietly)
-- `node patches/smoke_test_webview.mjs` - 72 web-layer checks (`npm i jsdom`)
+- `node patches/smoke_test_webview.mjs` - 79 web-layer checks (`npm i jsdom`)
 - `python3 patches/animation_audit.py` - static jank audit
 
 `verify_release.py` shells out to `apksigtool` for the v2/v3 checks

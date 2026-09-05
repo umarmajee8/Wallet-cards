@@ -105,6 +105,26 @@ EDITS = [
 MARK = "ly=wu(0)"
 
 
+# Patch 13 deliberately re-words two of the spans below (the tap path and the
+# growth). These substrings say "patch 12's change is still in there, just
+# re-worded downstream", so --check on a fully patched bundle stays clean instead
+# of crying STALE - the same trick patch 7 uses.
+DOWNSTREAM_KEEP = {
+    "snap duration arg": "snap=(e,dur=.34)=>",
+    "tap opens the tapped card": "if(f!==1){drag.current=null;",
+    "lift motion value": "ly=wu(0)",
+    "eject lift + handoff": "Ju(ly,s?-i*.11:0",
+    "lift applied to the card": ",y:ly,x:a,z:o,",
+}
+
+
+# Edits a later patch deliberately *reverts* (not re-words): the marker proves the
+# follow-up is in place, so re-running patch 12 must not re-apply and undo it.
+SUPERSEDED = {
+    "photo grows 5%": "Ju(d,s?1.05:1,n)",  # patch 13: scaling the clipped photo box
+}                                           # re-rasters the clip every frame
+
+
 def status(data):
     """(pending, applied, unrecognised).
 
@@ -115,11 +135,16 @@ def status(data):
     """
     todo, done, bad = [], [], []
     for old, new, label in EDITS:
+        keep = DOWNSTREAM_KEEP.get(label)
+        sup = SUPERSEDED.get(label)
+        if sup and sup in data:
+            done.append(label)
+            continue
         if old in new and data.count(new) >= 1:
             done.append(label)
         elif data.count(old) == 1:
             todo.append((old, new, label))
-        elif data.count(new) >= 1:
+        elif data.count(new) >= 1 or (keep and keep in data):
             done.append(label)
         else:
             bad.append(label)

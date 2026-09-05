@@ -575,8 +575,7 @@ for (const view of ["carousel", "stack"]) {
     dark.errors.slice(0, 1).join("").slice(0, 150));
 }
 
-// ---------------------------------------------------------------------------
-// Test 6e: stack - tapping a card ejects it and opens it (patch12)
+// Test 6e: stack - tap ejects the tapped card in place (patch12 + patch13)
 // ---------------------------------------------------------------------------
 {
   const CARDS3 = JSON.stringify([
@@ -584,8 +583,6 @@ for (const view of ["carousel", "stack"]) {
     { id: "c2", src: "cards/two.jpg", title: "Bravo Two", subtitle: "2", fields: [] },
     { id: "c3", src: "cards/three.jpg", title: "Charlie Three", subtitle: "3", fields: [] },
   ]);
-  const open = () => /WhatsApp/.test(Ds.getElementById("root").textContent || "");
-  const cards = () => [...Ds.querySelectorAll("#root div.absolute.no-select")];
   const st = makeDom(
     { [CARDS_KEY]: CARDS3, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) },
     { withLayout: true },
@@ -599,32 +596,67 @@ for (const view of ["carousel", "stack"]) {
     Object.defineProperty(e, "pointerId", { value: 1 });
     return e;
   };
-  const stage = [...Ds.querySelectorAll("#root div")].find((d) => /perspective:\s*1200/.test(d.getAttribute("style") || ""));
-  const beforeT = cards().map((el) => el.getAttribute("style") || "");
+  const open = () => /WhatsApp/.test(Ds.getElementById("root").textContent || "");
+  const cards = () => [...Ds.querySelectorAll("#root div.absolute.no-select")];
+  const styleOf = (el) => el?.getAttribute("style") || "";
+  const num = (re, el) => parseFloat(styleOf(el).match(re)?.[1] ?? "0");
+  const ty = (el) => num(/translateY\((-?[\d.]+)px\)/, el);
+  const tx = (el) => num(/translateX\((-?[\d.]+)px\)/, el);
+
+  const stage = [...Ds.querySelectorAll("#root div")].find((d) => /perspective:\s*1200/.test(styleOf(d)));
+  const transformOf = (el) => styleOf(el).match(/transform:[^;]*/)?.[0] || "";
+  const flapOf = (el) => [...(el?.querySelectorAll("div") || [])].find((d) => /backdrop-filter/.test(styleOf(d)));
+  const before = cards().map(styleOf);
+  const beforeT = cards().map(transformOf);
   check("stack: three cards are on screen and nothing is open yet", cards().length === 3 && !open(),
     `cards=${cards().length} open=${open()}`);
 
-  // with the layout mock the stage box is left:45 width:300, so x=280 maps to the
-  // card BEHIND the front one - exactly the tap that used to only sweep the deck.
+  // The layout mock puts the stage box at left:45 width:300, so x=280 maps to the
+  // card BEHIND the front one - the tap that used to sweep the whole fan sideways.
   stage.dispatchEvent(ptr("pointerdown", 280, 300));
   await settle(Ws, 80);
   Ws.dispatchEvent(ptr("pointerup", 280, 300));
-  await settle(Ws, 900);
-  const after = cards();
-  const raised = after.findIndex((el) => /z-index:\s*40/.test(el.getAttribute("style") || ""));
+  await settle(Ws, 120);                       // mid-eject; the hand-off is ~260ms
+  const mid = cards();
+  const ejectedAt = mid.findIndex((el) => /z-index:\s*40/.test(styleOf(el)));
   check("stack: the tapped card - not the front one - is the one that came out",
-    raised === 1, `ejected index=${raised} (0 would mean the deck ignored the tap)`);
-  // framer writes the transform as functions, so the lift is readable directly:
-  // the ejected card must carry a negative translateY, the resting ones must not.
-  const ty = (el) => parseFloat((el?.getAttribute("style") || "").match(/translateY\((-?[\d.]+)px\)/)?.[1] ?? "0");
-  check("stack: that card lifts out of the deck on its own axis (translateY, not only the flap)",
-    ty(after[1]) < -40 && ty(after[1]) > -90 && ty(after[0]) === 0,
-    `lift=${ty(after[1])}px (expect ~-57px = ch*0.11), neighbour y=${ty(after[0])}px`);
-  check("stack: the opened card then shows its details", open(),
-    open() ? "sheet open on the tapped card" : (Ds.getElementById("root").textContent || "").slice(0, 60));
-  check("stack: no console errors from the tap", st.errors.length === 0, st.errors.slice(0, 1).join("").slice(0, 150));
+    ejectedAt === 1, `ejected index=${ejectedAt} (0 would mean the deck ignored the tap)`);
+  check("stack: it lifts straight out - same slot, no sideways travel",
+    ty(mid[1]) < -40 && ty(mid[1]) > -90 && tx(mid[1]) === tx(cards()[1]) ||
+      (ty(mid[1]) < -40 && Math.abs(tx(mid[1]) - 229.5) < 0.5),
+    `y=${ty(mid[1])}px, x=${tx(mid[1])}px (its resting slot is 229.5px)`);
+  // the neighbours DO restyle at eject time (they gain the dim blur) - what must
+  // not happen is that they MOVE: that is the deck sweep the old tap used to do.
+  check("stack: no deck sweep - the other cards have not moved at all yet",
+    transformOf(mid[0]) === beforeT[0] && transformOf(mid[2]) === beforeT[2],
+    `card0 moved=${transformOf(mid[0]) !== beforeT[0]} card2 moved=${transformOf(mid[2]) !== beforeT[2]}`);
+  const flap = flapOf(mid[1]);
+  check("stack: the frosted flap stops blurring while it folds (the expensive part)",
+    /backdrop-filter:\s*none/.test(styleOf(flap)), (styleOf(flap).match(/backdrop-filter:[^;]*/) || ["-"])[0]);
+  check("stack: neighbours dim with a cheap static blur instead of a heavy one",
+    /filter:\s*blur\(6px\)/.test(styleOf(mid[0])), (styleOf(mid[0]).match(/filter:[^;]*/) || ["-"])[0]);
 
-  // a swipe must stay a swipe: change card, open nothing
+  await settle(Ws, 800);
+  check("stack: the tapped card then shows its details", open(),
+    open() ? "sheet open on the tapped card" : (Ds.getElementById("root").textContent || "").slice(0, 60));
+  check("stack: no console errors from the tap", st.errors.length === 0,
+    st.errors.slice(0, 1).join("").slice(0, 150));
+
+  // Closing hands the deck over: the card that was opened becomes the front one,
+  // and the lift/flap state is fully released (no stuck card).
+  const sheet = [...Ds.querySelectorAll("#root div")].find((d) => /z-50/.test(d.className || ""));
+  sheet?.dispatchEvent(new Ws.MouseEvent("click", { bubbles: true }));
+  await settle(Ws, 1200);
+  const back = cards();
+  check("stack: after closing, the deck follows the card you opened - nothing stuck lifted",
+    !open() && ty(back[1]) === 0 && tx(back[1]) === 0 && !/z-index:\s*40/.test(styleOf(back[1])),
+    `open=${open()} y=${ty(back[1])} x=${tx(back[1])}`);
+  const flapBack = flapOf(back[1]);
+  check("stack: the frosted look returns at rest (blur is only dropped mid-motion)",
+    /blur\(22px\) saturate\(1\.6\)/.test(styleOf(flapBack)),
+    (styleOf(flapBack).match(/backdrop-filter:[^;]*/) || ["-"])[0]);
+
+  // a swipe must stay a swipe: flip the deck, open nothing
   const sw = makeDom(
     { [CARDS_KEY]: CARDS3, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) },
     { withLayout: true },
@@ -651,12 +683,24 @@ for (const view of ["carousel", "stack"]) {
   check("stack: a horizontal drag still flips the deck without opening anything",
     !swOpen && sw.errors.length === 0, `open=${swOpen} err=${sw.errors.length}`);
 
-  // the two code-level guards behind the above
-  check("stack: tap path no longer returns before opening (snap-only branch is gone)",
-    !/if\(n!==Math\.round\(d\)\)\{snap\(n\);return\}/.test(BUNDLE_SRC) &&
-      /snap\(n,\.24\),a\(c\);return/.test(BUNDLE_SRC), "tap maps then opens");
+  // the code-level guards the behaviour above rests on
+  const STACK_SRC = BUNDLE_SRC.split("function __cwStack")[1]?.split("function Td")[0] || "";
+  const CARD_SRC = BUNDLE_SRC.split("function __cwCoverCard")[1]?.split("function __cwStack")[0] || "";
+  // the tap branch runs from `if(f!==1){` to the start of the drag path; a regex
+  // over minified JS with nested braces is not worth it
+  const tFrom = STACK_SRC.indexOf("if(f!==1){"), tTo = STACK_SRC.indexOf("drag.current=null;let e2");
+  const tapBranch = tFrom >= 0 && tTo > tFrom ? STACK_SRC.slice(tFrom, tTo) : "";
+  check("stack: the tap path never tweens the deck (no snap call on tap at all)",
+    /a\(c\);return/.test(tapBranch) && !/snap\(/.test(tapBranch) && /drag\.current=null/.test(tapBranch),
+    `tap branch: snap=${/snap\(/.test(tapBranch)} open=${/a\(c\);return/.test(tapBranch)}`);
+  check("stack: the growth rides the card's own scale spring, not an animated clip",
+    /Ju\(d,s\?1\.05:1,n\)/.test(CARD_SRC) && !/animate:\{scale:s\?1\.05:1\}/.test(CARD_SRC),
+    "no per-frame clip re-raster");
+  check("stack: the sheet starts at the card's own rect, stage box only as fallback",
+    /rect:r0\?\{top:r0\.top,left:r0\.left,width:r0\.width,height:r0\.height\}/.test(STACK_SRC),
+    "card rect + fallback");
   check("stack: tap clears drag.current so the deck resyncs to index changes",
-    /if\(f!==1\)\{drag\.current=null;/.test(BUNDLE_SRC), "ref released in the tap path");
+    /if\(f!==1\)\{drag\.current=null;/.test(STACK_SRC), "ref released in the tap path");
 }
 
 // ---------------------------------------------------------------------------
