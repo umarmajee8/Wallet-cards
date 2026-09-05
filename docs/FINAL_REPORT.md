@@ -631,3 +631,51 @@ subject). `animation_audit` 10 checks / 1 pre-existing WARN.
 `7f251342aefeffccd8ec5b4c6fcc227e00d95334d98ab7073196107e47036453`, same debug key
 (`adb install -r`). Device rows: `docs/DEVICE_TEST_PLAN.md` §P (P1-P8), aur §O ab
 safety-net rows hain.
+
+## 13. Cover ka colour, NFC off, light default, header "Wallet" (patch 17), 2026-09-05
+
+Chaar maang, ek patch.
+
+1. *"Stack meh jo cover ha blur wala us ko khatam kro, or jo colour pic karte thy … wo us ki
+   jaga laga do."* patch15 ne sirf `backdrop-filter` prop hata ya tha — uski jagah wahi ek
+   translucent glass panel bacha hua tha, is liye device par "kuch nahi hua" lagta raha. Ab
+   panel khud wohi colour pehanta ha jo pouch ke liye pick hota ha: card ka apna `color`,
+   warna wallet ka `custom.color`/`slateColor` — aur wohi bundle ka helper `td(hex, mul)`
+   jo carousel ka tray gradient banata ha, so moonh par halka, beech main colour, neeche
+   dark; border aur rim bhi usi colour se. Panel opaque ha, card peeche se jhankta nahi.
+2. *"nfc auto off rakho."* Default `nfc:!1`, aur loader me `n.nfc=!1` — stock ka apna
+   `n.autoDetect=!1` wala tareeqa — taake purani install ka saved `nfc:true` feature wapas na
+   le aaye (warna "default badal dia" sun kar device par phir "Nhi tum ny fix kia" hota).
+   Settings ka NFC row bhi feature ke sath hata diya: toggle jo relaunch par reset ho jaye,
+   us se behtar ha ke woh na ho.
+3. *"auto light mode rakho."* `appearance` ka default `light`. Jo install purana default
+   `system` liye baithi ha, usay **ek baar** migrate kiya jata ha (`appearanceMigrated` flag),
+   taake baad me chuna hua System/Dark salamat rahe — System ab bhi phone ke sath chalta ha.
+4. *"header pr top left corner pr bara bold Wallet likho, font ios wala ho."* 28px / weight
+   800, `-0.6px` tracking, `-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro
+   Text", "Helvetica Neue", Inter, …` stack, colour `var(--ink)` (dark theme me bhi parhi
+   jaye), `margin-right:auto` se 3 icons dayein taraf pehli tarah. Wordmark patch8 ke
+   `/*cardwallet:header*/` marker ke **baad** insert hua, warna patch8 ki verification toot
+   jati.
+
+**Gates.** Smoke 115 -> **138**. Test 6i me `matchMedia` ko jaan boojh kar "dark" par stub kiya
+gaya — warna "light default" ka check khali-khali pass hota, kyunke jsdom me waise bhi dark
+nahi milta. Proof: fresh install par `dark` class nahi aati, `+` menu me "Tap a bank card"
+nahi, Settings me NFC row nahi, aur sheet ka selected segment **Light**; `{appearance:'system'}`
+wala fixture migrate hoke Light, `{appearance:'system', appearanceMigrated:true}` wala System
+hi rehta ha (yaani feature nahi toda), `{appearance:'dark'}` wala dark. Cover: wallet
+`#2d4a3e` par panel `rgb(53, 87, 73) 0%, rgb(45, 74, 62) 52%, rgb(31, 52, 43) 100%` aur rim
+`rgb(25, 41, 34)`; apna colour rakhnay wali card par `rgb(52, 72, 101)…` — do alag panels,
+`blur(` ka ek bhi ref nahi, `backdrop-filter: none`. patch17 hata kar chalaya to **118/138** —
+theek yahi 20 checks girtay hain, yaani tests feature ko pakartay hain. Chain replay
+stock->7->8->12->13->14->15->16->17 byte-identical; patch15 ko `SUPERSEDED` marker dena para,
+kyunke patch17 uski "cover body" edit ka span hi badal deta ha (warna patch15 dobara chalne
+par purana glass panel wapas aa sakta tha).
+
+**Build.** `CardWallet_cover_colour.apk` = 11,649,058 bytes, sha256
+`5af9e92602c35b080b2a4cce6b95471304b168cdd2da06870e028cee9f5bc074`, same debug key
+(`adb install -r`, data bacha rehta ha). APK ke andar ke 11 content greps pass (naye defaults,
+loader pin, migration, NFC row ka na hona, cover colour, purana glass `rgba` ka na hona,
+wordmark + Apple stack, aur patch15/16 ke markers). `verify_release.py` 28/29 (soli FAIL =
+debug cert subject), `animation_audit` 10 checks / 1 pre-existing WARN. Device rows:
+`docs/DEVICE_TEST_PLAN.md` §Q (Q1-Q8).

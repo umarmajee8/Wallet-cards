@@ -196,9 +196,13 @@ check("existing state: dark appearance from settings applied",
   restarted.window.document.documentElement.classList.contains("dark") ||
   JSON.parse(restarted.window.localStorage.getItem(SETTINGS_KEY)).appearance === "dark",
   "appearance=dark honoured");
-check("existing state: settings are not clobbered on boot",
-  JSON.parse(restarted.window.localStorage.getItem(SETTINGS_KEY) || "{}").nfc === true,
-  "nfc toggle preserved");
+{
+  const after = JSON.parse(restarted.window.localStorage.getItem(SETTINGS_KEY) || "{}");
+  check("existing state: stored appearance survives boot (only nfc is forced)",
+    after.appearance === "dark", `appearance=${after.appearance}`);
+  check("existing state: an old nfc:true is left in storage but not honoured (see 6i)",
+    after.nfc === true, "the loader pins it off at read time, so the row never comes back");
+}
 
 // ---------------------------------------------------------------------------
 // Test 3: storage-quota resilience (photos are stored as data URLs)
@@ -309,11 +313,11 @@ check("header: glyphs no longer follow the theme ink class",
 tap(byLabel("Add card"));
 await settle(W, 400);
 const addOptions = labels();
-check("ui: add-card menu opens with all three capture routes",
-  ["Add from gallery", "Take a picture", "Tap a bank card"].every((t) => addOptions.includes(t)),
+check("ui: add-card menu opens with the two capture routes",
+  ["Add from gallery", "Take a picture"].every((t) => addOptions.includes(t)),
   addOptions.filter((l) => /gallery|picture|bank card/.test(l)).join(" | "));
-check("ui: NFC entry point present in add menu (settings nfc=on)",
-  addOptions.includes("Tap a bank card"));
+check("ui: the NFC route is not offered (patch17 holds nfc off)",
+  !addOptions.includes("Tap a bank card"), addOptions.join(" | ").slice(0, 90));
 
 const hdrPanel = () => [...D.querySelectorAll("#root div")].find((d) => /w-\[248px\]/.test(d.className || ""));
 const panel = hdrPanel();
@@ -374,9 +378,10 @@ tap(byText(/^Settings$/));
 await settle(W, 600);
 const settingsText = D.getElementById("root").textContent;
 check("ui: settings sheet renders every section",
-  ["Layout", "Carousel", "Stack", "Appearance", "Pouch", "Read cards over NFC"]
-    .every((t) => settingsText.includes(t)),
-  "Design / Layout / Pouch / Appearance / NFC");
+  ["Layout", "Carousel", "Stack", "Appearance", "Pouch"].every((t) => settingsText.includes(t)),
+  "Design / Layout / Pouch / Appearance");
+check("ui: the NFC row is gone from settings with the feature (patch17)",
+  !/Read cards over NFC|Tap to read/.test(settingsText), settingsText.slice(-90));
 
 // --- layout: carousel <-> stack ---
 const stackBtn = byText(/^Stack$/);
@@ -396,7 +401,7 @@ tap(byText(/^Done$/));
 await settle(W, 800);
 const afterClose = D.getElementById("root").textContent;
 check("ui: settings sheet closes cleanly (no leftover sheet in the DOM)",
-  !afterClose.includes("Read cards over NFC"), afterClose.slice(0, 60));
+  !afterClose.includes("Wallet & cover"), afterClose.slice(0, 60));
 check("ui: wallet is back to the card view after closing the sheet",
   /National Identity Card|Wallet is empty/.test(afterClose), afterClose.slice(0, 60));
 check("ui: no console errors across the whole interaction run",
@@ -1022,6 +1027,157 @@ for (const view of ["carousel", "stack"]) {
     /if\(e&&e\.color\)\{n=`custom`;r=\{\.\.\.\(r\|\|\{\}\),color:e\.color\};\}/.test(BUNDLE_SRC), "yd override");
   check("colour: the stack cover follows the card colour too",
     /col=e\.color\|\|\(j&&j\.color\)/.test(BUNDLE_SRC), "__cwCoverCard");
+}
+
+
+// ---------------------------------------------------------------------------
+// Test 6i: header wordmark, NFC held off, light by default, and the stack cover
+// wearing the wallet colour (patch17)
+// ---------------------------------------------------------------------------
+{
+  const styleOf = (el) => el?.getAttribute("style") || "";
+  const rgb = (r, g, b) => new RegExp(`rgb\\(\\s*${r},\\s*${g},\\s*${b}\\s*\\)`);
+  const wantsDark = (win) => {
+    win.matchMedia = (q) => ({
+      matches: /dark/.test(q), media: q, onchange: null,
+      addListener() {}, removeListener() {},
+      addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false,
+    });
+  };
+  const click = (win, el) => el && el.dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+  const btnText = (doc, re) => [...doc.querySelectorAll("#root button")].find((b) => re.test((b.textContent || "").trim()));
+  const btnLabel = (doc, l) => [...doc.querySelectorAll("#root button[aria-label]")].find((b) => b.getAttribute("aria-label") === l);
+  const openSettings = async (doc, win) => {
+    click(win, btnLabel(doc, "More"));
+    await settle(win, 300);
+    click(win, btnText(doc, /^Settings$/));
+    await settle(win, 600);
+  };
+  const activeSegment = (doc, group) => {
+    const el = btnText(doc, group);
+    if (!el) return null;
+    const row = el.parentElement;
+    const on = [...row.children].find((b) => /rgb\(10,\s*132,\s*255\)/.test(styleOf(b)) || /#0a84ff/i.test(styleOf(b)));
+    return on ? (on.textContent || "").trim() : null;
+  };
+
+  // -- defaults on a fresh install, with the phone asking for dark --
+  const fr = makeDom();
+  wantsDark(fr.window);
+  runBundle(fr.window, fr.errors);
+  await settle(fr.window, 800);
+  const W7 = fr.window, D7 = W7.document;
+  check("defaults: a fresh install ignores the phone's dark preference (light by default)",
+    !D7.documentElement.classList.contains("dark"),
+    `class="${D7.documentElement.className || "-"}"`);
+  {
+    click(W7, btnLabel(D7, "Add card"));
+    await settle(W7, 300);
+    const opts = [...D7.querySelectorAll("#root button")].map((b) => (b.textContent || "").trim());
+    check("defaults: no NFC route on a fresh install", !opts.includes("Tap a bank card"), opts.slice(0, 4).join(" | "));
+    await openSettings(D7, W7);
+    check("defaults: the NFC row is not in settings either",
+      !/Read cards over NFC|Tap to read/.test(D7.getElementById("root").textContent || ""),
+      "row removed with the feature");
+    check("defaults: appearance shows Light as chosen",
+      activeSegment(D7, /^(System|Light|Dark)$/) === "Light", `segment=${activeSegment(D7, /^(System|Light|Dark)$/)}`);
+  }
+
+  // -- the wordmark --
+  const wm = [...D7.querySelectorAll("#root span")].find(
+    (el) => (el.textContent || "").trim() === "Wallet" && /font-size:\s*28px/.test(styleOf(el)),
+  );
+  check("header: Wallet wordmark is rendered top-left, big and bold",
+    !!wm && /font-weight:\s*800/.test(styleOf(wm)) && /margin-right:\s*auto/.test(styleOf(wm)),
+    wm ? [(styleOf(wm).match(/font-size:[^;]*/) || ["-"])[0], (styleOf(wm).match(/font-weight:[^;]*/) || ["-"])[0]].join(" ") : "no wordmark");
+  check("header: the wordmark uses the Apple-first font stack",
+    /-apple-system,\s*BlinkMacSystemFont,\s*SF Pro Display/.test(styleOf(wm).replace(/"/g, "")),
+    (styleOf(wm).match(/font-family:[^;]*/) || ["-"])[0].slice(0, 64));
+  check("header: the wordmark colour is the themed ink, so it survives dark mode",
+    /color:\s*var\(--ink\)/.test(styleOf(wm)), (styleOf(wm).match(/color:[^;]*/) || ["-"])[0]);
+  {
+    const kids = wm && wm.parentElement ? [...wm.parentElement.children] : [];
+    const labels = kids.filter((k) => k.tagName === "BUTTON").map((k) => k.getAttribute("aria-label"));
+    check("header: the icons stay on the right of the same row, wordmark first",
+      kids[0] === wm && ["Add card", "Search cards", "More"].every((l) => labels.includes(l)),
+      labels.join(", ") || "-");
+  }
+
+  // -- an install that never picked an appearance is migrated once --
+  const mig = makeDom({ [SETTINGS_KEY]: JSON.stringify({ appearance: "system", nfc: true }) });
+  wantsDark(mig.window);
+  runBundle(mig.window, mig.errors);
+  await settle(mig.window, 700);
+  const D8 = mig.window.document, W8 = mig.window;
+  check("appearance: an old default of system moves to light even on a dark phone",
+    !D8.documentElement.classList.contains("dark"), `class="${D8.documentElement.className || "-"}`);
+  {
+    click(W8, btnLabel(D8, "Add card"));
+    await settle(W8, 300);
+    const opts = [...D8.querySelectorAll("#root button")].map((b) => (b.textContent || "").trim());
+    check("appearance: a stored nfc:true is not honoured - patch17 pins it off",
+      !opts.includes("Tap a bank card"), opts.slice(0, 4).join(" | "));
+    click(W8, btnLabel(D8, "Add card"));
+    await settle(W8, 200);
+    await openSettings(D8, W8);
+    check("appearance: the sheet says Light after the migration",
+      activeSegment(D8, /^(System|Light|Dark)$/) === "Light",
+      `segment=${activeSegment(D8, /^(System|Light|Dark)$/)}`);
+  }
+
+  const keep = makeDom({ [SETTINGS_KEY]: JSON.stringify({ appearance: "system", appearanceMigrated: true }) });
+  wantsDark(keep.window);
+  runBundle(keep.window, keep.errors);
+  await settle(keep.window, 700);
+  check("appearance: System is still respected once the migration has run",
+    keep.window.document.documentElement.classList.contains("dark"), "dark follows the phone again");
+
+  const dk = makeDom({ [SETTINGS_KEY]: JSON.stringify({ appearance: "dark" }) });
+  runBundle(dk.window, dk.errors);
+  await settle(dk.window, 600);
+  check("appearance: an explicit Dark is never migrated",
+    dk.window.document.documentElement.classList.contains("dark"), "dark honoured");
+
+  // -- the stack cover is painted from the wallet colour --
+  const CARDS17 = JSON.stringify([
+    { id: "q1", src: "cards/one.jpg", title: "Green Card", subtitle: "1", fields: [] },
+    { id: "q2", src: "cards/two.jpg", title: "Blue Card", subtitle: "2", fields: [], color: "#2c3d56" },
+  ]);
+  const SET17 = JSON.stringify({
+    view: "stack", cover: true, theme: "slate", slateColor: "#2d4a3e",
+    custom: { color: "#2d4a3e", design: "slate", grain: 0.2, grade: 1 },
+  });
+  const stk = makeDom({ [CARDS_KEY]: CARDS17, [SETTINGS_KEY]: SET17 }, { withLayout: true });
+  runBundle(stk.window, stk.errors);
+  await settle(stk.window, 900);
+  const D9 = stk.window.document;
+  const flapOf = (el) => [...(el?.querySelectorAll("div") || [])].find((d) => /backdrop-filter/.test(styleOf(d)));
+  const deck = [...D9.querySelectorAll("#root div.absolute.no-select")];
+  const fWallet = flapOf(deck[0]);
+  const fOwn = flapOf(deck[1]);
+  check("stack cover: the panel is the wallet colour, not glass",
+    rgb(53, 87, 73).test(styleOf(fWallet)) && /rgb\(45,\s*74,\s*62\)|#2d4a3e/i.test(styleOf(fWallet)),
+    (styleOf(fWallet).match(/background:[^;]*(;[^;]*;)?/) || ["-"])[0].slice(0, 120));
+  check("stack cover: the shade at the mouth and the rim come from the same colour",
+    rgb(31, 52, 43).test(styleOf(fWallet)) && rgb(25, 41, 34).test(styleOf(fWallet)),
+    (styleOf(fWallet).match(/border:[^;]*/) || ["-"])[0]);
+  check("stack cover: no blur and no translucent glass left on it",
+    /backdrop-filter:\s*none/.test(styleOf(fWallet)) && !/blur\(/.test(styleOf(fWallet)) &&
+      !/rgba\(255,\s*255,\s*255,\s*0\.38\)/.test(styleOf(fWallet)),
+    (styleOf(fWallet).match(/backdrop-filter:[^;]*/) || ["-"])[0]);
+  check("stack cover: a card with its own colour uses it on the panel",
+    rgb(52, 72, 101).test(styleOf(fOwn)) && styleOf(fOwn) !== styleOf(fWallet),
+    (styleOf(fOwn).match(/background:[^;]*(;[^;]*;)?/) || ["-"])[0].slice(0, 110));
+  check("stack cover: no console errors from the panel", stk.errors.length === 0,
+    stk.errors.slice(0, 1).join("").slice(0, 150));
+
+  // -- source guards for the parts jsdom cannot show --
+  check("settings: the NFC row is removed, not just hidden",
+    !/children:`Tap to read`/.test(BUNDLE_SRC) && !/Read cards over NFC/.test(BUNDLE_SRC), "row deleted with the feature");
+  check("loader: nfc is pinned off the way autoDetect already was",
+    /n\.autoDetect=!1,n\.nfc=!1/.test(BUNDLE_SRC), "same idiom, no new machinery");
+  check("defaults: the shipped settings object starts light and nfc-off",
+    /Qp=\{autoDetect:!1,nfc:!1,appearance:`light`/.test(BUNDLE_SRC), "Qp literal");
 }
 
 // ---------------------------------------------------------------------------

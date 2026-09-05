@@ -98,12 +98,35 @@ This repo contains the patched source for the CardWallet app.
    the sleeve, tray gradient, sheen and name colour all follow one hex - no new drawing
    code. Both memo comparators compare `card.color`, otherwise React would accept the value
    and never repaint. Cards without an override are untouched.
+13. **The cover wears the wallet's colour, NFC stays off, light is the default, and the
+   header says "Wallet"** (patch 17). Four asks, one patch.
+   "Stack meh jo cover ha blur wala us ko khatam kro, or jo colour pick karte thy … wo us ki
+   jaga laga do" - patch 15 had only deleted the `backdrop-filter`, which left a translucent
+   glass panel sitting in exactly the same place. The panel is now painted from the *same
+   colour the carousel pouch uses* (the card's own `color` if it has one, else the wallet's
+   `custom.color` / `slateColor`) through the bundle's existing shading helper
+   `td(hex, mul)`: light at the mouth, the colour in the middle, darkened at the bottom,
+   exactly like the tray gradient - and it is opaque, so nothing shows through it.
+   "nfc auto off rakho" - `nfc` defaults to off *and* the settings loader pins it off
+   (`n.nfc=!1`, the same idiom that already pins the removed `autoDetect`), so an old
+   install's stored `nfc:true` cannot bring "Tap a bank card" back. The Settings row for it
+   was removed with the feature: a toggle whose value resets on relaunch is worse than no
+   toggle.
+   "auto light mode rakho" - default `appearance` is `light`, and an install still carrying
+   the old `system` default is migrated once (flagged `appearanceMigrated`), so a later,
+   deliberate System/Dark pick survives.
+   "header pr top left corner pr bara bold Wallet likho, font ios wala ho" - a 28px / weight
+   800 wordmark with tight negative tracking and the `-apple-system, BlinkMacSystemFont,
+   "SF Pro Display", "SF Pro Text"` stack before the app's own fallbacks, coloured
+   `var(--ink)` so it stays legible in the dark theme, and `margin-right:auto` so the three
+   icons keep their place on the right. It is inserted *after* patch 8's
+   `/*cardwallet:header*/` marker so that patch's verification keeps matching.
 
 
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.
-- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch16),
+- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch17),
   plus the release toolchain: `build_release_apk.py` (build + sign),
   `build_debug_apk.py` (same bundle, throwaway debug key - for hands-on testing),
   `apkbuilder.py` (aligned zip, v1/v2/v3 signing, PKCS#12 keystore),
@@ -171,17 +194,20 @@ Verification gates:
 - `python3 patches/verify_release.py ../CardWallet_release.apk` - 29 package checks
   (the header ones read `header_options.json`, so a bundle that drifted from the
   config fails the build instead of shipping quietly)
-- `node patches/smoke_test_webview.mjs` - 115 web-layer checks (`npm i jsdom`);
+- `node patches/smoke_test_webview.mjs` - 138 web-layer checks (`npm i jsdom`);
   the carousel tests drive real pointer events: they reproduce the stuck half-shifted
   row (58.4px) and prove it recovers to 0.00px, prove a swipe in the empty band moves
-  nothing, and read each pouch's painted gradient to prove a per-card colour wins
+  nothing, read each pouch's painted gradient to prove a per-card colour wins, and read
+  the Stack cover's painted gradient to prove it is the wallet colour rather than glass.
+  A `matchMedia` stub that answers "dark" is what makes the light-by-default and
+  appearance-migration checks mean something
 - `python3 patches/animation_audit.py` - static jank audit
 
 `verify_release.py` shells out to `apksigtool` for the v2/v3 checks
 (`pip install --user apksigtool`); without it those 3 checks cannot run.
 
 **Test builds without the release key:** `python3 patches/build_debug_apk.py`
-writes `../CardWallet_header_black.apk`, signed with a throwaway key it creates
+writes `../CardWallet_cover_colour.apk`, signed with a throwaway key it creates
 under `repo_export/signing/`. Same bundle, same manifest hardening, same
 alignment - only the signature differs, so Android will not update an existing
 install over it (`adb uninstall com.arena.cardwallet` first). Never distribute it.

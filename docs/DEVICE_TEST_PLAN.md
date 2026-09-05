@@ -9,6 +9,12 @@ APK under test: `CardWallet_release.apk`
 SHA-256: `63dbd8b1929fdbcb673a19ebab585c0c723ae41518188ff437e84da0c2233e9a`
 Signer cert SHA-256: `86383a7f13662e8b55885cb5331341f8db964ad065da074cc360082a3e436726`
 
+**Currently on device:** the rounds since §M ship as debug-signed builds because no release
+keystore is available here - the newest is `CardWallet_cover_colour.apk` (2026-09-05, rounds
+§N-§Q: stack eject, carousel settle, inert bands + per-card pouch colour, cover colour +
+NFC/appearance defaults + header wordmark). Same debug key throughout, so `adb install -r`
+keeps the app's data; §Q's rows are the ones that matter for this build.
+
 ## 0. Install
 
 Old debug-signed builds must be removed first — the signature changed.
@@ -275,9 +281,30 @@ would be worth knowing about.
 
 ---
 
+## Q. Stack cover colour, NFC off, light default, header wordmark (patch 17)
+
+Four asks in one build: the cover had to stop being glass and *become* the picked colour,
+NFC had to stay off, the app had to open light, and the header had to say **Wallet**.
+
+| # | Step | Expected |
+|---|---|---|
+| Q1 | Settings -> Layout -> Stack, cover left **on**, look at the cover panel | It is a flat panel painted in the pouch colour - no frost, no blur, no translucency. The card behind it must not be readable through it (no number, chip or photo edge showing through) |
+| Q2 | Settings -> Pouch -> Colour: pick a different colour, then go back to Stack | The cover panel changes to the same colour family (lighter at the mouth, darker at the bottom). It should never look grey/white again |
+| Q3 | Long-press a card -> Card details -> Pouch colour: give one card its own colour | That card's cover panel uses its own colour, the other cards keep the wallet colour - in Stack as well as in the carousel |
+| Q4 | Settings -> Pouch -> **Wallet & cover** off, then on again, and open a card | Off: the photo is visible with no panel. On: the coloured panel folds back. No flicker, and the fold animation should feel no heavier than before (it is now cheaper: no blur to composite) |
+| Q5 | Kill the app, set the **phone** to dark mode, reopen | The app opens **light** (default is Light now, not System). Settings -> Appearance shows **Light** selected. Tap System -> it follows the phone (dark at night); tap Dark -> always dark; kill and reopen: your choice is kept, it is not forced back to Light |
+| Q6 | Open the **+ menu**, then Settings | No "Tap a bank card" entry anywhere, and no "Read cards over NFC" row in Settings - even on this existing install that used to have NFC on. If you want NFC back later, that is a new patch, not a toggle |
+| Q7 | Look at the top-left of the header (light and dark theme, and with the notch/status bar) | "Wallet" is large and bold in the iOS-style system font, black in light theme, near-white in dark theme, never overlapping the +/search/menu icons or the status bar |
+| Q8 | Scroll/drag near the header while the wordmark is there | The wordmark is not a touch target - dragging that starts over it behaves exactly like dragging in dead space (patch 15's rule still holds) |
+
+If Q5 comes back showing dark-on-reopen, the migrated value was overwritten by a stored
+choice - say so and include whether Appearance was ever touched on that device.
+
+---
+
 ## Sign-off
 
-The build may only be called production-ready once A–P are green on at least
+The build may only be called production-ready once A–Q are green on at least
 one physical device. Record device model, Android version and result per row,
 and file anything that fails with the section id (e.g. "F3 fails: Back exits
 the app with Settings open").

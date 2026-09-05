@@ -149,7 +149,11 @@ CSS_NEW = ".solid-btn{background:var(--solid);color:var(--on-solid)}" + (
 DOWNSTREAM_KEEP = {
     "stack: cover drops backdrop blur entirely": "backdropFilter:`none`",
 }
-SUPERSEDED = {}
+# Patch 17 replaces the whole cover background (the wallet colour, not a tinted glass
+# panel), so this edit's own text is deliberately gone - marker on the successor.
+SUPERSEDED = {
+    "stack: cover keeps enough body without the blur": "td(col,1.18)",
+}
 
 
 def status(data, edits):
