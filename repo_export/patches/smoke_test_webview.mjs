@@ -222,6 +222,30 @@ const labels = () => all("button").map((b) => b.getAttribute("aria-label") || (b
 check("ui: header actions present (Add / Search / More)",
   ["Add card", "Search cards", "More"].every((l) => byLabel(l)), labels().slice(0, 3).join(", "));
 
+// --- black header options (patch7 styling + patch8 config) ---------------
+const HEADER_CFG = JSON.parse(fs.readFileSync(path.join(ROOT, "repo_export", "header_options.json"), "utf8"));
+const styleDecl = (el, prop) =>
+  ((el?.getAttribute("style") || "").match(new RegExp(`(?:^|;)\\s*${prop}:\s*([^;]*)`, "i"))?.[1] || "").trim();
+const rgbToHex = (v) => {
+  const m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)$/.exec(v);
+  if (!m) return v.toLowerCase();
+  const hex = "#" + [m[1], m[2], m[3]].map((x) => (+x).toString(16).padStart(2, "0")).join("");
+  return m[4] === undefined ? hex : `${hex}/${m[4]}`;
+};
+const colorOf = (el, prop) => rgbToHex(styleDecl(el, prop));
+const isBlack = (v) => ["#000", "#000000"].includes(v);
+const isWhite = (v) => ["#fff", "#ffffff"].includes(v);
+const hdrChips = () => HEADER_CFG.options.map((o) => byLabel(o.label));
+
+check("header: every option in header_options.json renders a button",
+  hdrChips().every(Boolean), HEADER_CFG.options.map((o, i) => `${o.id}=${hdrChips()[i] ? "y" : "n"}`).join(" "));
+check("header: chips are a black fill with white glyphs (light theme)",
+  hdrChips().every((c) => isBlack(colorOf(c, "background")) && isWhite(colorOf(c, "color"))),
+  hdrChips().map((c) => `${colorOf(c, "background")} on ${colorOf(c, "color")}`).join(" | "));
+check("header: chips no longer follow the theme ink colour",
+  hdrChips().every((c) => !/(^|\s)ink(\s|$)/.test(c.className || "")),
+  hdrChips().map((c) => c.className).join(" | ").slice(0, 90));
+
 // --- add-card menu ---
 tap(byLabel("Add card"));
 await settle(W, 400);
@@ -231,6 +255,22 @@ check("ui: add-card menu opens with all three capture routes",
   addOptions.filter((l) => /gallery|picture|bank card/.test(l)).join(" | "));
 check("ui: NFC entry point present in add menu (settings nfc=on)",
   addOptions.includes("Tap a bank card"));
+
+const hdrPanel = () => [...D.querySelectorAll("#root div")].find((d) => /w-\[248px\]/.test(d.className || ""));
+const panel = hdrPanel();
+check("header: the chip that opened this menu lights up to the raised black",
+  colorOf(byLabel("Add card"), "background") === "#2f2f34" &&
+  isBlack(colorOf(byLabel("More"), "background")),
+  `add=${colorOf(byLabel("Add card"), "background")} more=${colorOf(byLabel("More"), "background")}`);
+check("header: dropdown panel is black with a white hairline, not sheet-white",
+  colorOf(panel, "background") === "#0b0b0d" && /rgba\(255, 255, 255, 0\.14\)/.test(styleDecl(panel, "border")),
+  `bg=${colorOf(panel, "background")} border=${styleDecl(panel, "border")}`);
+{
+  const rows = [...(panel?.querySelectorAll("button") || [])];
+  const plain = rows.filter((r) => !/Delete all cards/.test(r.textContent || ""));
+  check("header: dropdown rows read white", plain.length > 0 && plain.every((r) => isWhite(colorOf(r, "color"))),
+    rows.map((r) => colorOf(r, "color")).join(" | "));
+}
 
 // dismiss by tapping outside (the menu has no scrim; it listens for a
 // capture-phase pointerdown on window)
@@ -249,6 +289,11 @@ tap(byLabel("More"));
 await settle(W, 400);
 check("ui: overflow menu opens (Settings / Delete all cards)",
   labels().includes("Settings") && labels().includes("Delete all cards"));
+{
+  const del = [...(hdrPanel()?.querySelectorAll("button") || [])].find((r) => /Delete all cards/.test(r.textContent || ""));
+  check("header: the destructive row keeps its red on the black panel",
+    colorOf(del, "color") === "#ff453a", colorOf(del, "color"));
+}
 tap(byText(/^Settings$/));
 await settle(W, 600);
 const settingsText = D.getElementById("root").textContent;
@@ -423,6 +468,26 @@ for (const view of ["carousel", "stack"]) {
     opened ? "eject -> open hand-off intact" : Dv.getElementById("root").textContent.slice(0, 80));
   check(`cover OFF: no console errors in ${view} open flow`, inst.errors.length === 0,
     inst.errors.slice(0, 1).join("").slice(0, 150));
+}
+
+// ---------------------------------------------------------------------------
+// Test 6b: the black header must be theme-independent (dark must not flip it)
+// ---------------------------------------------------------------------------
+{
+  const dark = makeDom({ [CARDS_KEY]: CARDS, [SETTINGS_KEY]: JSON.stringify({ appearance: "dark" }) });
+  runBundle(dark.window, dark.errors);
+  await settle(dark.window, 900);
+  const Dk = dark.window.document;
+  const chips = HEADER_CFG.options
+    .map((o) => [...Dk.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === o.label))
+    .filter(Boolean);
+  check("header: dark theme keeps black chips with white glyphs",
+    Dk.documentElement.classList.contains("dark") &&
+    chips.length === HEADER_CFG.options.length &&
+    chips.every((c) => isBlack(colorOf(c, "background")) && isWhite(colorOf(c, "color"))),
+    chips.map((c) => `${colorOf(c, "color")} on ${colorOf(c, "background")}`).join(" | "));
+  check("header: no console errors in the dark theme", dark.errors.length === 0,
+    dark.errors.slice(0, 1).join("").slice(0, 150));
 }
 
 // ---------------------------------------------------------------------------

@@ -261,3 +261,50 @@ web bundle re-run in full after the rebuild (§2.2).
 4. Only after A–K are green does this build get called production ready.
 
 Until then the honest status is: **release-signed and package-verified, device-unverified.**
+
+---
+
+## 6. Addendum — black header options (patch 7 + 8), 2026-09-05
+
+**Khulasa (Urdu):** Header ke options ab **black chips par white icons** hain,
+aur dropdown bhi black panel + white rows hai — light ho ya dark theme, same
+look. Sath hi header options ab `repo_export/header_options.json` se drive hote
+hain: buttons ka hona/na hona, label, icon, order aur dropdown ke rows — sab ek
+JSON file se badalte hain, minified JS chhedne ki zaroorat nahi. Test ke liye
+debug-signed APK bana diya hai (production keystore is clone mein nahi hai).
+
+Artifact: `CardWallet_header_black.apk` (11,648,254 bytes) — **debug-signed,
+do not distribute**; install over an existing build requires
+`adb uninstall com.arena.cardwallet` first.
+SHA-256: `385d3fea6d84cc2b9ac7d8e245b80f9b5e9d2641a9a165cb6c6d14ac03abb4be`
+
+What changed in the bundle:
+
+| | before | after |
+|---|---|---|
+| header buttons | `var(--ink)` icons floating on the page, `var(--chip)` when open | `#000` chip, white glyph, `rgba(255,255,255,0.14)` hairline, `#2f2f34` while its menu is open |
+| dropdown | `var(--sheet)` panel, `var(--ink)` rows | `#0b0b0d` panel, white rows, destructive row keeps `#ff453a` |
+| options | hard-coded `Add card / Search cards / More` (+ hard-coded menu rows) | generated from `header_options.json`; the shipped config reproduces the same five actions, so behaviour is unchanged |
+
+Gates re-run on this pass:
+
+- `verify_release.py` on the new APK: **28/29** — the single failure is
+  `sign: signer subject is not a debug cert`, which is exactly what a debug
+  build must fail; 3 header checks were added so a bundle that drifts from
+  `header_options.json` now fails the gate instead of shipping quietly.
+- `smoke_test_webview.mjs`: **59/59** (was 50) — +9 header checks: chips render
+  for every configured option, black fill + white glyph in *both* themes, no
+  `ink` class left, active-chip highlight, black panel, white rows, red
+  destructive row, no console errors.
+- `animation_audit.py`: 10 checks, 1 warning — the same pre-existing
+  layout-property warning as before this change (verified by re-running the
+  audit against the pre-patch bundle).
+- patch 7 / patch 8 re-run twice: idempotent, byte-identical output.
+
+Still **device-unverified**: the header's actual contrast against the pouch,
+the tap-target feel at 44px on a small phone, and whether the black chips read
+well over a bright card photo can only be judged on hardware. The picture that
+was meant to define the new option set never arrived in the workspace, so the
+*labels/icons* are unchanged — only the colour treatment is applied. Changing
+the option set itself is now a one-file edit: rewrite `header_options.json`,
+run `patch8_header_options.py`, rebuild.

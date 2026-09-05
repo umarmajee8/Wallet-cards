@@ -1,0 +1,27 @@
+{
+  "_comment": [
+    "Card Wallet header options - the top-bar buttons and the dropdowns they open.",
+    "Edit this file, then: python3 repo_export/patches/patch8_header_options.py && python3 repo_export/patches/build_debug_apk.py",
+    "icons: plus, search, dots-v, dots-h, gear, image, camera, nfc, trash, x, check, chevron-r, wallet, sliders, list, star, card, eye, share, lock",
+    "actions: toggle:<add|more>, gallery, camera, nfc, search, settings, studio, delete, none",
+    "when: 'nfc' (device has NFC) or 'hasCards' (something to delete) - both are gates the app already has",
+    "showText: true puts the label next to the icon and the chip grows to fit"
+  ],
+  "showText": false,
+  "options": [
+    { "id": "add", "label": "Add card", "icon": "plus", "action": "toggle:add", "menu": "add" },
+    { "id": "search", "label": "Search cards", "icon": "search", "action": "search" },
+    { "id": "more", "label": "More", "icon": "dots-v", "action": "toggle:more", "menu": "more" }
+  ],
+  "menus": {
+    "add": [
+      { "label": "Add from gallery", "icon": "image", "action": "gallery" },
+      { "label": "Take a picture", "icon": "camera", "action": "camera" },
+      { "label": "Tap a bank card", "icon": "nfc", "action": "nfc", "when": "nfc" }
+    ],
+    "more": [
+      { "label": "Settings", "icon": "gear", "action": "settings" },
+      { "label": "Delete all cards", "icon": "trash", "action": "delete", "danger": true, "when": "hasCards" }
+    ]
+  }
+}

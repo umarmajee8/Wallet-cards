@@ -10,6 +10,7 @@ Usage: python3 repo_export/patches/verify_release.py CardWallet_release.apk
 from __future__ import annotations
 
 import hashlib
+import json
 import struct
 import subprocess
 import sys
@@ -159,6 +160,25 @@ def main(apk_path: str) -> int:
         check(f"payload: removed feature absent ({needle.decode()})", needle not in js)
     check("payload: capacitor config present", "assets/capacitor.config.json" in names)
     check("payload: dex present", "classes.dex" in names)
+
+    # ---- header options must match header_options.json (patch 8) -------------
+    # Without this the shipped header could silently drift from the config that
+    # the smoke test and the README describe.
+    cfg_path = ROOT / "repo_export" / "header_options.json"
+    js_text = js.decode("utf-8", "replace")
+    if not cfg_path.exists():
+        check("header: header_options.json is present", False, str(cfg_path))
+    else:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        want = [o["label"] for o in cfg.get("options", [])]
+        missing = [l for l in want if f"label:`{l}`" not in js_text]
+        check("header: shipped bundle renders every configured option",
+              bool(want) and not missing, f"missing={missing}" if missing else ", ".join(want))
+        check("header: config-driven row is compiled in (patch 8 marker)",
+              "/*cardwallet:header*/" in js_text, "patch8 not applied" if "/*cardwallet:header*/" not in js_text else "ok")
+        menus = cfg.get("menus") or {}
+        stale = [k for k in menus if f"/*cardwallet:menu:{k}*/" not in js_text]
+        check("header: configured dropdowns are compiled in", not stale, f"stale={stale}" if stale else ", ".join(menus))
 
     return report()
 
