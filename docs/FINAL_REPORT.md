@@ -285,11 +285,6 @@ What changed in the bundle:
 | | before | after (the mock) |
 |---|---|---|
 | `+` | `var(--ink)` glyph, `var(--chip)` behind it when open | `#000` disc, white plus at 2.5 stroke, soft drop shadow, 4px halo while its menu is open |
-
-<!-- The literal `#000`/white styling in the two rows above is what the mock implies and
-is what shipped in this pass; §7 replaced it with theme tokens after the first
-device report. Read the two sections together. -->
-
 | search | same ink glyph on the page | bare `#000` loupe at 2.3 stroke, 26px, no chip |
 | overflow | three vertical dots | **hamburger** — three 2.7-round bars, bare `#000`, 26px |
 | dropdown | `var(--sheet)` panel, `var(--ink)` rows | `#0b0b0d` panel, white rows, `#ff453a` destructive row |
@@ -377,72 +372,35 @@ with the same throwaway key as the build you already installed, so this one
 updates over it (`adb install -r`) — no uninstall, no data loss this time. The
 dark theme is the thing to re-check; `docs/DEVICE_TEST_PLAN.md` §L has the full
 list. §6's `b2a36df6…` build is superseded by this.
+## 8. Pouch preset + add-card pill: built, then reverted on request (2026-09-05)
 
-## 8. Pouch style picker, Paper preset, add-card pill (patches 9-11), 2026-09-05
+Round 4 added a **Paper** pouch preset (light felt, dashed seam) matching a
+reference mock, plus the mock's wide black **add-card capsule** with the label
+removed, and the two repairs that round needed (patch 9: the missing Pouch style
+section in `app/index.js`, and the settings loader forcing `theme=slate`).
+It was fully gated (smoke 83/83, `verify_release` 28/29, patch chain replayed
+byte-identically) and shipped as `9e0852d8…`.
 
-**Khulasa (Urdu):** Aap ne pouch wali picture di — *"bilkul picture jesa ho, add
-card wala text remove kr dena, baki sab same"*. Do cheezein baneen: (1) pouch ka
-style aap ki picture jaisa (**Paper** preset: halka felt, dashed seam, no rivets),
-aur (2) **add-card ki capsule/pill** jo picture mein pouch ke neeche-right thi —
-wahi 208x56 capsule, bagal mein grey `+` disc, **"Add Card" text hata diya**.
-Settings se pill sirf **empty wallet** par dikhti hai (aap ne wahi choose kiya).
+The user tried it on device and asked for it to be removed - *"yeh ajeeb lag rha
+ha mujy nhi chhy"* - so `f8cc89c` was reverted and the branch is back to §7's
+state: `CardWallet_header_black.apk` = 11,648,422 bytes, sha256 `cc63bc96…`,
+which keeps the header/tone work and nothing else.
 
-Lekin isse pehle ke koi preset kaam kare, do **pre-existing bugs** dhape:
+Two things from that round are still true and worth knowing even though the code
+is gone, because they are properties of the bundle, not of my patch:
 
-1. `repo_export/app/index.js` aur base APK **drift** kar chuke the: "Pouch style"
-   section base APK mein tha, bundle mein nahi — aur build sirf bundle inject karta
-   hai. Matlab aapke phone ke build mein pouch-style picker **tha hi nahi**
-   (README ke dawa ke bawajood). patch 9 ne woh section wapas bundle mein daala.
-2. Settings loader har load par saved `theme` ko `slate` par force kar deta tha
-   (`n.theme = 'slate'` in the stock code). preset choose karne par value
-   localStorage mein likh jati thi aur agle start par phenk di jati thi — picker
-   decorative tha. patch 9 ne woh pin hata diya. Fresh installs ka look nahi badla,
-   kyunke default `theme:slate` hi hai.
+1. **`repo_export/app/index.js` and `CardWallet_no_pouch.apk` have drifted** - the
+   Pouch style section exists in the APK's copy and not in the one every build
+   injects, so no APK built from this repo has a pouch-style picker regardless of
+   what the README says.
+2. **The stock settings loader overwrites `theme` with `slate` on every read**, so
+   any pouch preset (built-in or future) is written to storage and discarded at
+   the next start. A picker is decorative until that pin goes away.
 
-Aur ek nuance: default **Design = Slate** tray ka background card ke colour se
-tint karta hai aur theme ka gradient ignore karta hai — is liye patch 10 ne Paper
-ko us re-tint se exempt kar diya (the tray branch now checks `v.id !== 'paper'`), warna
-aap ki picture ka halka felt default design par kabhi nahi banta.
-
-### Bundle-level diff (behaviour)
-
-| area | before | after |
-|---|---|---|
-| Settings -> Pouch style | section absent from the shipping bundle | restored, 4 presets (Frosted / Steel / Emerald / Paper) |
-| saving a preset | written, then forced back to `slate` on next load | honoured — survives restart (asserted by a reload test) |
-| `Paper` preset | n/a | light felt tray `#f7f6f4 -> #e3e1dd`, white sheen, dark hairline edge, sleeve `#f1efec/#dedad5`, grey dashed seam `rgba(151,147,142,.72)`, rivets off |
-| add-card control | header `+` only | header `+` **plus** the mock's wide capsule over the pouch area (empty wallet only), grey `+` disc at the left, **no label** |
-| that capsule's menu | n/a | same capture routes as the header `+`; anchored to the bottom so it opens **upward** (`fixed inset-x-0 bottom-0`, origin `96% bottom`, spring from below) |
-| colours of the new control | n/a | `var(--solid)` / `var(--on-solid)` / `var(--sub)` / `var(--line)` - legible on the dark Frosted pouch and on light Paper; deliberately not literal `#000` (that was this session's §7 lesson) |
-
-Two decisions were yours and are encoded as such: the pill's **width is the
-picture's** (208x56) with only the text removed, and it is **empty-state only**.
-Default theme/pouch was left alone on purpose, so nothing changes for an install
-that does not go looking for it.
-
-### Gates re-run
-
-- `smoke_test_webview.mjs`: **83/83** (was 64) — 19 new checks: picker present,
-  four swatches, Paper writes `theme=paper`, the choice survives a reload, Paper's
-  tray renders in the DOM in *both* designs (and the Slate card-tint is what a
-  naive patch would have shipped), default render unchanged, pill hidden with cards
-  / shown when empty, `textContent === ""` (the label removal is asserted, not
-  assumed), 208x56 + `+` disc geometry, tokens-not-literals, tapping it opens the
-  capture routes, bottom-anchored panel, dismiss + haptics path, header `+` intact,
-  zero console errors in all three scenarios.
-- `verify_release.py`: **28/29** on the new APK (only `sign: signer subject is not
-  a debug cert`).
-- patch 7-11 re-ran as a chain from the stock bundle: **byte-identical** output;
-  every `--check` now reports "applied" instead of false STALE (patch 7 also
-  tolerates its own output being re-worded downstream by patch 11).
-- `animation_audit.py`: 10 checks, same single pre-existing WARN (layout-property
-  animation) - nothing added by this pass.
-
-New artifact: `CardWallet_header_black.apk` (**11,649,098 bytes**), sha256
-`9e0852d82c0cc2d18ca8ec7be28ac52969fa649010856307c91e719d368ddc06` — debug-signed
-with the same key as your current install, so `adb install -r` updates in place
-(no uninstall, no data loss). The filename still says "header" for link
-stability; it now also carries the pouch picker, Paper and the pill.
-
-**Not verified on a device** (status line above still applies): see
-`docs/DEVICE_TEST_PLAN.md` §M for the pouch/pill checks.
+If any part of it is wanted back - the pill alone, with its label restored, the
+Paper preset alone, or just the two repairs - it is all in `f8cc89c`:
+`git cherry-pick f8cc89c`, or take a single patch from
+`repo_export/patches/patch9_restore_pouch_picker.py` /
+`patch10_paper_pouch.py` / `patch11_pouch_add_pill.py` (each runs standalone and
+takes `--check`). Do not re-apply the pill as-is: its appearance (empty wide
+capsule) is exactly what was rejected.

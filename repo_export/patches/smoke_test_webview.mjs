@@ -149,7 +149,6 @@ check("feature entry point: settings persisted key initialised",
 // ---------------------------------------------------------------------------
 // Test 2: data persistence + "app restart" with existing state
 // ---------------------------------------------------------------------------
-const BUNDLE_SRC = fs.readFileSync(path.join(APP, "index.js"), "utf8");
 const CARDS_KEY = "wallet.cards.v2";
 const SETTINGS_KEY = "wallet.settings.v1";
 // Real persisted shape (see om() in the bundle: entries need id + src).
@@ -571,122 +570,6 @@ for (const view of ["carousel", "stack"]) {
     HEADER_CFG.options.map((o) => `${o.id}:${o.chip ? "23(disc)" : "26(bare)"}`).join(" "));
   check("header: no console errors in the dark theme", dark.errors.length === 0,
     dark.errors.slice(0, 1).join("").slice(0, 150));
-}
-
-// ---------------------------------------------------------------------------
-// Test 6c: pouch-style picker (patch9), the Paper preset (patch10) and the
-//          empty-wallet add-card pill (patch11)
-// ---------------------------------------------------------------------------
-{
-  const PILL_LABEL = "Add card from the wallet";
-  const find = (d, re) => [...d.querySelectorAll("button")].find((b) => re.test((b.textContent || "").trim()));
-  const pill = (d) => [...d.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === PILL_LABEL);
-  const panel = (d) => [...d.querySelectorAll("#root div")].find((dx) => /w-\[248px\]/.test(dx.className || ""));
-
-  // -- the picker is back, with four presets --
-  const pk = makeDom({ [CARDS_KEY]: CARDS });
-  runBundle(pk.window, pk.errors);
-  await settle(pk.window, 800);
-  const Pk = pk.window.document;
-  const kb = (l) => [...Pk.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === l);
-  Pk.defaultView.navigator.vibrate ??= () => true;
-  kb("More")?.dispatchEvent(new pk.window.MouseEvent("click", { bubbles: true }));
-  await settle(pk.window, 400);
-  find(Pk, /^Settings$/)?.dispatchEvent(new pk.window.MouseEvent("click", { bubbles: true }));
-  await settle(pk.window, 600);
-  const sheetText = Pk.getElementById("root").textContent || "";
-  check("pouch: Settings exposes the Pouch style picker again (was lost to bundle drift)",
-    /Pouch style/.test(sheetText), /Pouch style/.test(sheetText) ? "Frosted / Steel / Emerald / Paper" : sheetText.slice(0, 60));
-  const swatches = ["Frosted", "Steel", "Emerald", "Paper"].filter((n) => find(Pk, new RegExp(`^${n}$`)));
-  check("pouch: all four presets are selectable", swatches.length === 4, swatches.join(" / ") || "none found");
-
-  // clicking Paper has to persist it
-  find(Pk, /^Paper$/)?.dispatchEvent(new pk.window.MouseEvent("click", { bubbles: true }));
-  await settle(pk.window, 500);
-  const afterPick = JSON.parse(pk.window.localStorage.getItem(SETTINGS_KEY) || "{}");
-  check("pouch: tapping Paper writes theme=paper to wallet.settings.v1",
-    afterPick.theme === "paper", `theme=${afterPick.theme}`);
-  check("pouch: no console errors while using the picker", pk.errors.length === 0,
-    pk.errors.slice(0, 1).join("").slice(0, 140));
-
-  // -- and the theme actually resolves to the mock's light felt palette --
-  // The tray's inline gradient is the proof: jsdom normalises hex to rgb, and the
-  // default "Slate" design re-tints the tray from the card colour, so Paper has to
-  // be asserted in both designs (patch 10 exempts it from that re-tint).
-  const render = async (settings) => {
-    const d = makeDom({ [CARDS_KEY]: CARDS, ...(settings ? { [SETTINGS_KEY]: JSON.stringify(settings) } : {}) });
-    runBundle(d.window, d.errors);
-    await settle(d.window, 800);
-    return d.window.document.getElementById("root").innerHTML || "";
-  };
-  const PAPER_RGB = /rgb\(247, 246, 244\)/;
-  const classicHtml = await render({ theme: "paper", custom: { design: "classic" } });
-  check("pouch: Paper paints the mock's light tray",
-    PAPER_RGB.test(classicHtml), "tray gradient in the DOM");
-  // The sleeve (felt grain + dashed seam) is painted into a canvas texture, which
-  // jsdom cannot inspect - assert the shipped theme object instead and verify the
-  // dashes on device (DEVICE_TEST_PLAN section M).
-  const paperTheme = (BUNDLE_SRC.match(/__cwPaperTheme=\{[\s\S]{0,600}?\}\}/) || [""])[0];
-  check("pouch: Paper ships the mock's grey dashed seam and no rivets (canvas -> device check)",
-    /stitch:`rgba\(151,147,142,0\.72\)`/.test(paperTheme) && /rivets:!1/.test(paperTheme),
-    `stitch=${/stitch:`rgba\(151,147,142,0\.72\)`/.test(paperTheme)} rivets=${/rivets:!0/.test(paperTheme)}`);
-  const slateHtml = await render({ theme: "paper" });
-  check("pouch: Paper keeps its felt tray under the default Slate design (no card tint)",
-    PAPER_RGB.test(slateHtml), PAPER_RGB.test(slateHtml) ? "theme tray wins" : "tinted by the card");
-
-  // the picker only means something if the choice survives a restart: the stock
-  // settings loader used to rewrite theme to `slate` on every read
-  const survived = await render(JSON.parse(pk.window.localStorage.getItem(SETTINGS_KEY) || "{}"));
-  check("pouch: a preset picked in Settings survives the next load (loader no longer pins theme)",
-    PAPER_RGB.test(survived), PAPER_RGB.test(survived) ? "theme=paper honoured" : "reset to slate");
-  const defaultHtml = await render(null);
-  check("pouch: Paper is opt-in - the shipped default (theme=slate) is unchanged",
-    !PAPER_RGB.test(defaultHtml), PAPER_RGB.test(defaultHtml) ? "default changed!" : "default intact");
-
-  // -- add-card pill: only on the empty wallet, exactly as drawn (no label) --
-  const withCards = makeDom({ [CARDS_KEY]: CARDS });
-  runBundle(withCards.window, withCards.errors);
-  await settle(withCards.window, 800);
-  check("pill: hidden while the wallet has cards", !pill(withCards.window.document),
-    pill(withCards.window.document) ? "unexpected pill" : "no pill");
-
-  const empty = makeDom({ [CARDS_KEY]: "[]" });
-  runBundle(empty.window, empty.errors);
-  await settle(empty.window, 800);
-  const De = empty.window.document;
-  const eb = pill(De);
-  check("pill: empty wallet renders the add-card pill", !!eb, eb ? "present" : "missing");
-  check("pill: the pill carries no text - 'Add Card' was removed as asked",
-    !!eb && (eb.textContent || "").trim() === "", JSON.stringify((eb?.textContent || "").trim()));
-  check("pill: mock proportions (208x56 capsule) with the + disc at the left",
-    !!eb && /208px/.test(eb.getAttribute("style")) && /56px/.test(eb.getAttribute("style")) &&
-      !!eb.querySelector("svg path"),
-    eb ? (eb.getAttribute("style") || "").slice(0, 60) : "-");
-  check("pill: theme tokens, not literals (readable on dark Frosted and light Paper)",
-    !!eb && /var\(--solid\)/.test(eb.getAttribute("style")) && /var\(--sub\)/.test(eb.innerHTML),
-    eb ? `solid=${/var\(--solid\)/.test(eb.getAttribute("style"))} sub=${/var\(--sub\)/.test(eb.innerHTML)}` : "-");
-
-  const tapE = (el) => el && el.dispatchEvent(new empty.window.MouseEvent("click", { bubbles: true }));
-  tapE(eb);
-  await settle(empty.window, 450);
-  const labels = [...De.querySelectorAll("button")].map((b) => (b.textContent || "").trim());
-  check("pill: tapping it opens the same capture routes",
-    ["Add from gallery", "Take a picture"].every((t) => labels.includes(t)),
-    labels.filter((l) => /gallery|picture/.test(l)).join(" | ") || "menu did not open");
-  const pan = panel(De);
-  check("pill: its menu opens upward from the bottom, not under the header",
-    !!pan && /fixed inset-x-0 bottom-0/.test(pan.parentElement?.className || ""),
-    pan ? (pan.parentElement?.className || "").slice(0, 78) : "-");
-  tapE(find(De, /^Take a picture$/));
-  await settle(empty.window, 500);
-  const stillThere = [...De.querySelectorAll("button")].some((b) => /^Add from gallery$/.test((b.textContent || "").trim()));
-  check("pill: picking a route closes the menu (haptic + dismiss, same as the header)",
-    !stillThere || /opacity:\s*0\b/.test((panel(De)?.parentElement?.getAttribute("style") || "")),
-    stillThere ? "exit animation still playing" : "menu closed");
-  check("pill: the header + still works alongside it",
-    [...De.querySelectorAll("button")].some((b) => b.getAttribute("aria-label") === "Add card"), "header + present");
-  check("pill: no console errors on the empty wallet", empty.errors.length === 0,
-    empty.errors.slice(0, 1).join("").slice(0, 140));
 }
 
 // ---------------------------------------------------------------------------
