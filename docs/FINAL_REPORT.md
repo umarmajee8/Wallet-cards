@@ -404,3 +404,57 @@ Paper preset alone, or just the two repairs - it is all in `f8cc89c`:
 `patch10_paper_pouch.py` / `patch11_pouch_add_pill.py` (each runs standalone and
 takes `--check`). Do not re-apply the pill as-is: its appearance (empty wide
 capsule) is exactly what was rejected.
+
+## 9. Stack tap-to-eject (patch 12), 2026-09-05
+
+**Khulasa (Urdu):** Aap ne kaha stack layout mein card par click karne par "ajeeb
+si animation" hoti hai, aur click par card pouch/deck se **bahir aa ke khule**.
+Dono ka karan ek hi jagah tha - `__cwStack` ke pointerup handler mein.
+
+Kya ho raha tha: tap ko "hit-test against the fan" samjha jata tha -
+
+    let e=(clientX-rect.left)/rect.width-.5, i=Math.round(d+e/.38);   // tap ke neeche ka index
+    if(n!==Math.round(d)){snap(n);return}   // neighbor? sirf deck sideways, kuch nahi khulta
+
+Matlab screen ke centre se ~19% har taraf hat kar tap karte hi poora fan sideways
+tween ho jata tha (har card `rotateY +/-48deg`, `z -160px` per step, `scale .72-1`)
+aur **koi card nahi khulta** - swipe wali animation tap par. Aur centre par tap
+karne par khulta tha, magar card deck se bahir aata hi nahi tha: sirf frosted flap
+fold hoti thi (`rotateX:-128`). Pouch (`yd`) mein yeh motion pehle se tha
+(`animate:{y:-(inside+cardH*.35),rotate:-2.2,scale:1.05}` + `hd` spring) - is liye
+stack ajeeb lagta tha.
+
+Fix (bundle-level, 6 edits):
+
+| | before | after |
+|---|---|---|
+| tap on a neighbour | fan sweeps sideways, sheet never opens | that card is brought forward (`snap(n,.24)`) **and** ejected + opened in the same motion |
+| tap on the front card | flap folds, card stays put | card lifts `translateY(-ch*0.11)` on the pouch's spring (240/18/0.85), flap folds, then sheet opens |
+| the photo | static | scale 1.05 while lifted (same 1.05 the pouch uses) |
+| cover OFF handoff | `setTimeout(...,140)` | 240ms, so the lift is visible before the sheet takes over (with no flap there is no animation event to wait for) |
+| `drag.current` on tap | left `true` forever after the first tap -> the fan stopped resyncing to index changes (`p.jump(r)` skipped) | cleared in the tap path |
+
+`y` was deliberately chosen as the animated channel: on that element `x`/`z`/
+`rotateY`/`scale`/`opacity` are the fan's own springs fed by `p.on("change")`, so
+animating any of those would have fought the drag math. `y` was unused.
+
+Gates: smoke **72/72** (was 64) - the new 8 checks drive real pointer events
+against the stack (with the layout mock, so hit-testing works) and assert: the
+tapped neighbour (not the front card) is the one that ends up ejected, its inline
+`translateY` is ~-57px (=-11% of the 520px card box) while its neighbour's stays
+0, the detail sheet opens on that card, a horizontal drag still flips the deck and
+opens nothing, zero console errors, plus two code-level guards (the snap-only
+branch is gone; `drag.current` is released). The existing
+"tapping a card still opens the detail sheet (stack/carousel)" hand-off checks
+still pass with the longer timer. `node --check` runs inside patch 12 before it
+writes; re-running it is a no-op (an insert-type edit's anchor is a substring of
+its own output, so `status()` checks the output first - that bug briefly produced
+a duplicate `let ly` and the parse guard caught it).
+
+Not fixed, on purpose: in Carousel only the middle pouch is tappable (`isActive`
+gate) - side pouches need a swipe first. That is stock behaviour and reads as a
+deliberate metaphor, not a bug; say the word if you want side pouches tappable.
+
+Artifact: `CardWallet_header_black.apk` rebuilt (the filename is now just the
+link that is stable) - see the sha256 in the commit message. Still **not**
+verified on a device: `docs/DEVICE_TEST_PLAN.md` §N.

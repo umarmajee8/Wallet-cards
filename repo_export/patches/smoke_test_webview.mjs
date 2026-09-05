@@ -149,6 +149,9 @@ check("feature entry point: settings persisted key initialised",
 // ---------------------------------------------------------------------------
 // Test 2: data persistence + "app restart" with existing state
 // ---------------------------------------------------------------------------
+// The bundle as text, for the few facts that only live in code (a guard branch that
+// must not exist, a ref that must be released) rather than in the rendered DOM.
+const BUNDLE_SRC = fs.readFileSync(path.join(APP, "index.js"), "utf8");
 const CARDS_KEY = "wallet.cards.v2";
 const SETTINGS_KEY = "wallet.settings.v1";
 // Real persisted shape (see om() in the bundle: entries need id + src).
@@ -570,6 +573,90 @@ for (const view of ["carousel", "stack"]) {
     HEADER_CFG.options.map((o) => `${o.id}:${o.chip ? "23(disc)" : "26(bare)"}`).join(" "));
   check("header: no console errors in the dark theme", dark.errors.length === 0,
     dark.errors.slice(0, 1).join("").slice(0, 150));
+}
+
+// ---------------------------------------------------------------------------
+// Test 6e: stack - tapping a card ejects it and opens it (patch12)
+// ---------------------------------------------------------------------------
+{
+  const CARDS3 = JSON.stringify([
+    { id: "c1", src: "cards/one.jpg", title: "Alpha One", subtitle: "1", fields: [] },
+    { id: "c2", src: "cards/two.jpg", title: "Bravo Two", subtitle: "2", fields: [] },
+    { id: "c3", src: "cards/three.jpg", title: "Charlie Three", subtitle: "3", fields: [] },
+  ]);
+  const open = () => /WhatsApp/.test(Ds.getElementById("root").textContent || "");
+  const cards = () => [...Ds.querySelectorAll("#root div.absolute.no-select")];
+  const st = makeDom(
+    { [CARDS_KEY]: CARDS3, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) },
+    { withLayout: true },
+  );
+  runBundle(st.window, st.errors);
+  await settle(st.window, 900);
+  const Ws = st.window, Ds = Ws.document;
+  const ptr = (type, x, y) => {
+    const e = new Ws.MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(e, "isPrimary", { value: true });
+    Object.defineProperty(e, "pointerId", { value: 1 });
+    return e;
+  };
+  const stage = [...Ds.querySelectorAll("#root div")].find((d) => /perspective:\s*1200/.test(d.getAttribute("style") || ""));
+  const beforeT = cards().map((el) => el.getAttribute("style") || "");
+  check("stack: three cards are on screen and nothing is open yet", cards().length === 3 && !open(),
+    `cards=${cards().length} open=${open()}`);
+
+  // with the layout mock the stage box is left:45 width:300, so x=280 maps to the
+  // card BEHIND the front one - exactly the tap that used to only sweep the deck.
+  stage.dispatchEvent(ptr("pointerdown", 280, 300));
+  await settle(Ws, 80);
+  Ws.dispatchEvent(ptr("pointerup", 280, 300));
+  await settle(Ws, 900);
+  const after = cards();
+  const raised = after.findIndex((el) => /z-index:\s*40/.test(el.getAttribute("style") || ""));
+  check("stack: the tapped card - not the front one - is the one that came out",
+    raised === 1, `ejected index=${raised} (0 would mean the deck ignored the tap)`);
+  // framer writes the transform as functions, so the lift is readable directly:
+  // the ejected card must carry a negative translateY, the resting ones must not.
+  const ty = (el) => parseFloat((el?.getAttribute("style") || "").match(/translateY\((-?[\d.]+)px\)/)?.[1] ?? "0");
+  check("stack: that card lifts out of the deck on its own axis (translateY, not only the flap)",
+    ty(after[1]) < -40 && ty(after[1]) > -90 && ty(after[0]) === 0,
+    `lift=${ty(after[1])}px (expect ~-57px = ch*0.11), neighbour y=${ty(after[0])}px`);
+  check("stack: the opened card then shows its details", open(),
+    open() ? "sheet open on the tapped card" : (Ds.getElementById("root").textContent || "").slice(0, 60));
+  check("stack: no console errors from the tap", st.errors.length === 0, st.errors.slice(0, 1).join("").slice(0, 150));
+
+  // a swipe must stay a swipe: change card, open nothing
+  const sw = makeDom(
+    { [CARDS_KEY]: CARDS3, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) },
+    { withLayout: true },
+  );
+  runBundle(sw.window, sw.errors);
+  await settle(sw.window, 900);
+  const Ww = sw.window, Dw = Ww.document;
+  const ptr2 = (type, x, y) => {
+    const e = new Ww.MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(e, "isPrimary", { value: true });
+    Object.defineProperty(e, "pointerId", { value: 1 });
+    return e;
+  };
+  const stage2 = [...Dw.querySelectorAll("#root div")].find((d) => /perspective:\s*1200/.test(d.getAttribute("style") || ""));
+  stage2.dispatchEvent(ptr2("pointerdown", 200, 300));
+  await settle(Ww, 30);
+  Dw.dispatchEvent(ptr2("pointermove", 120, 300));
+  await settle(Ww, 30);
+  Dw.dispatchEvent(ptr2("pointermove", 60, 300));
+  await settle(Ww, 30);
+  Ww.dispatchEvent(ptr2("pointerup", 60, 300));
+  await settle(Ww, 700);
+  const swOpen = /WhatsApp/.test(Dw.getElementById("root").textContent || "");
+  check("stack: a horizontal drag still flips the deck without opening anything",
+    !swOpen && sw.errors.length === 0, `open=${swOpen} err=${sw.errors.length}`);
+
+  // the two code-level guards behind the above
+  check("stack: tap path no longer returns before opening (snap-only branch is gone)",
+    !/if\(n!==Math\.round\(d\)\)\{snap\(n\);return\}/.test(BUNDLE_SRC) &&
+      /snap\(n,\.24\),a\(c\);return/.test(BUNDLE_SRC), "tap maps then opens");
+  check("stack: tap clears drag.current so the deck resyncs to index changes",
+    /if\(f!==1\)\{drag\.current=null;/.test(BUNDLE_SRC), "ref released in the tap path");
 }
 
 // ---------------------------------------------------------------------------

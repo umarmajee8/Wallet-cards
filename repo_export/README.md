@@ -4,7 +4,11 @@ This repo contains the patched source for the CardWallet app.
 
 ## Changes made
 1. Removed the "Make your own pouch" custom color-picker feature (both the header menu entry and the Settings-screen row).
-2. Added two new fixed pouch presets, selectable from Settings -> **Pouch style**:
+2. Added two new fixed pouch presets, selectable from Settings -> **Pouch style**
+   (caveat: the presets and the picker row are in the *base APK's* bundle, not in
+   `app/index.js`, and the settings loader pins `theme=slate` on every read - so on
+   a build from this repo the row is not there and a saved preset would be
+   discarded anyway. See `../docs/FINAL_REPORT.md` §8 before touching this again):
    - **Frosted** (original default)
    - **Steel** - dark slate/blue-grey look
    - **Emerald** - dark green look
@@ -33,11 +37,21 @@ This repo contains the patched source for the CardWallet app.
    patch refuses to write a bundle that does not parse.
    Behaviour is unchanged from the stock app (same three actions, same two
    dropdowns), so this is styling plus plumbing, not a feature swap.
+8. **Stack layout: tapping a card now ejects it and opens it** (patch 12): a tap on
+   any card in the deck lifts *that* card out (`translateY -11%` of the card height,
+   the pouch's own spring) and opens its details, instead of the previous behaviour
+   where an off-centre tap tweened the whole fan sideways (`rotateY +/-48deg`,
+   z -160px/step, scale .72-1) and opened nothing. Horizontal drags still flip the
+   deck. The pouch already behaved this way - `yd` animates `y/rotate/scale` on
+   eject - so this is parity, not a new motion language. Also releases the
+   `drag.current` ref the tap path used to leave set, which is why the deck stopped
+   resyncing to programmatic index changes after the first tap.
+
 
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.
-- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch8),
+- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch12),
   plus the release toolchain: `build_release_apk.py` (build + sign),
   `build_debug_apk.py` (same bundle, throwaway debug key - for hands-on testing),
   `apkbuilder.py` (aligned zip, v1/v2/v3 signing, PKCS#12 keystore),
@@ -105,7 +119,7 @@ Verification gates:
 - `python3 patches/verify_release.py ../CardWallet_release.apk` - 29 package checks
   (the header ones read `header_options.json`, so a bundle that drifted from the
   config fails the build instead of shipping quietly)
-- `node patches/smoke_test_webview.mjs` - 64 web-layer checks (`npm i jsdom`)
+- `node patches/smoke_test_webview.mjs` - 72 web-layer checks (`npm i jsdom`)
 - `python3 patches/animation_audit.py` - static jank audit
 
 `verify_release.py` shells out to `apksigtool` for the v2/v3 checks

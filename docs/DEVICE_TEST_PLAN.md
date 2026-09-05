@@ -205,9 +205,31 @@ rides the app's own `--solid`/`--on-solid`/`--ink` tokens so it inverts.
 
 ---
 
+## N. Stack layout: tap-to-eject (patch 12)
+
+The old behaviour was only visible on a real screen, so this is the row that
+matters most: the machine can prove the tap opens, but not whether it *reads* well.
+
+| # | Step | Expected |
+|---|---|---|
+| N1 | Settings -> Layout -> Stack | Deck of cards fanned left/right, front card centred |
+| N2 | Tap the **front** card | It rises out of the deck (~57px on a phone) with the frosted flap folding back, then the detail sheet opens from that card |
+| N3 | Tap a card at the **left or right edge** of the deck (a neighbour, not the front one) | **That** card comes forward, lifts out and opens. Previously this was the bug: the whole fan swept sideways and nothing opened |
+| N4 | Watch N3 closely | One motion, not two - the neighbour slides in *while* lifting, no separate "rotate the deck" animation before the sheet, no bounce-back, no card landing in the wrong place |
+| N5 | Swipe horizontally on the deck | Still flips cards (that gesture must not open anything); the card you land on is the one a tap would open |
+| N6 | Close the sheet (swipe down / backdrop) | Deck is left with the card you opened at the front; that card is not stuck lifted/zoomed and not blurred |
+| N7 | Tidy-up check: open a card, close, open another 5-6 times | No drift - after the first tap the deck used to stop resyncing its position (a leaked `drag.current`); the fan should still follow card adds/selection changes |
+| N8 | Settings -> Wallet & cover OFF, then repeat N2 | Card still lifts, sheet opens ~240ms later (no flap to wait for). Should not feel laggy compared to cover ON |
+| N9 | Carousel layout, tap a card in the pouch | Unchanged by this patch: card slides up out of the sleeve and opens. Only the middle pouch is tappable - side pouches need a swipe first (stock behaviour, tell me if you want it changed) |
+
+N2/N3/N4 are the acceptance rows for this change; N7 is the regression guard for
+the ref-leak fix.
+
+---
+
 ## Sign-off
 
-The build may only be called production-ready once A–L are green on at least
+The build may only be called production-ready once A–N are green on at least
 one physical device. Record device model, Android version and result per row,
 and file anything that fails with the section id (e.g. "F3 fails: Back exits
 the app with Settings open").
