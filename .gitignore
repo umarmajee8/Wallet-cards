@@ -1,3 +1,6 @@
 repo_export/signing/
 repo_export/CardWallet_no_autodetect.apk
 download/*.apk
+__pycache__/
+*.pyc
+node_modules/
