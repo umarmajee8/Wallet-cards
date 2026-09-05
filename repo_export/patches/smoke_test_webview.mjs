@@ -239,10 +239,21 @@ const hdrChips = () => HEADER_CFG.options.map((o) => byLabel(o.label));
 
 check("header: every option in header_options.json renders a button",
   hdrChips().every(Boolean), HEADER_CFG.options.map((o, i) => `${o.id}=${hdrChips()[i] ? "y" : "n"}`).join(" "));
-check("header: chips are a black fill with white glyphs (light theme)",
-  hdrChips().every((c) => isBlack(colorOf(c, "background")) && isWhite(colorOf(c, "color"))),
-  hdrChips().map((c) => `${colorOf(c, "background")} on ${colorOf(c, "color")}`).join(" | "));
-check("header: chips no longer follow the theme ink colour",
+// what the config says each option should look like (chip = filled disc)
+const toneOf = (o) => o.tone || HEADER_CFG.defaults?.tone || "black";
+const wantBg = (o) => (o.chip ? (toneOf(o) === "white" ? "#fff" : "#000") : "transparent");
+const wantGlyph = (o) => (o.chip ? (toneOf(o) === "white" ? "#000" : "#fff")
+  : toneOf(o) === "ink" ? "var(--ink)" : toneOf(o) === "white" ? "#fff" : "#000");
+const HEX = (v) => (["#000", "#000000"].includes(v) ? "#000" : ["#fff", "#ffffff"].includes(v) ? "#fff" : v);
+
+check("header: the picture's styling is applied per option (disc vs bare glyph)",
+  HEADER_CFG.options.every((o, i) => {
+    const c = hdrChips()[i];
+    return c && HEX(colorOf(c, "background")) === wantBg(o) && HEX(colorOf(c, "color")) === wantGlyph(o);
+  }),
+  HEADER_CFG.options.map((o, i) =>
+    `${o.id}: ${HEX(colorOf(hdrChips()[i], "color"))} on ${HEX(colorOf(hdrChips()[i], "background"))} (want ${wantGlyph(o)} on ${wantBg(o)})`).join(" | "));
+check("header: glyphs no longer follow the theme ink class",
   hdrChips().every((c) => !/(^|\s)ink(\s|$)/.test(c.className || "")),
   hdrChips().map((c) => c.className).join(" | ").slice(0, 90));
 
@@ -258,10 +269,27 @@ check("ui: NFC entry point present in add menu (settings nfc=on)",
 
 const hdrPanel = () => [...D.querySelectorAll("#root div")].find((d) => /w-\[248px\]/.test(d.className || ""));
 const panel = hdrPanel();
-check("header: the chip that opened this menu lights up to the raised black",
-  colorOf(byLabel("Add card"), "background") === "#2f2f34" &&
-  isBlack(colorOf(byLabel("More"), "background")),
-  `add=${colorOf(byLabel("Add card"), "background")} more=${colorOf(byLabel("More"), "background")}`);
+{
+  // patch7 gives a filled disc a halo while its menu is open; a bare glyph gets a
+  // var(--chip) circle instead - both are "this menu is open" feedback
+  const openOpt = HEADER_CFG.options.find((o) => o.menu === "add");
+  const closedOpt = HEADER_CFG.options.find((o) => o.id === "more");
+  check("header: the option whose menu is open shows its active state",
+    openOpt?.chip
+      ? /0 0 0 4px/.test(styleDecl(byLabel(openOpt.label), "box-shadow"))
+      : true,
+    `box-shadow=${styleDecl(byLabel(openOpt?.label || ""), "box-shadow")}`);
+  check("header: an option whose menu is closed keeps its resting look",
+    closedOpt ? HEX(colorOf(byLabel(closedOpt.label), "background")) === wantBg(closedOpt) : true,
+    `${closedOpt?.id}=${colorOf(byLabel(closedOpt?.label || ""), "background")}`);
+}
+{
+  const more = byLabel(HEADER_CFG.options.find((o) => o.icon === "bars")?.label || "");
+  const d = [...(more?.querySelectorAll("path") || [])].map((p) => p.getAttribute("d") || "").join(" ");
+  check("header: the menu button draws the picture's hamburger, not the stock three dots",
+    !!more && /h15/.test(d) && /M4\.5 7\.1/.test(d) && !more.querySelector("circle"),
+    d.slice(0, 70) || "no bars path");
+}
 check("header: dropdown panel is black with a white hairline, not sheet-white",
   colorOf(panel, "background") === "#0b0b0d" && /rgba\(255, 255, 255, 0\.14\)/.test(styleDecl(panel, "border")),
   `bg=${colorOf(panel, "background")} border=${styleDecl(panel, "border")}`);
@@ -481,11 +509,20 @@ for (const view of ["carousel", "stack"]) {
   const chips = HEADER_CFG.options
     .map((o) => [...Dk.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === o.label))
     .filter(Boolean);
-  check("header: dark theme keeps black chips with white glyphs",
+  check("header: dark theme renders the same configured tones (fill is not theme-derived)",
     Dk.documentElement.classList.contains("dark") &&
     chips.length === HEADER_CFG.options.length &&
-    chips.every((c) => isBlack(colorOf(c, "background")) && isWhite(colorOf(c, "color"))),
-    chips.map((c) => `${colorOf(c, "color")} on ${colorOf(c, "background")}`).join(" | "));
+    chips.every((c, i) => HEX(colorOf(c, "background")) === wantBg(HEADER_CFG.options[i]) &&
+                          HEX(colorOf(c, "color")) === wantGlyph(HEADER_CFG.options[i])),
+    chips.map((c) => `${HEX(colorOf(c, "color"))} on ${HEX(colorOf(c, "background"))}`).join(" | "));
+  check("header: bare glyph size is set by patch7 (26px outside a disc)",
+    (() => {
+      const bare = HEADER_CFG.options.findIndex((o) => !o.chip);
+      if (bare < 0) return true;
+      const svg = chips[bare]?.querySelector("svg");
+      return svg?.getAttribute("width") === "26";
+    })(),
+    HEADER_CFG.options.map((o) => `${o.id}:${o.chip ? "23(disc)" : "26(bare)"}`).join(" "));
   check("header: no console errors in the dark theme", dark.errors.length === 0,
     dark.errors.slice(0, 1).join("").slice(0, 150));
 }

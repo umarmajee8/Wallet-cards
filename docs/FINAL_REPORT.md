@@ -264,47 +264,60 @@ Until then the honest status is: **release-signed and package-verified, device-u
 
 ---
 
-## 6. Addendum — black header options (patch 7 + 8), 2026-09-05
+## 6. Addendum — header options restyled to the mock (patch 7 + 8), 2026-09-05
 
-**Khulasa (Urdu):** Header ke options ab **black chips par white icons** hain,
-aur dropdown bhi black panel + white rows hai — light ho ya dark theme, same
-look. Sath hi header options ab `repo_export/header_options.json` se drive hote
-hain: buttons ka hona/na hona, label, icon, order aur dropdown ke rows — sab ek
-JSON file se badalte hain, minified JS chhedne ki zaroorat nahi. Test ke liye
-debug-signed APK bana diya hai (production keystore is clone mein nahi hai).
+**Khulasa (Urdu):** Aap ki picture aa gayi, aur header ab usi mutabiq hai —
+`+` **kaale disc par safed plus**, aur **search + hamburger (☰) bare kaale icons**
+(baghal mein koi chip nahi). Dropdown black panel + white rows hai. Sath hi ab
+header options `repo_export/header_options.json` se drive hote hain — kaunsa
+button, uska label/icon/fill-bare/colour, aur dropdown ke rows — sab ek JSON file
+se; minified JS chhedne ki zaroorat nahi. Test ke liye debug-signed APK bana diya
+(production keystore is clone mein gitignored hai).
 
-Artifact: `CardWallet_header_black.apk` (11,648,254 bytes) — **debug-signed,
-do not distribute**; install over an existing build requires
-`adb uninstall com.arena.cardwallet` first.
-SHA-256: `385d3fea6d84cc2b9ac7d8e245b80f9b5e9d2641a9a165cb6c6d14ac03abb4be`
+Artifact: `CardWallet_header_black.apk` (11,648,377 bytes) — **debug-signed, do
+not distribute**; install karne se pehle `adb uninstall com.arena.cardwallet`
+(current build ke upar update signature mismatch se `INSTALL_FAILED_UPDATE_INCOMPATIBLE`
+aayega).
+SHA-256: `b2a36df60798bdc801ef51d4c34729c62e390e8995eafdcd8cd036bff155b9fe`
 
 What changed in the bundle:
 
-| | before | after |
+| | before | after (the mock) |
 |---|---|---|
-| header buttons | `var(--ink)` icons floating on the page, `var(--chip)` when open | `#000` chip, white glyph, `rgba(255,255,255,0.14)` hairline, `#2f2f34` while its menu is open |
-| dropdown | `var(--sheet)` panel, `var(--ink)` rows | `#0b0b0d` panel, white rows, destructive row keeps `#ff453a` |
-| options | hard-coded `Add card / Search cards / More` (+ hard-coded menu rows) | generated from `header_options.json`; the shipped config reproduces the same five actions, so behaviour is unchanged |
+| `+` | `var(--ink)` glyph, `var(--chip)` behind it when open | `#000` disc, white plus at 2.5 stroke, soft drop shadow, 4px halo while its menu is open |
+| search | same ink glyph on the page | bare `#000` loupe at 2.3 stroke, 26px, no chip |
+| overflow | three vertical dots | **hamburger** — three 2.7-round bars, bare `#000`, 26px |
+| dropdown | `var(--sheet)` panel, `var(--ink)` rows | `#0b0b0d` panel, white rows, `#ff453a` destructive row |
+| where the options come from | hard-coded `Add card / Search cards / More` + hard-coded rows | generated from `header_options.json` |
+
+Tap targets are unchanged (44px, `h-11 w-11`) for both filled and bare options, so
+removing the chip did not shrink the hit area.
 
 Gates re-run on this pass:
 
-- `verify_release.py` on the new APK: **28/29** — the single failure is
-  `sign: signer subject is not a debug cert`, which is exactly what a debug
-  build must fail; 3 header checks were added so a bundle that drifts from
-  `header_options.json` now fails the gate instead of shipping quietly.
-- `smoke_test_webview.mjs`: **59/59** (was 50) — +9 header checks: chips render
-  for every configured option, black fill + white glyph in *both* themes, no
-  `ink` class left, active-chip highlight, black panel, white rows, red
-  destructive row, no console errors.
+- `smoke_test_webview.mjs`: **62/62** (was 50) — the header checks read the JSON
+  and assert each option's fill/tone/glyph-size/active-state against it, plus
+  that the menu button renders the hamburger path and not the stock dots, and
+  that both themes render the configured tones verbatim.
+- `verify_release.py`: **28/29** on the debug APK — the single failure is
+  `sign: signer subject is not a debug cert`, i.e. the debug key doing its job.
+  Three of its checks now compare the shipped bundle against
+  `header_options.json`, so a bundle that drifts from the config fails the gate.
+- `patch7`/`patch8` re-ran twice → byte-identical output (idempotent);
+  `patch8` refuses to write a bundle that does not parse (`node --check`), and
+  rejects unknown icons/tones/keys with the valid names listed.
 - `animation_audit.py`: 10 checks, 1 warning — the same pre-existing
-  layout-property warning as before this change (verified by re-running the
-  audit against the pre-patch bundle).
-- patch 7 / patch 8 re-run twice: idempotent, byte-identical output.
+  layout-property warning, unchanged by this pass.
 
-Still **device-unverified**: the header's actual contrast against the pouch,
-the tap-target feel at 44px on a small phone, and whether the black chips read
-well over a bright card photo can only be judged on hardware. The picture that
-was meant to define the new option set never arrived in the workspace, so the
-*labels/icons* are unchanged — only the colour treatment is applied. Changing
-the option set itself is now a one-file edit: rewrite `header_options.json`,
-run `patch8_header_options.py`, rebuild.
+Known trade-offs, deliberately left as asked:
+
+1. `tone: "black"` is literal. The mock is light-theme; on the **dark** theme the
+   app background is `#000`, so the two bare glyphs would be invisible. The
+   smoke test asserts the config is honoured in both themes rather than
+   "fixed". One word — `"tone": "ink"` — makes them follow the theme.
+2. The mock draws the three options with wide, even spacing; the header still
+   uses the app's own `gap-1` between them (icons matched, layout not
+   re-proportioned). Say the word and it becomes a config field.
+3. Still **device-unverified**: real contrast over the pouch/card photos, the
+   44px tap feel, and the halo animation can only be judged on hardware
+   (`docs/DEVICE_TEST_PLAN.md` section A + I).

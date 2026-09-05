@@ -1,49 +1,70 @@
 #!/usr/bin/env python3
-"""Black header options for Card Wallet.
+"""Header look for Card Wallet: one filled black disc, the rest plain black ink.
 
-The header keeps its options but they are now drawn on a solid black chip with
-white glyphs, instead of theme-coloured icons floating on the page:
+Matching the reference picture: the add button is a solid black disc with a
+white `+`, while search and the menu button are bare black glyphs on the page
+(no chip behind them). So the button component grows three props instead of one
+hard-coded style, and patch8 feeds them from header_options.json:
 
-  * header buttons  - black pill (#000), white icon, white 14% hairline so the
-                      chip still reads on the dark theme's pure-black app bg;
-                      the open menu's button lights up to #2f2f34.
-  * dropdown sheet  - black panel (#0b0b0d) with white rows and a white hairline
-                      (drop-shadow deepened so it still lifts off a black bg).
-  * pressed rows     get the same active:opacity-70 feedback the rest of the app
-                      uses.
+  chip  - true  -> filled disc: bg #000, white glyph, 14% white hairline so the
+                   disc still reads on the dark theme's pure-black app bg, and a
+                   soft halo while its menu is open
+          false -> bare glyph: transparent, a subtle var(--chip) circle only
+                   while its menu is open
+  tone  - `black` (#000, what the picture shows) / `white` (#fff) /
+           `ink` (var(--ink): black on the light theme, white on the dark one)
+  size  - glyph size; disc glyphs stay at 23px, bare glyphs get 26px so the
+           three options carry the same visual weight as in the picture
 
-The button component also gains a `text` prop (icon + label chip instead of an
-icon circle); patch8 turns it on via header_options.json's `showText`.
+The dropdown stays a black panel (#0b0b0d) with white rows - "black" was asked
+for the header options themselves, and inverting the sheet keeps the two states
+consistent with each other. The destructive row keeps the app's red.
 
-Everything is done with inline styles on purpose: index.css is byte-compared
-against the CSS entry inside the base APK by build_release_apk.py, so adding a
-new class there would break the build pipeline. `sheet-bg` is therefore dropped
-from the dropdown (inline background wins anyway, but leaving a class that
-contradicts the inline value is confusing).
+Note on `tone:black`: bare black glyphs go unreadable on the dark theme, whose
+app background is #000 (and the default pouch is near-black too). The picture is
+a light-theme design, so black is what ships here; flip an option to
+"tone": "ink" in header_options.json for theme-following glyphs.
+
+Everything is inline styles on purpose: index.css is byte-compared against the
+CSS entry inside the base APK by build_release_apk.py, so adding a class there
+would break the build pipeline. `sheet-bg` is dropped from the dropdown for the
+same reason - the inline background wins anyway and leaving a contradicting
+class is confusing.
 
 Run:  python3 repo_export/patches/patch7_header_black.py [--check]
 """
 from pathlib import Path
 
+import sys
+
 path = Path(__file__).resolve().parents[1] / "app" / "index.js"
 data = path.read_text(encoding="utf-8")
+CHECK = "--check" in sys.argv
 
-CHECK = "--check" in __import__("sys").argv
+# --------------------------------------------------------------- svg + button
+OLD_H = "let h=({children:e})=>(0,U.jsx)(`svg`,{width:`23`,height:`23`,viewBox:`0 0 24 24`,fill:`none`,children:e})"
+NEW_H = "let h=({children:e,size:sz=23})=>(0,U.jsx)(`svg`,{width:sz,height:sz,viewBox:`0 0 24 24`,fill:`none`,children:e})"
 
-# ---------------------------------------------------------------- header chips
 OLD_BTN = (
     "g=({label:e,onClick:t,active:n,children:r})=>(0,U.jsx)(`button`,{\"aria-label\":e,onClick:t,"
     "className:`flex h-11 w-11 items-center justify-center rounded-full ink`,"
     "style:{background:n?`var(--chip)`:`transparent`},children:(0,U.jsx)(h,{children:r})})"
 )
+# `text` (icon + label chip) is kept for header_options.json's showText.
 NEW_BTN = (
-    "g=({label:e,onClick:t,active:n,text:a,children:r})=>(0,U.jsx)(`button`,{\"aria-label\":e,onClick:t,"
+    "g=({label:e,onClick:t,active:n,chip:cp,tone:tn,text:a,children:r})=>(0,U.jsx)(`button`,{\"aria-label\":e,onClick:t,"
     "className:`flex h-11 items-center justify-center rounded-full active:opacity-70 ${a?``:`w-11`}`,"
-    "style:{background:n?`#2f2f34`:`#000`,color:`#fff`,"
-    "border:`1px solid rgba(255,255,255,0.14)`,boxShadow:`0 6px 16px -8px rgba(0,0,0,0.65)`,"
+    "style:cp?"
+    "{background:tn===`white`?`#fff`:`#000`,color:tn===`white`?`#000`:`#fff`,"
+    "border:`1px solid rgba(255,255,255,0.14)`,"
+    "boxShadow:n?`0 0 0 4px rgba(17,17,19,0.10)`:`0 6px 16px -8px rgba(0,0,0,0.65)`,"
+    "...(a?{padding:`0 12px`,gap:`6px`}:{})}:"
+    "{color:tn===`ink`?`var(--ink)`:tn===`white`?`#fff`:`#000`,"
+    "border:`1px solid transparent`,"
+    "background:n?`var(--chip)`:`transparent`,"
     "...(a?{padding:`0 12px`,gap:`6px`}:{})},"
     "children:(0,U.jsxs)(U.Fragment,{children:["
-    "(0,U.jsx)(h,{children:r}),"
+    "(0,U.jsx)(h,{size:cp?23:26,children:r}),"
     "a&&(0,U.jsx)(`span`,{style:{fontSize:`13.5px`,fontWeight:`600`,whiteSpace:`nowrap`},children:e})"
     "]})})"
 )
@@ -69,16 +90,17 @@ NEW_ROW = (
     "style:{color:e.danger?`#ff453a`:`#fff`}"
 )
 
-EDITS = [(OLD_BTN, NEW_BTN, "header chips"), (OLD_PANEL, NEW_PANEL, "menu panel"), (OLD_ROW, NEW_ROW, "menu rows")]
+EDITS = [
+    (OLD_H, NEW_H, "svg size prop"),
+    (OLD_BTN, NEW_BTN, "header buttons"),
+    (OLD_PANEL, NEW_PANEL, "menu panel"),
+    (OLD_ROW, NEW_ROW, "menu rows"),
+]
 
 if CHECK:
-    bad = [
-        label
-        for old, new, label in EDITS
-        if not (data.count(old) == 1 or data.count(new) == 1)
-    ]
-    print("clean (all anchors present)" if not bad else "STALE ANCHORS: " + ", ".join(bad))
-    raise SystemExit(1 if bad else 0)
+    stale = [label for old, new, label in EDITS if not (data.count(old) == 1 or data.count(new) == 1)]
+    print("clean (all anchors present)" if not stale else "STALE ANCHORS: " + ", ".join(stale))
+    raise SystemExit(1 if stale else 0)
 
 for old, new, label in EDITS:
     count = data.count(old)

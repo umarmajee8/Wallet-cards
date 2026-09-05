@@ -17,17 +17,22 @@ This repo contains the patched source for the CardWallet app.
 5. Production hardening: release signing with a real RSA-4096 keystore
    (the debug key is retired) and `android:allowBackup="false"` so card photos
    and details never leave the app sandbox via cloud/adb backup.
-6. **Black header options** (patch 7): the header buttons sit on solid black
-   chips with white glyphs, and their dropdown is a black panel with white rows,
-   instead of theme-coloured icons on the page. It no longer follows
-   `var(--ink)`, so it looks identical in light and dark. The destructive row
-   keeps the app's red.
+6. **Header options restyled to the mock** (patch 7): the `+` is a solid black
+   disc with a white plus, while search and the menu button are bare black glyphs
+   with no chip behind them - theme-coloured icons floating on the page are gone.
+   The menu button became a hamburger (three bars) instead of three dots, and the
+   dropdown is a black panel with white rows (the destructive row keeps the
+   app's red). Bare glyphs render at 26px so all three options carry the same
+   visual weight as the disc.
 7. **Header options are now config-driven** (patch 8): `header_options.json`
-   declares which buttons the header shows (label, icon, action, order, whether
-   the label is drawn next to the icon) and what each dropdown contains. Change
-   the file, re-run `patches/patch8_header_options.py`, rebuild - no minified
-   JS editing. The shipped config reproduces the stock header exactly
-   (Add / Search / More), so patch 8 alone is a no-op on behaviour.
+   declares which buttons the header shows - label, icon, action, order, whether
+   the option is a filled disc or a bare glyph (`chip`), its colour (`tone`:
+   black / white / ink), whether the label is drawn next to the icon - plus what
+   each dropdown contains. Change the file, re-run
+   `patches/patch8_header_options.py`, rebuild: no minified JS editing, and the
+   patch refuses to write a bundle that does not parse.
+   Behaviour is unchanged from the stock app (same three actions, same two
+   dropdowns), so this is styling plus plumbing, not a feature swap.
 
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
@@ -44,8 +49,23 @@ This repo contains the patched source for the CardWallet app.
 ## Header options, in detail
 
 `repo_export/header_options.json` is the single place to change what the header
-offers. `showText: true` puts each option's label next to its icon (the chip
-grows); `showText: false` keeps icon-only 44px chips.
+offers. Per option:
+
+| key | meaning |
+|---|---|
+| `chip` | `true` = filled disc (black bg, white glyph, halo while its menu is open); `false` = bare glyph on the page, with a subtle `var(--chip)` circle only while its menu is open |
+| `tone` | `black` (`#000`, as in the mock) / `white` / `ink` (`var(--ink)`: black on the light theme, white on the dark one). `defaults.tone` covers the whole row |
+| `showText` | label beside the icon, chip grows to fit (also settable globally) |
+| `when` | `nfc` / `hasCards` - reuses the gates the app already has |
+| `icon` | plus, search, bars, dots-v, dots-h, gear, image, camera, nfc, trash, x, check, chevron-r, wallet, sliders, list, star, card, eye, share, lock |
+| `action` | `toggle:<add\|more>`, gallery, camera, nfc, search, settings, studio, delete, none |
+
+Tap targets stay 44px (`h-11 w-11`) either way, so the bare glyphs are not a
+smaller hit area than the disc.
+
+**Dark theme caveat:** the mock is light-theme, and `tone: black` means literally
+black - on the dark theme (app bg `#000`) bare black glyphs go unreadable. Set
+`"tone": "ink"` on those options if you want them to follow the theme instead.
 
     python3 repo_export/patches/patch8_header_options.py   # JSON -> index.js
     python3 repo_export/patches/build_debug_apk.py          # -> installable APK
@@ -55,9 +75,13 @@ owns and re-runs replace that span instead of stacking copies. `--check` validat
 the JSON (icons, actions, gates) without touching the bundle. Unknown icon/action
 names fail loudly with the list of valid ones.
 
+Both dropdowns are configurable the same way (`menus.add` / `menus.more`), which
+is why the panel is generated too: `(l==="add"?p:m)` in the bundle becomes a
+marked array literal that patch 8 owns.
+
 Gates: `verify_release.py` and the smoke test check the header against this same
 JSON, so a bundle that drifted from the config fails the build rather than
-shipping quietly.
+shipping quietly. patch 8 also runs `node --check` over its own output.
 
 - `signing/` - production keystore + password (gitignored, never committed).
 - `CardWallet_no_pouch.apk` - previous signed build (pouch changes only).
@@ -77,7 +101,7 @@ Verification gates:
 - `python3 patches/verify_release.py ../CardWallet_release.apk` - 29 package checks
   (the header ones read `header_options.json`, so a bundle that drifted from the
   config fails the build instead of shipping quietly)
-- `node patches/smoke_test_webview.mjs` - 59 web-layer checks (`npm i jsdom`)
+- `node patches/smoke_test_webview.mjs` - 62 web-layer checks (`npm i jsdom`)
 - `python3 patches/animation_audit.py` - static jank audit
 
 `verify_release.py` shells out to `apksigtool` for the v2/v3 checks

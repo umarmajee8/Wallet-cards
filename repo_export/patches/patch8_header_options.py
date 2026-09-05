@@ -26,6 +26,10 @@ previous span wholesale (idempotent):
 
 Usage:
   python3 repo_export/patches/patch8_header_options.py [--check]
+
+Per option: `chip` (filled disc vs bare glyph), `tone` (black / white / ink),
+`showText` (label beside the icon), `when` (nfc / hasCards). `defaults.tone`
+covers the whole row.
 """
 from __future__ import annotations
 
@@ -47,11 +51,15 @@ MENU_MARK = "/*cardwallet:menu:%s*/"
 FRAG = "(0,U.jsxs)(U.Fragment,{children:[%s]})"
 ICONS: dict[str, str] = {
     # --- taken verbatim from the stock bundle ---
-    "plus": "(0,U.jsx)(`path`,{d:`M12 4.8v14.4M4.8 12h14.4`,stroke:`currentColor`,strokeWidth:`1.9`,strokeLinecap:`round`})",
+    # the three header glyphs are drawn heavier than the menu icons - on the
+    # reference picture the +, the loupe and the bars all read at ~2.5-2.7 on a
+    # 24 grid, so they carry equal weight next to the filled disc
+    "plus": "(0,U.jsx)(`path`,{d:`M12 5.9v12.2M5.9 12h12.2`,stroke:`currentColor`,strokeWidth:`2.5`,strokeLinecap:`round`})",
     "search": FRAG % (
-        "(0,U.jsx)(`circle`,{cx:`11`,cy:`11`,r:`6.2`,stroke:`currentColor`,strokeWidth:`1.9`}),"
-        "(0,U.jsx)(`path`,{d:`m15.6 15.6 3.6 3.6`,stroke:`currentColor`,strokeWidth:`1.9`,strokeLinecap:`round`})"
+        "(0,U.jsx)(`circle`,{cx:`10.4`,cy:`10.4`,r:`6.4`,stroke:`currentColor`,strokeWidth:`2.3`}),"
+        "(0,U.jsx)(`path`,{d:`m15.3 15.3 4.3 4.3`,stroke:`currentColor`,strokeWidth:`2.3`,strokeLinecap:`round`})"
     ),
+    "bars": "(0,U.jsx)(`path`,{d:`M4.5 7.1h15M4.5 12h15M4.5 16.9h15`,stroke:`currentColor`,strokeWidth:`2.7`,strokeLinecap:`round`})",
     "dots-v": FRAG % (
         "(0,U.jsx)(`circle`,{cx:`12`,cy:`5.4`,r:`1.7`,fill:`currentColor`}),"
         "(0,U.jsx)(`circle`,{cx:`12`,cy:`12`,r:`1.7`,fill:`currentColor`}),"
@@ -103,6 +111,7 @@ ICONS: dict[str, str] = {
     ),
 }
 
+TONES = {"black", "white", "ink"}
 HANDLERS = {"gallery": "e", "camera": "t", "nfc": "n", "settings": "i", "studio": "a", "delete": "o"}
 GATES = {"nfc": "s", "hasCards": "c"}
 
@@ -181,7 +190,7 @@ def gate_for(o: dict, where: str) -> str | None:
     return GATES.get(gate) if gate else None
 
 
-def header_children(opts: list[dict], show_text: bool) -> str:
+def header_children(opts: list[dict], show_text: bool, default_tone: str) -> str:
     parts = []
     for o in opts:
         for key in ("id", "label", "icon", "action"):
@@ -192,7 +201,12 @@ def header_children(opts: list[dict], show_text: bool) -> str:
         if o.get("menu"):
             props.append(f"active:l===`{o['menu']}`")
         props.append(f"onClick:{onClick_for(o['action'], in_menu=False, where=where)}")
-        if show_text:
+        tone = o.get("tone", default_tone)
+        if tone not in TONES:
+            raise SystemExit(f"header option {o['id']!r}: unknown tone {tone!r} (black / white / ink)")
+        props.append(f"chip:{'!0' if o.get('chip') else '!1'}")
+        props.append(f"tone:`{tone}`")
+        if show_text or o.get("showText"):
             props.append("text:!0")
         btn = f"(0,U.jsx)(g,{{{','.join(props)},children:{icon_expr(o['icon'], where)}}},`{o['id']}`)"
         gate = gate_for(o, where)
@@ -263,6 +277,20 @@ def main() -> int:
     if not cfg.get("options"):
         raise SystemExit("header_options.json: 'options' is empty - the header would have no buttons")
     show_text = bool(cfg.get("showText"))
+    OPT_KEYS = {"id", "label", "icon", "action", "menu", "when", "chip", "tone", "showText"}
+    ITEM_KEYS = {"label", "icon", "action", "when", "danger"}
+    for o in cfg["options"]:
+        bad = set(o) - OPT_KEYS
+        if bad:
+            raise SystemExit(f"header option {o.get('id', o)}: unknown key(s) {sorted(bad)} (known: {sorted(OPT_KEYS)})")
+    for key, items in (cfg.get("menus") or {}).items():
+        for it in items:
+            bad = set(it) - ITEM_KEYS
+            if bad:
+                raise SystemExit(f"menu {key!r} item {it.get('label', it)}: unknown key(s) {sorted(bad)} (known: {sorted(ITEM_KEYS)})")
+    unknown = set(cfg) - {"_comment", "showText", "defaults", "options", "menus"}
+    if unknown:
+        raise SystemExit(f"header_options.json: unknown top-level key(s) {sorted(unknown)}")
     menus = cfg.get("menus") or {}
     for key in menus:
         if key not in STOCK_MENUS:
@@ -292,7 +320,17 @@ def main() -> int:
             )
 
     # 2) the header row
-    new_header = header_children(cfg["options"], show_text)
+    new_header = header_children(cfg["options"], show_text, str((cfg.get("defaults") or {}).get("tone", "black")))
+
+    wants_v2 = any(
+        o.get("chip") or o.get("tone") or show_text or o.get("showText")
+        for o in cfg["options"]
+    )
+    if wants_v2 and "chip:cp,tone:tn" not in data:
+        raise SystemExit(
+            "header_options.json asks for chip/tone/showText, but the button component does not\n"
+            "                 support them - apply patch7_header_black.py first"
+        )
     marked = replace_marked(data, HEADER_MARK, "children:", new_header)
     if marked is not data:
         data = marked
@@ -312,8 +350,28 @@ def main() -> int:
               f"menus={', '.join(menus) if menus else 'unchanged'}")
         return 0
 
+    # A generated span that does not parse would only show up as a blank WebView
+    # on a phone, so check it here where the failure is legible.
+    import shutil
+    import subprocess
+    import tempfile
+
+    if shutil.which("node"):
+        with tempfile.NamedTemporaryFile("w", suffix=".mjs", delete=False, encoding="utf-8") as fh:
+            fh.write(data)
+            tmp = fh.name
+        node = subprocess.run(["node", "--check", tmp], capture_output=True, text=True)
+        Path(tmp).unlink(missing_ok=True)
+        if node.returncode != 0:
+            first = next((l for l in node.stderr.splitlines() if "Error" in l), node.stderr[:200])
+            raise SystemExit(f"generated bundle does not parse: {first}\n"
+                             f"  app/index.js left untouched")
+        log_syntax = "node --check ok"
+    else:
+        log_syntax = "node not found - skipped syntax check"
+
     APP_JS.write_text(data, encoding="utf-8")
-    print("app/index.js written - " + ", ".join(notes))
+    print("app/index.js written - " + ", ".join(notes) + f" ({log_syntax})")
     print("  header: " + " | ".join(o["label"] for o in cfg["options"]))
     for key, items in menus.items():
         print(f"  {key} menu: " + " / ".join(i["label"] for i in items))
