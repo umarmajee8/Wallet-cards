@@ -75,12 +75,35 @@ This repo contains the patched source for the CardWallet app.
    itself uses, so an actively held card is never yanked. Sub-pixel drift is cleaned up too.
    Same springs, same snap targets; no layout, padding or safe-area change (that part of the
    report was the phone's own bar, which the app cannot remove).
+11. **Only the pouches respond to touch, and the cover stops paying for blur** (patch 15).
+   The device report framed the empty black bands above and below the pouch row: "yeh jaga
+   kam na kray - is pr touch swipe kuch b kam na kray". The carousel's drag layer was a
+   full-`inset-0` sheet bigger than the artwork it held, so a swipe starting in dead space
+   still grabbed the row (and the `grab` cursor advertised that). The layer is no longer a
+   hit target at all: each card wrapper is (`pointer-events:auto` + a `data-cwc` marker),
+   `onPointerDown` ignores a gesture that did not start inside a pouch, and `<main>` gets
+   `touch-action:none` so the bands cannot scroll or rubber-band the page either. Also in
+   this patch, on request: the Stack cover's `backdrop-filter:blur(22px) saturate(1.6)` is
+   gone completely (flat translucent panel, with enough body that the card stays hidden),
+   and the card name under a pouch follows the theme token (`var(--ink)`, weight 800)
+   instead of being hardcoded white whenever the cover is on - which was invisible in
+   light mode. The title's drop shadow became a token (`--pouch-label-shadow` in
+   `app/index.css`): no smudge behind black text on a light page, the halo kept in dark.
+12. **Every card can carry its own pouch colour** (patch 16). "jaisy baki carousel hain un
+   ka colour select kar saktay hain, is ka bhi waise hi karo". Settings -> Pouch -> Colour is
+   wallet-wide, so one card could not be different. The card's own editor sheet (long-press a
+   card -> Card details) now has a **Pouch colour** row using the same 11 swatches, saved on
+   that card (`card.color`), plus a **Wallet colour** chip that hands it back to the wallet
+   setting. Painting reuses the bundle's existing "Yours" theme (`ad('custom', custom)`), so
+   the sleeve, tray gradient, sheen and name colour all follow one hex - no new drawing
+   code. Both memo comparators compare `card.color`, otherwise React would accept the value
+   and never repaint. Cards without an override are untouched.
 
 
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.
-- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch14),
+- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch16),
   plus the release toolchain: `build_release_apk.py` (build + sign),
   `build_debug_apk.py` (same bundle, throwaway debug key - for hands-on testing),
   `apkbuilder.py` (aligned zip, v1/v2/v3 signing, PKCS#12 keystore),
@@ -148,9 +171,10 @@ Verification gates:
 - `python3 patches/verify_release.py ../CardWallet_release.apk` - 29 package checks
   (the header ones read `header_options.json`, so a bundle that drifted from the
   config fails the build instead of shipping quietly)
-- `node patches/smoke_test_webview.mjs` - 85 web-layer checks (`npm i jsdom`);
-  6 of them drive the carousel with real pointer events and reproduce the stuck
-  half-shifted row (58.4px) before proving it recovers to 0.00px
+- `node patches/smoke_test_webview.mjs` - 115 web-layer checks (`npm i jsdom`);
+  the carousel tests drive real pointer events: they reproduce the stuck half-shifted
+  row (58.4px) and prove it recovers to 0.00px, prove a swipe in the empty band moves
+  nothing, and read each pouch's painted gradient to prove a per-card colour wins
 - `python3 patches/animation_audit.py` - static jank audit
 
 `verify_release.py` shells out to `apksigtool` for the v2/v3 checks
@@ -161,6 +185,9 @@ writes `../CardWallet_header_black.apk`, signed with a throwaway key it creates
 under `repo_export/signing/`. Same bundle, same manifest hardening, same
 alignment - only the signature differs, so Android will not update an existing
 install over it (`adb uninstall com.arena.cardwallet` first). Never distribute it.
+It swaps `index.js` **and** `index.css` (a patch may add a token to the stylesheet, e.g.
+patch 15's `--pouch-label-shadow`), but it refuses to run if `index.html` has drifted -
+that would mean the entry graph changed and only a real build may produce that.
 
 
 On-device testing is **not** covered by any of the above - see

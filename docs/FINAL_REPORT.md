@@ -563,3 +563,71 @@ jaan boojh: debug cert subject). `animation_audit`: same 10 checks / 1 pre-exist
 **Build.** `CardWallet_header_black.apk` = 11,648,763 bytes, sha256
 `c5a8f69a8f18d54c1616d26cf3b059742d389a1f67ccf77ea2c1fde3bb3204ca`, same debug key
 (`adb install -r`, data salamat). Device rows: `docs/DEVICE_TEST_PLAN.md` §O (O1-O6).
+
+---
+
+## 12. Pouch screen: dead area band, blur, per-card colour (patches 15 + 16), 2026-09-05
+
+**Khulasa (Urdu):** Aap ne doosri screenshot bheji aur blue se pouch ke upar/neeche ka
+khaali kaala hissa frame kia - "yeh jaga kam na kray, is pr touch/swipe kuch b kaam na
+kare". Saath mein: blur ka kaam kam karo, har card ka colour bhi select ho sakay, aur
+white mode mein card ke naam white aate hain - woh black bold ho jan. Teeno ho gaye.
+
+**1. Dead area ab bilkul inert ha (patch15).** Carousel ka drag layer `absolute inset-0`
+tha - yaani stage box jitna bara, artwork se zyada - is liye khaali jagah se uthne wala
+swipe bhi row ko khench leta tha, aur `cursor:grab` ye wada bhi karta tha. Ab:
+
+* layer par `pointer-events:none`, aur har card wrapper par `pointer-events:auto` +
+  `data-cwc` marker + grab cursor;
+* `onPointerDown` sirf us gesture ko leta ha jo *card ke andar* shuru ho
+  (`e.target.closest('[data-cwc]')`) - CSS kisi puranay WebView ne ignore kar dia to bhi
+  rule lagoo rahega, aur jsdom mein (jahan hit-testing nahi ha) isi se test ho sakta ha;
+* `<main>` par `touch-action:none` + `overscroll-behavior:none`, taake khaali patti se
+  uthne wali swipe browser page ko scroll/rubber-band na karay.
+
+**2. Blur ab kahin nahi (patch15).** Sach ye ha ke carousel mein koi blur tha hi nahi -
+wahan pouch canvas par bunta ha - is liye card ka atakna blur se nahi ho raha tha (atakne
+ka asli ilaaj patch14 + ab ye inert band ha). Blur sirf Stack view ke frosted cover par
+tha: `backdrop-filter:blur(22px) saturate(1.6)`. Aap ne "poori tarah hata do" chuna, so
+ab cover ek flat translucent panel ha - aur blur hatane ke baad card ka number uske peeche
+se parha ja sakta tha, is liye panel ki body barha di (`rgba(28,28,34,0.72)`), taake
+cover apna kaam karta rahe.
+
+**3. Naam ab theme ke saath (patch15).** Label ka colour `cover ? white : var(--ink)` tha -
+matlab cover ONhte hue light mode mein bhi white, aur safed background par gum. Ab label
+hamesha `var(--ink)` (light: `#111113`, dark: `#f5f5f7`) + `font-weight:800`, aur uska
+shadow ek token ha: `--pouch-label-shadow` (light `none`, `html.dark` mein purana halo).
+Is ke liye pehli dafa `index.css` bhi badla - aur debug builder CSS swap karna nahi janta
+tha, is liye usay bhi update kia (HTML ab bhi guardeed ha).
+
+**4. Har card ka apna colour (patch16).** Aap ne "dono" kaha: per-card swatches + jo select
+ho woh lage. Doosra aadha pehle se lagoo tha - test se proof: `custom.color:#2d4a3e` dene
+par har pouch `rgb(32, 53, 45)` par paint hota ha (default slate `#3a3d45…` nahi). Pehla
+aadha naya: card ke editor (long-press -> Card details) mein **Pouch colour** ki 11
+swatches + **Wallet colour** chip (jo override wapas settings ko de deta ha, `{color:void
+0}` - usi sheet ka `back:void 0` wala tareeqa). Card par `color` save hota ha aur `yd` us
+card ko `theme:'custom'` par paint karta ha - yaani bundle ka apna "Yours" theme, jisme
+sleeve, tray gradient, sheen aur naam ka rang ek hi hex se bante hain (naya drawing code
+kuch nahi). Dono memo comparators (`Q` aur `Dd`) ab `card.color` compare karte hain - warna
+React value accept karke card ko dobara paint hi na karta.
+
+DOM se proof: `T0` par `#2c3d56` dene se sirf uski pouch `rgb(27, 38, 53) 0%, rgb(18, 24,
+34) 45%, rgb(11, 15, 21) 100%` ho jati ha, baqi green hi rehti hain; `T2` par `#b08d57`
+dene par woh alag `rgb(109, 87, 54)…` - yaani cards swatantir hain.
+
+**Gates.** Smoke **115/115** (79 -> 85 -> 115). patch15 ke 12 naye checks: `<main>`,
+peranay drag layer aur stage box se uthne wali swipe par row **0.00px** bhi nahi hilta,
+card par swipe **31.83px** hilta ha, `pointer-events` / `cursor` / `touch-action` DOM par,
+label `var(--ink)` + 800, aur CSS token. patch16 ke 8+3 checks: global colour apply,
+per-card override jeet-ta ha, 11 swatches, save sirf us card par, selected ring, reset ke
+baad wapas wallet colour. Chain replay stock->7->8->12->13->14->15->16 byte-identical;
+patch13 ko `DOWNSTREAM_KEEP` marker dena para kyunke patch15 uski flap-blur edit ka span
+aur re-word karta ha (warna patch13 dobara chalane par purana blur wapas aa sakta tha).
+patch16 hata kar chalane par theek 8 colour checks fail hote hain (107/115) - yaani tests
+is feature ko sach mein pakartay hain. `verify_release.py` 28/29 (soli FAIL = debug cert
+subject). `animation_audit` 10 checks / 1 pre-existing WARN.
+
+**Build.** `CardWallet_header_black.apk` = 11,649,151 bytes, sha256
+`7f251342aefeffccd8ec5b4c6fcc227e00d95334d98ab7073196107e47036453`, same debug key
+(`adb install -r`). Device rows: `docs/DEVICE_TEST_PLAN.md` §P (P1-P8), aur §O ab
+safety-net rows hain.

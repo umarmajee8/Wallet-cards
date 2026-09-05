@@ -106,22 +106,28 @@ def main() -> int:
         if needle in js:
             raise SystemExit(f"web bundle still contains a removed feature: {needle!r}")
 
+    css = (APP / "index.css").read_bytes()
     with zipfile.ZipFile(base) as z:
-        for entry, local in ((CSS_ENTRY, "index.css"), (HTML_ENTRY, "index.html")):
-            if z.read(entry) != (APP / local).read_bytes():
-                raise SystemExit(
-                    f"{local} in repo_export/app differs from the base APK - this debug "
-                    f"builder only swaps index.js; update the base APK or use a full rebuild"
-                )
+        # The stylesheet is a plain asset next to the bundle, so a debug build may swap it
+        # the same way it swaps index.js - a patch that adds a token (patch 15) would
+        # otherwise be untestable on a phone. The HTML is different: a changed index.html
+        # means the *entry graph* changed, which only a real vite build may produce.
+        if z.read(HTML_ENTRY) != (APP / "index.html").read_bytes():
+            raise SystemExit(
+                "index.html in repo_export/app differs from the base APK - this debug "
+                "builder swaps index.js/index.css only; use a full rebuild for html changes"
+            )
+        css_swapped = z.read(CSS_ENTRY) != css
         manifest = harden_manifest(z.read(MANIFEST_ENTRY))
         had_backup = axml.get_attribute(z.read(MANIFEST_ENTRY), "application", "allowBackup")
-    log("bundle", f"guard rails ok, index.js = {len(js)} bytes")
+    log("bundle", f"guard rails ok, index.js = {len(js)} bytes"
+        + (f", index.css = {len(css)} bytes (swapped)" if css_swapped else ""))
     log("manifest", f"allowBackup {had_backup.data if had_backup else 'absent'} -> False, debuggable False")
 
     rk = get_debug_key()
     info = apkbuilder.repackage_and_sign(
         base, out_apk, rk,
-        replacements={JS_ENTRY: js, MANIFEST_ENTRY: manifest},
+        replacements={JS_ENTRY: js, MANIFEST_ENTRY: manifest, **({CSS_ENTRY: css} if css_swapped else {})},
         created_by="CardWallet debug pipeline (local test build)",
     )
     log("sign", f"v1+v2+v3, {info['entries']} entries, {info['size']} bytes")

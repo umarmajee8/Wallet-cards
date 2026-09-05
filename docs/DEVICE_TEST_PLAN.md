@@ -252,11 +252,32 @@ back-swipe, notification shade, recents) - the watchdog only gives up while a gl
 already running, so a stuck row after ~1s would mean the row was left mid-animation by
 something else.
 
+## P. Pouch screen: dead area, cover blur, per-card colour (patches 15 + 16)
+
+The screenshot rows: the black band above and below the pouches had to stop responding,
+the cover's blur had to go, and a card's name had to be readable in light mode. §O's
+recovery rows stay in the plan - they are now a safety net, not the main fix.
+
+| # | Step | Expected |
+|---|---|---|
+| P1 | In the carousel, press and drag starting in the empty black area **above** the pouches | Nothing happens at all: the row does not move, no card shifts, no scroll/rubber-band. The grab cursor is gone there too |
+| P2 | Same, in the empty area **below** the row (over/near the system gesture bar) | Also nothing. A swipe that starts on a pouch still drags it normally |
+| P3 | Drag starting exactly on the front pouch, and on a side pouch | Both still work - that is the only surface that responds; releasing still snaps to a card, centred |
+| P4 | Settings -> Layout -> Stack: watch the cover fold when a card opens | No frosted blur any more - a flat translucent panel. The card behind it must NOT be readable through the cover (no number/chip showing through). If the panel now looks too plain or too dark, say so |
+| P5 | System in **light** mode, look at the card names under the pouches (and in the Stack view) | Black and bold (`#111113`, weight 800), never white; no grey smudge behind them. In dark mode they stay near-white and the soft halo remains |
+| P6 | Long-press a card -> Card details -> **Pouch colour** | 11 swatches appear under the card's name. Picking one repaints *that* card's pouch only; the other cards keep the wallet colour |
+| P7 | After P6, the **Wallet colour** chip appears in that row | Tapping it removes the override and the card follows the wallet colour again. Then Settings -> Pouch -> Colour still changes every card that has no override |
+| P8 | Kill and reopen the app after P6/P7 | The per-card colour persisted (it is stored on the card), and a card you never touched looks exactly as before |
+
+If P1/P2 still move the row, note the device and whether a system gesture was involved -
+the guard is on the event target, so a stray target (e.g. an overlay from another app)
+would be worth knowing about.
+
 ---
 
 ## Sign-off
 
-The build may only be called production-ready once A–O are green on at least
+The build may only be called production-ready once A–P are green on at least
 one physical device. Record device model, Android version and result per row,
 and file anything that fails with the section id (e.g. "F3 fails: Back exits
 the app with Settings open").

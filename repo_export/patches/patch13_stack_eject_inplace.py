@@ -129,14 +129,26 @@ EDITS = [
     ),
 ]
 
+# Patch 15 re-words one span this patch writes (the flap's backdrop-filter is now
+# dropped outright, not only during the fold). The marker proves the rest of patch 13's
+# output is still in there, so `--check` and a chain replay stay quiet.
+DOWNSTREAM_KEEP = {
+    "flap: blur only at rest":
+        "transition:{type:`tween`,duration:.26,ease:[.22,1,.28,1]},"
+        "onAnimationComplete:()=>{s&&w&&w(rc.current)}}",
+}
+
+
 def status(data):
+    """(pending, applied, unrecognised) - see patch 12 for the two special cases."""
     todo, done, bad = [], [], []
     for old, new, label in EDITS:
+        keep = DOWNSTREAM_KEEP.get(label)
         if old in new and data.count(new) >= 1:
             done.append(label)
         elif data.count(old) == 1:
             todo.append((old, new, label))
-        elif data.count(new) >= 1:
+        elif data.count(new) >= 1 or (keep and keep in data):
             done.append(label)
         else:
             bad.append(label)

@@ -152,7 +152,9 @@ check("feature entry point: settings persisted key initialised",
 // The bundle as text, for the few facts that only live in code (a guard branch that
 // must not exist, a ref that must be released) rather than in the rendered DOM.
 const BUNDLE_SRC = fs.readFileSync(path.join(APP, "index.js"), "utf8");
+const CSS_SRC = fs.readFileSync(path.join(APP, "index.css"), "utf8");
 // the carousel component (Td) as a source slice, for the mechanism checks in Test 6f
+const STACK_FLAP_SRC = (BUNDLE_SRC.match(/backdropFilter:[^}]{0,200}/) || [""])[0];
 const BUNDLE_CAROUSEL_SRC = (() => {
   const i = BUNDLE_SRC.indexOf("function Td({cards:");
   const j = BUNDLE_SRC.indexOf("var Ed=", i);
@@ -438,7 +440,11 @@ const titleStyle = (d) => {
     (e) => /text-align:\s*center/i.test(e.getAttribute("style") || "") && /font-size:\s*13px/i.test(e.getAttribute("style") || "")
   );
   const st = el?.getAttribute("style") || "";
-  return { color: st.match(/color:\s*([^;]*)/)?.[1] || "", shadow: st.match(/text-shadow:\s*([^;]*)/)?.[1] || "" };
+  return {
+    color: st.match(/color:\s*([^;]*)/)?.[1] || "",
+    shadow: st.match(/text-shadow:\s*([^;]*)/)?.[1] || "",
+    weight: st.match(/font-weight:\s*([^;]*)/)?.[1] || "",
+  };
 };
 const coverSwitch = (d) =>
   [...d.querySelectorAll('button[role="switch"]')].find((b) => (b.parentElement?.textContent || "").startsWith("Wallet & cover"));
@@ -449,8 +455,12 @@ runBundle(cvOn.window, cvOn.errors);
 await settle(cvOn.window, 800);
 check("cover ON: carousel draws the pouch", trayCount(cvOn.window.document) > 0 && sleeveCount(cvOn.window.document) > 0,
   `tray=${trayCount(cvOn.window.document)} sleeve=${sleeveCount(cvOn.window.document)}`);
-check("cover ON: card title stays white over the pouch",
-  /255,\s*255,\s*255/.test(titleStyle(cvOn.window.document).color), titleStyle(cvOn.window.document).color);
+{
+  const t = titleStyle(cvOn.window.document);
+  check("cover ON: card title follows the theme instead of going white (patch15)",
+    /--ink/.test(t.color) && /^\s*800\s*$/.test(t.weight),
+    `color=${t.color} weight=${t.weight || "-"} shadow=${t.shadow || "-"}`);
+}
 
 // -- flip the switch in Settings --
 {
@@ -475,7 +485,8 @@ check("cover ON: card title stays white over the pouch",
   check("cover OFF: cards themselves still render", [...D2.querySelectorAll("#root img")].length > 0);
   const ts = titleStyle(D2);
   check("cover OFF: title colour follows the theme (var(--ink))", ts.color.includes("--ink"), ts.color);
-  check("cover OFF: dark drop-shadow on the title is dropped", ts.shadow.trim() === "none", ts.shadow);
+  check("cover OFF: the title shadow is a theme token, not a fixed value",
+    /--pouch-label-shadow/.test(ts.shadow), ts.shadow.trim());
   check("cover: no console errors while toggling", cvOn.errors.length === 0, cvOn.errors.slice(0, 1).join("").slice(0, 150));
 }
 
@@ -658,9 +669,9 @@ for (const view of ["carousel", "stack"]) {
     !open() && ty(back[1]) === 0 && tx(back[1]) === 0 && !/z-index:\s*40/.test(styleOf(back[1])),
     `open=${open()} y=${ty(back[1])} x=${tx(back[1])}`);
   const flapBack = flapOf(back[1]);
-  check("stack: the frosted look returns at rest (blur is only dropped mid-motion)",
-    /blur\(22px\) saturate\(1\.6\)/.test(styleOf(flapBack)),
-    (styleOf(flapBack).match(/backdrop-filter:[^;]*/) || ["-"])[0]);
+  check("stack: the cover never pays for backdrop blur (patch15)",
+    /backdrop-filter:\s*none/.test(styleOf(flapBack)) && !/blur\(22px\)/.test(STACK_FLAP_SRC),
+    (styleOf(flapBack).match(/backdrop-filter:[^;]*/) || ["no flap element"])[0]);
 
   // a swipe must stay a swipe: flip the deck, open nothing
   const sw = makeDom(
@@ -744,8 +755,9 @@ for (const view of ["carousel", "stack"]) {
   const front = () => cardEls().sort((a, b) => zOf(b) - zOf(a))[0];
   const stage = [...Dc.querySelectorAll("#root div")].find((d) => /perspective:\s*1200/.test(styleOf(d)));
   // the drag layer is the *child* of the perspective box - onPointerDown lives on it
+  // patch15 moved the touch target off the layer and onto the pouches themselves
   const dragLayer = [...Dc.querySelectorAll("#root div")].find(
-    (d) => /cursor-grab/.test(d.className || "") && /absolute/.test(d.className || ""),
+    (d) => /absolute inset-0/.test(d.className || "") && /touch-action:\s*none/.test(styleOf(d)),
   );
 
   check("carousel: pouch renders the row component", !!stage && !!dragLayer && cardEls().length >= 3,
@@ -757,7 +769,7 @@ for (const view of ["carousel", "stack"]) {
   // `shifted` is measured while the row is still held off-centre - well inside the
   // 340ms idle window - so this can never race the watchdog on a slow machine.
   const drag = async (dx, release) => {
-    (dragLayer || stage)?.dispatchEvent(ptr("pointerdown", cx, cy));
+    (front() || dragLayer || stage)?.dispatchEvent(ptr("pointerdown", cx, cy));
     for (let i = 1; i <= 4; i++) {
       Wc.dispatchEvent(ptr("pointermove", cx + (dx * i) / 4, cy));
       await settle(Wc, 30);
@@ -790,6 +802,226 @@ for (const view of ["carousel", "stack"]) {
     "pointerdown calls y()");
   check("carousel: no console errors while the row recovers", st.errors.length === 0,
     st.errors.slice(0, 1).join("").slice(0, 160));
+}
+
+
+// ---------------------------------------------------------------------------
+// Test 6g: the empty bands above/below the pouch row must do nothing (patch15)
+//
+// The report was a screenshot with the dead black area above and below the row
+// framed in blue: "yeh jaga kam na kray - is pr touch swipe kuch b kam na kray".
+// So the drag surface has to be the pouches, not the box around them - and a
+// swipe starting anywhere else must not move the row, must not be taken by the
+// browser as a scroll, and must not even show the grab cursor.
+// ---------------------------------------------------------------------------
+{
+  const CARDS3d = JSON.stringify([
+    { id: "m1", src: "cards/one.jpg", title: "Nova One", subtitle: "1", fields: [] },
+    { id: "m2", src: "cards/two.jpg", title: "Oscar Two", subtitle: "2", fields: [] },
+    { id: "m3", src: "cards/three.jpg", title: "Papa Three", subtitle: "3", fields: [] },
+  ]);
+  const st = makeDom(
+    { [CARDS_KEY]: CARDS3d, [SETTINGS_KEY]: JSON.stringify({ view: "carousel", cover: true }) },
+    { withLayout: true },
+  );
+  runBundle(st.window, st.errors);
+  await settle(st.window, 900);
+  const Wg = st.window, Dg = Wg.document;
+  const ptr = (type, x, y) => {
+    const e = new Wg.MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(e, "isPrimary", { value: true });
+    Object.defineProperty(e, "pointerId", { value: 1 });
+    return e;
+  };
+  const styleOf = (el) => el?.getAttribute("style") || "";
+  const tx = (el) => parseFloat(styleOf(el).match(/translateX\((-?[\d.]+)px\)/)?.[1] ?? "0");
+  const zOf = (el) => parseInt(styleOf(el).match(/z-index:\s*(\d+)/)?.[1] ?? "0", 10);
+  const cardEls = () => [...Dg.querySelectorAll("#root div.absolute.top-0")];
+  const front = () => cardEls().sort((a, b) => zOf(b) - zOf(a))[0];
+  const allDivs = () => [...Dg.querySelectorAll("#root div")];
+  const layer = allDivs().find((d) => /absolute inset-0/.test(d.className || "") && /touch-action:\s*none/.test(styleOf(d)));
+  const stageBox = allDivs().find((d) => /perspective:\s*1200/.test(styleOf(d)));
+  const main = Dg.querySelector("#root main");
+
+  // returns how far the front card moved for a gesture that started on `el`
+  const dragShift = async (el, dx) => {
+    const before = tx(front());
+    el?.dispatchEvent(ptr("pointerdown", 400, 300));
+    for (const step of [0.33, 0.66, 1]) {
+      Wg.dispatchEvent(ptr("pointermove", 400 + dx * step, 300));
+      await settle(Wg, 30);
+    }
+    const shift = tx(front()) - before;
+    Wg.dispatchEvent(ptr("pointerup", 400 + dx, 300));
+    await settle(Wg, 900);
+    return shift;
+  };
+
+  const sMain = await dragShift(main, 140);
+  const sLayer = await dragShift(layer, 140);
+  const sStage = await dragShift(stageBox, 140);
+  const sCard = await dragShift(front(), 60);
+  check("pouch: a swipe in the empty band above/below the row does nothing",
+    Math.abs(sMain) < 0.5, `row moved ${sMain.toFixed(2)}px`);
+  check("pouch: the dead area of the old drag layer does nothing",
+    Math.abs(sLayer) < 0.5, `row moved ${sLayer.toFixed(2)}px`);
+  check("pouch: the stage box around the cards does nothing",
+    Math.abs(sStage) < 0.5, `row moved ${sStage.toFixed(2)}px`);
+  check("pouch: a swipe that starts on a card still drags the row",
+    Math.abs(sCard) > 4, `row moved ${sCard.toFixed(2)}px`);
+
+  check("pouch: the wrapper layer is not a hit target",
+    /pointer-events:\s*none/.test(styleOf(layer)), (styleOf(layer).match(/pointer-events:[^;]*/) || ["-"])[0]);
+  check("pouch: each card is the hit target and carries the grab cursor",
+    /pointer-events:\s*auto/.test(styleOf(front())) && /cursor:\s*grab/.test(styleOf(front())),
+    `${(styleOf(front()).match(/pointer-events:[^;]*/) || ["-"])[0]} ${(styleOf(front()).match(/cursor:[^;]*/) || ["-"])[0]}`);
+  check("pouch: the cursor is no longer promising a drag over empty space",
+    !/cursor:\s*grab/.test(styleOf(layer)), (styleOf(layer).match(/cursor:[^;]*/) || ["none"])[0]);
+  check("pouch: <main> cannot scroll or rubber-band",
+    /touch-action:\s*none/.test(styleOf(main)) && /overscroll-behavior:\s*none/.test(styleOf(main)),
+    `${(styleOf(main).match(/touch-action:[^;]*/) || ["-"])[0]} ${(styleOf(main).match(/overscroll-behavior:[^;]*/) || ["-"])[0]}`);
+  check("pouch: only a gesture that started inside a pouch is accepted",
+    /closest\(`\[data-cwc\]`\)/.test(BUNDLE_CAROUSEL_SRC), "guard in Td.onPointerDown");
+  check("pouch: the title shadow token exists for both themes",
+    /--pouch-label-shadow:none/.test(CSS_SRC) && /html\.dark\{--pouch-label-shadow:0 1px 8px/.test(CSS_SRC),
+    "none in light, halo in dark");
+
+  const label = [...(front()?.querySelectorAll("div") || [])].find((d) => /margin-top:\s*8px/.test(styleOf(d)));
+  check("pouch: the card name is theme ink + 800, never hardcoded white",
+    /color:\s*var\(--ink\)/.test(styleOf(label)) && /font-weight:\s*800/.test(styleOf(label))
+      && !/rgba\(255,\s*255,\s*255/.test(styleOf(label)),
+    [styleOf(label).match(/color:[^;]*/)?.[0], styleOf(label).match(/font-weight:[^;]*/)?.[0],
+      styleOf(label).match(/text-shadow:[^;]*/)?.[0]].filter(Boolean).join(" "));
+  check("pouch: both layouts' card names read the same way (no hardcoded white left)",
+    (BUNDLE_SRC.match(/color:`var\(--ink\)`,fontSize:13,fontWeight:800/g) || []).length === 2
+      && !/color:cv\?`rgba\(255,255,255,0\.94\)`/.test(BUNDLE_SRC),
+    "carousel + stack cover");
+  check("pouch: no console errors while the bands go quiet", st.errors.length === 0,
+    st.errors.slice(0, 1).join("").slice(0, 150));
+}
+
+
+// ---------------------------------------------------------------------------
+// Test 6h: a card can carry its own pouch colour (patch16)
+//
+// "jaisy baki carousel hain un ka colour select kar saktay hain, is ka bhi waise hi"
+// - and the second half of the ask, that the selected colour really reaches the
+// pouch. Both are checked on the DOM, not just in the source: the pouch's tray
+// gradient is painted inline, so the colour each card ends up with is readable.
+// ---------------------------------------------------------------------------
+{
+  const CARDS_COL = (colors) => JSON.stringify(colors.map((c, i) => ({
+    id: "p" + i, src: "cards/" + i + ".jpg", title: "Hue" + i, subtitle: "x", fields: [],
+    ...(c ? { color: c } : {}),
+  })));
+  const GLOBAL_GREEN = {
+    cover: true,
+    custom: { color: "#2d4a3e", design: "slate", grain: 0.2, grade: 1 },
+    slateColor: "#2d4a3e",
+  };
+  const styleOf = (el) => el?.getAttribute("style") || "";
+  const gradOf = (el) => (styleOf(el).match(/background:[^;]*/) || ["-"])[0];
+  const mount = async (colors, settings) => {
+    const st = makeDom({ [CARDS_KEY]: CARDS_COL(colors), [SETTINGS_KEY]: JSON.stringify(settings) }, { withLayout: true });
+    runBundle(st.window, st.errors);
+    await settle(st.window, 900);
+    const D = st.window.document;
+    const byName = (name) => {
+      const w = [...D.querySelectorAll("#root div.absolute.top-0")].find((d) => (d.textContent || "").startsWith(name));
+      return [...(w?.querySelectorAll("div") || [])].find((d) => /left-0/.test(d.className) && /rgb|linear-gradient/.test(styleOf(d)));
+    };
+    return { st, D, byName };
+  };
+
+  // 1) the wallet-wide colour does reach every pouch (the second half of the ask)
+  {
+    const { byName, st } = await mount([null, null, null], GLOBAL_GREEN);
+    const g = gradOf(byName("Hue0")), y = gradOf(byName("Hue1"));
+    check("colour: the wallet-wide colour reaches the pouches", /rgb\(32, 53, 45\)/.test(g) && !/#3a3d45/.test(g), g.slice(0, 90));
+    check("colour: every card without an override looks the same", g === y, `${g.slice(0, 40)} vs ${y.slice(0, 40)}`);
+    check("colour: no console errors while painting", st.errors.length === 0, st.errors.slice(0, 1).join("").slice(0, 140));
+  }
+
+  // 2) a card with its own colour wins over the wallet-wide one
+  {
+    const { byName } = await mount(["#2c3d56", null, "#b08d57"], GLOBAL_GREEN);
+    const blue = gradOf(byName("Hue0")), plain = gradOf(byName("Hue1")), amber = gradOf(byName("Hue2"));
+    check("colour: a card with its own colour is painted from it", /rgb\(27, 38, 53\)/.test(blue), blue.slice(0, 90));
+    check("colour: the other cards keep the wallet colour", /rgb\(32, 53, 45\)/.test(plain), plain.slice(0, 60));
+    check("colour: two cards can hold two different colours", /rgb\(109, 87, 54\)/.test(amber) && blue !== amber, amber.slice(0, 90));
+  }
+
+  // 3) the picker itself: long-press a card -> Card details -> Pouch colour row
+  {
+    const st = makeDom(
+      { [CARDS_KEY]: CARDS_COL([null, null, null]), [SETTINGS_KEY]: JSON.stringify({ cover: true }) },
+      { withLayout: true },
+    );
+    runBundle(st.window, st.errors);
+    await settle(st.window, 900);
+    const Wh = st.window, Dh = Wh.document;
+    const ptr = (type, x, y) => {
+      const e = new Wh.MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+      Object.defineProperty(e, "isPrimary", { value: true });
+      Object.defineProperty(e, "pointerId", { value: 1 });
+      return e;
+    };
+    const click = (el) => el && el.dispatchEvent(new Wh.MouseEvent("click", { bubbles: true }));
+    const btn = (re) => [...Dh.querySelectorAll("button")].find((b) => re.test((b.textContent || "").trim()));
+
+    const front = [...Dh.querySelectorAll("#root div.absolute.top-0")].sort(
+      (a, b) => (parseInt((styleOf(b).match(/z-index:\s*(\d+)/) || [0, 0])[1], 10))
+        - (parseInt((styleOf(a).match(/z-index:\s*(\d+)/) || [0, 0])[1], 10)),
+    )[0];
+    const cardRoot = front?.querySelector("div.relative.no-select") || front;
+    cardRoot?.dispatchEvent(ptr("pointerdown", 300, 300));
+    await settle(Wh, 750);                       // the 480ms hold fires the long press
+    cardRoot?.dispatchEvent(ptr("pointerup", 300, 300));
+    await settle(Wh, 500);
+    check("colour: long-press opens the card's action sheet", /Card details/.test(Dh.getElementById("root").textContent || ""),
+      (Dh.getElementById("root").textContent || "").slice(0, 50));
+    click(btn(/^Card details$/));
+    await settle(Wh, 700);
+
+    const swatches = [...Dh.querySelectorAll('button[aria-label^="Pouch colour"]')];
+    check("colour: the card's editor offers the pouch colour swatches", swatches.length === 11,
+      `${swatches.length} swatches`);
+    check("colour: no reset chip while the card follows the wallet",
+      !Dh.querySelector('button[aria-label="Wallet colour"]'), "only shown when overridden");
+
+    const pick = Dh.querySelector('button[aria-label="Pouch colour #2c3d56"]');
+    click(pick);
+    await settle(Wh, 500);
+    const saved = JSON.parse(Wh.localStorage.getItem(CARDS_KEY) || "[]");
+    check("colour: picking a swatch saves it on that card only",
+      saved[0]?.color === "#2c3d56" && !saved[1]?.color && !saved[2]?.color,
+      `[${saved.map((c) => c.color || "-").join(", ")}]`);
+    check("colour: the chosen swatch is marked as selected",
+      /2px solid (#0a84ff|rgb\(10, 132, 255\))/.test(styleOf(Dh.querySelector('button[aria-label="Pouch colour #2c3d56"]'))),
+      (styleOf(Dh.querySelector('button[aria-label="Pouch colour #2c3d56"]')).match(/border:[^;]*/) || ["-"])[0]);
+
+    click(Dh.querySelector('button[aria-label="Wallet colour"]'));
+    await settle(Wh, 500);
+    const cleared = JSON.parse(Wh.localStorage.getItem(CARDS_KEY) || "[]");
+    check("colour: the reset chip hands the card back to the wallet colour",
+      cleared[0]?.color === undefined && !Dh.querySelector('button[aria-label="Wallet colour"]'),
+      `color=${JSON.stringify(cleared[0]?.color)}`);
+    const trayAfter = [...Dh.querySelectorAll("#root div.absolute.top-0")]
+      .flatMap((w) => [...w.querySelectorAll("div")])
+      .find((d) => /left-0/.test(d.className) && /rgb|linear-gradient/.test(styleOf(d)));
+    check("colour: the card repaints from the wallet colour after reset",
+      /rgb\(66, 73, 84\)/.test(gradOf(trayAfter)) && !/rgb\(27, 38, 53\)/.test(gradOf(trayAfter)),
+      gradOf(trayAfter).slice(0, 90));
+    check("colour: no console errors in the picker flow", st.errors.length === 0,
+      st.errors.slice(0, 1).join("").slice(0, 140));
+  }
+
+  check("colour: both memo paths compare card.color (else the swatch would not repaint)",
+    (BUNDLE_SRC.match(/e\.card\.color===t\.card\.color/g) || []).length === 2, "Q + Dd");
+  check("colour: a card's own colour outranks the wallet's in the painter",
+    /if\(e&&e\.color\)\{n=`custom`;r=\{\.\.\.\(r\|\|\{\}\),color:e\.color\};\}/.test(BUNDLE_SRC), "yd override");
+  check("colour: the stack cover follows the card colour too",
+    /col=e\.color\|\|\(j&&j\.color\)/.test(BUNDLE_SRC), "__cwCoverCard");
 }
 
 // ---------------------------------------------------------------------------
