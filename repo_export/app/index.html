@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <title>Card Wallet</title>
+    <script>
+      // light or dark before anything is drawn – the app re-checks once it runs
+      (function () {
+        try {
+          var s = JSON.parse(localStorage.getItem('wallet.settings.v1') || '{}')
+          var m = s.appearance || 'system'
+          var q = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)')
+          if (m === 'dark' || (m === 'system' && q && q.matches)) {
+            document.documentElement.classList.add('dark')
+          }
+        } catch (e) {}
+      })()
+    </script>
+    <script type="module" crossorigin src="./assets/index-DfWhHAzK.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BLmxUz06.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
