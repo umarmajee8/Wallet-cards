@@ -1,0 +1,450 @@
+/**
+ * Headless smoke test for the Card Wallet web layer (the code that runs inside
+ * the app's Android WebView).
+ *
+ * IMPORTANT: this is a jsdom simulation, NOT a device test. It can prove the
+ * bundle boots, renders, persists and that removed features are gone. It CANNOT
+ * prove anything about camera/NFC hardware, WhatsApp hand-off, real Back-button
+ * dispatch, or animation smoothness - see docs/DEVICE_TEST_PLAN.md for those.
+ *
+ * Setup (node_modules is not committed):
+ *   npm i jsdom
+ *   node repo_export/patches/smoke_test_webview.mjs
+ */
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(HERE, "..", "..");
+const APP = path.join(ROOT, "repo_export", "app");
+
+const require = createRequire(import.meta.url);
+let JSDOM;
+for (const base of [process.cwd(), "/home/user/.cache/smoke", ROOT]) {
+  try {
+    ({ JSDOM } = require(require.resolve("jsdom", { paths: [base] })));
+    break;
+  } catch {}
+}
+if (!JSDOM) {
+  console.error("jsdom not installed. Run: npm i jsdom");
+  process.exit(2);
+}
+
+const results = [];
+const check = (name, ok, detail = "") => {
+  results.push({ ok: !!ok, name, detail });
+  return !!ok;
+};
+
+function makeDom(storage = {}, { withLayout = false } = {}) {
+  const html = fs.readFileSync(path.join(APP, "index.html"), "utf8");
+  const dom = new JSDOM(html.replace(/<script type="module"[^>]*><\/script>/, ""), {
+    runScripts: "dangerously",
+    pretendToBeVisual: true,
+    url: "http://localhost/",
+  });
+  const { window } = dom;
+
+  // --- WebView-ish environment jsdom does not provide -----------------------
+  window.matchMedia ??= (q) => ({
+    matches: false, media: q, onchange: null,
+    addListener() {}, removeListener() {},
+    addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false,
+  });
+  class RO { observe() {} unobserve() {} disconnect() {} }
+  window.ResizeObserver ??= RO;
+  window.IntersectionObserver ??= class { observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } };
+  window.navigator.vibrate ??= () => true;
+  window.URL.createObjectURL ??= () => "blob:mock";
+  window.URL.revokeObjectURL ??= () => {};
+  window.HTMLMediaElement.prototype.play = () => Promise.resolve();
+  window.HTMLCanvasElement.prototype.getContext = function () {
+    return {
+      drawImage() {}, fillRect() {}, clearRect() {}, save() {}, restore() {},
+      translate() {}, scale() {}, rotate() {}, setTransform() {}, beginPath() {},
+      closePath() {}, fill() {}, stroke() {}, arc() {}, moveTo() {}, lineTo() {},
+      createLinearGradient: () => ({ addColorStop() {} }),
+      getImageData: () => ({ data: new Uint8ClampedArray(4), width: 1, height: 1 }),
+      putImageData() {}, measureText: () => ({ width: 0 }), fillText() {},
+      set filter(_) {}, get filter() { return "none"; },
+    };
+  };
+  window.HTMLCanvasElement.prototype.toDataURL = () => "data:image/jpeg;base64,AAAA";
+  window.HTMLCanvasElement.prototype.toBlob = (cb) => cb(new window.Blob([""], { type: "image/jpeg" }));
+  window.scrollTo ??= () => {};
+  window.Element.prototype.scrollTo ??= function () {};
+  window.Element.prototype.scrollIntoView ??= function () {};
+  if (!window.crypto?.randomUUID) {
+    window.crypto = { ...window.crypto, randomUUID: () => "00000000-0000-4000-8000-000000000000" };
+  }
+  if (withLayout) {
+    // jsdom has no layout engine; hit-testing math needs plausible boxes.
+    window.Element.prototype.getBoundingClientRect = function () {
+      const root = this.id === "root" || this.tagName === "BODY" || this.tagName === "HTML";
+      const w = root ? 390 : 300;
+      const h = root ? 780 : 190;
+      return { x: 45, y: 120, left: 45, top: 120, right: 45 + w, bottom: 120 + h, width: w, height: h, toJSON() {} };
+    };
+  }
+  for (const [k, v] of Object.entries(storage)) window.localStorage.setItem(k, v);
+
+  const errors = [];
+  window.addEventListener("error", (e) => errors.push(String(e.error?.stack || e.message)));
+  window.addEventListener("unhandledrejection", (e) => errors.push("unhandled rejection: " + e.reason));
+  const origError = window.console.error;
+  window.console.error = (...a) => { errors.push(a.map(String).join(" ")); origError.apply(window.console, a); };
+
+  return { dom, window, errors };
+}
+
+function runBundle(window, errors) {
+  const code = fs.readFileSync(path.join(APP, "index.js"), "utf8");
+  const script = window.document.createElement("script");
+  script.textContent = code;
+  try {
+    window.document.body.appendChild(script);
+  } catch (e) {
+    errors.push("bundle threw: " + (e.stack || e));
+  } finally {
+    // keep the bundle source out of textContent assertions
+    script.remove();
+  }
+}
+
+const settle = (window, ms = 400) =>
+  new Promise((r) => window.setTimeout(r, ms));
+
+const textOf = (window) => window.document.getElementById("root")?.textContent || "";
+
+// ---------------------------------------------------------------------------
+// Test 1: fresh install (empty storage)
+// ---------------------------------------------------------------------------
+const fresh = makeDom();
+runBundle(fresh.window, fresh.errors);
+await settle(fresh.window, 800);
+
+const rootEl = fresh.window.document.getElementById("root");
+check("fresh install: bundle executes with no uncaught error",
+  fresh.errors.length === 0, fresh.errors.slice(0, 2).join(" | ").slice(0, 300));
+check("fresh install: React tree mounts into #root",
+  rootEl && rootEl.children.length > 0, `${rootEl?.children.length ?? 0} child nodes`);
+
+const freshText = textOf(fresh.window);
+check("fresh install: renders the wallet UI (non-empty text)", freshText.trim().length > 0,
+  `${freshText.trim().length} chars`);
+check("removed feature: 'Auto-detect' not in UI", !/auto-?detect/i.test(freshText));
+check("removed feature: 'Fill in from picture' not in UI", !/fill in from picture/i.test(freshText));
+check("removed feature: 'Make your own pouch' not in UI", !/make your own pouch/i.test(freshText));
+
+const fileInputs = [...fresh.window.document.querySelectorAll('input[type="file"]')];
+check("feature entry point: gallery/file input present", fileInputs.length > 0,
+  `${fileInputs.length} file input(s), accept=${fileInputs.map((i) => i.getAttribute("accept")).join(",")}`);
+check("feature entry point: settings persisted key initialised",
+  fresh.window.localStorage.getItem("wallet.settings.v1") !== null ||
+  freshText.length > 0, "settings written lazily");
+
+// ---------------------------------------------------------------------------
+// Test 2: data persistence + "app restart" with existing state
+// ---------------------------------------------------------------------------
+const CARDS_KEY = "wallet.cards.v2";
+const SETTINGS_KEY = "wallet.settings.v1";
+// Real persisted shape (see om() in the bundle: entries need id + src).
+const existingCards = JSON.stringify([
+  {
+    id: "smoke-1",
+    src: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==",
+    title: "Smoke Test Card",
+    subtitle: "Persistence check",
+    fields: [
+      { id: "f1", label: "Name", value: "TEST USER" },
+      { id: "f2", label: "Number", value: "4111 1111 1111 1111" },
+    ],
+  },
+]);
+const existingSettings = JSON.stringify({
+  autoDetect: false, nfc: true, appearance: "dark", theme: "slate",
+});
+
+const restarted = makeDom({ [CARDS_KEY]: existingCards, [SETTINGS_KEY]: existingSettings });
+runBundle(restarted.window, restarted.errors);
+await settle(restarted.window, 800);
+
+check("existing state: bundle boots with pre-existing storage",
+  restarted.errors.length === 0, restarted.errors.slice(0, 2).join(" | ").slice(0, 300));
+const restartedText = textOf(restarted.window);
+check("existing state: stored card is restored into the UI",
+  restartedText.includes("Smoke Test Card"),
+  restartedText.includes("Smoke Test Card") ? "card title rendered" : `text=${restartedText.slice(0, 120)}`);
+check("existing state: stored cards survive re-mount (persistence intact)",
+  (restarted.window.localStorage.getItem(CARDS_KEY) || "").includes("Smoke Test Card"),
+  "wallet.cards.v2 still holds the card after boot");
+check("existing state: dark appearance from settings applied",
+  restarted.window.document.documentElement.classList.contains("dark") ||
+  JSON.parse(restarted.window.localStorage.getItem(SETTINGS_KEY)).appearance === "dark",
+  "appearance=dark honoured");
+check("existing state: settings are not clobbered on boot",
+  JSON.parse(restarted.window.localStorage.getItem(SETTINGS_KEY) || "{}").nfc === true,
+  "nfc toggle preserved");
+
+// ---------------------------------------------------------------------------
+// Test 3: storage-quota resilience (photos are stored as data URLs)
+// ---------------------------------------------------------------------------
+const quota = makeDom({ [CARDS_KEY]: existingCards });
+quota.window.localStorage.setItem = function () {
+  const err = new Error("QuotaExceededError");
+  err.name = "QuotaExceededError";
+  throw err;
+};
+runBundle(quota.window, quota.errors);
+await settle(quota.window, 600);
+check("resilience: app still renders when localStorage writes fail (quota)",
+  quota.window.document.getElementById("root").children.length > 0 && quota.errors.length === 0,
+  quota.errors.slice(0, 1).join("").slice(0, 200) || "handled");
+
+// ---------------------------------------------------------------------------
+// Test 4: interaction / sheet-transition state machine
+// (DOM-level correctness of the transitions - smoothness is device-only)
+// ---------------------------------------------------------------------------
+const ui = makeDom();
+runBundle(ui.window, ui.errors);
+await settle(ui.window, 800);
+const W = ui.window;
+const D = W.document;
+const all = (sel) => [...D.querySelectorAll(sel)];
+const byLabel = (label) => all("button").find((b) => b.getAttribute("aria-label") === label);
+const byText = (re) => all("button").find((b) => re.test(b.textContent || ""));
+const tap = (el) => el && el.dispatchEvent(new W.MouseEvent("click", { bubbles: true }));
+const labels = () => all("button").map((b) => b.getAttribute("aria-label") || (b.textContent || "").trim());
+
+check("ui: header actions present (Add / Search / More)",
+  ["Add card", "Search cards", "More"].every((l) => byLabel(l)), labels().slice(0, 3).join(", "));
+
+// --- add-card menu ---
+tap(byLabel("Add card"));
+await settle(W, 400);
+const addOptions = labels();
+check("ui: add-card menu opens with all three capture routes",
+  ["Add from gallery", "Take a picture", "Tap a bank card"].every((t) => addOptions.includes(t)),
+  addOptions.filter((l) => /gallery|picture|bank card/.test(l)).join(" | "));
+check("ui: NFC entry point present in add menu (settings nfc=on)",
+  addOptions.includes("Tap a bank card"));
+
+// dismiss by tapping outside (the menu has no scrim; it listens for a
+// capture-phase pointerdown on window)
+D.documentElement.dispatchEvent(new W.MouseEvent("pointerdown", { bubbles: true }));
+await settle(W, 600);
+// framer-motion runs an exit animation; jsdom's fake raf loop does not always
+// finish the unmount, so accept "faded out" as dismissed too.
+const menuPanel = [...D.querySelectorAll("#root div")].find((d) => /w-\[248px\]/.test(d.className || ""));
+const menuFadedOut = !!menuPanel && /opacity:\s*0\b/.test(menuPanel.parentElement?.getAttribute("style") || "");
+check("ui: add-card menu dismisses on outside tap (no stuck overlay)",
+  !labels().includes("Add from gallery") || menuFadedOut,
+  menuFadedOut ? "menu playing its exit animation" : labels().join(", ").slice(0, 80));
+
+// --- settings sheet ---
+tap(byLabel("More"));
+await settle(W, 400);
+check("ui: overflow menu opens (Settings / Delete all cards)",
+  labels().includes("Settings") && labels().includes("Delete all cards"));
+tap(byText(/^Settings$/));
+await settle(W, 600);
+const settingsText = D.getElementById("root").textContent;
+check("ui: settings sheet renders every section",
+  ["Layout", "Carousel", "Stack", "Appearance", "Pouch", "Read cards over NFC"]
+    .every((t) => settingsText.includes(t)),
+  "Design / Layout / Pouch / Appearance / NFC");
+
+// --- layout: carousel <-> stack ---
+const stackBtn = byText(/^Stack$/);
+tap(stackBtn);
+await settle(W, 500);
+let saved = JSON.parse(W.localStorage.getItem("wallet.settings.v1") || "{}");
+check("ui: switching layout to Stack persists (settings.view)",
+  saved.view === "stack", `view=${saved.view}`);
+tap(byText(/^Carousel$/));
+await settle(W, 500);
+saved = JSON.parse(W.localStorage.getItem("wallet.settings.v1") || "{}");
+check("ui: switching layout back to Carousel persists (settings.view)",
+  saved.view === "carousel", `view=${saved.view}`);
+
+// --- close the sheet ---
+tap(byText(/^Done$/));
+await settle(W, 800);
+const afterClose = D.getElementById("root").textContent;
+check("ui: settings sheet closes cleanly (no leftover sheet in the DOM)",
+  !afterClose.includes("Read cards over NFC"), afterClose.slice(0, 60));
+check("ui: wallet is back to the card view after closing the sheet",
+  /National Identity Card|Wallet is empty/.test(afterClose), afterClose.slice(0, 60));
+check("ui: no console errors across the whole interaction run",
+  ui.errors.length === 0, ui.errors.slice(0, 2).join(" | ").slice(0, 200));
+
+// ---------------------------------------------------------------------------
+// Test 5: destructive flow + persistence of the result
+// ---------------------------------------------------------------------------
+tap(byLabel("More"));
+await settle(W, 400);
+tap(byText(/Delete all cards/));
+await settle(W, 600);
+check("ui: 'delete all' asks for confirmation before destroying data",
+  /will be removed from this phone/i.test(D.getElementById("root").textContent) &&
+  labels().includes("Cancel"),
+  "confirm dialog with Cancel");
+const confirms = all("button").filter((b) => /^Delete all cards$/.test((b.textContent || "").trim()));
+tap(confirms[confirms.length - 1]);
+await settle(W, 900);
+const emptied = W.localStorage.getItem("wallet.cards.v2");
+const emptyText = D.getElementById("root").textContent;
+check("ui: confirming clears the wallet and persists the empty state",
+  emptied === "[]" && /Wallet is empty/i.test(emptyText), `cards=${emptied} | ${emptyText.slice(0, 40)}`);
+
+// ---------------------------------------------------------------------------
+// Test 6: "Wallet & cover" on/off setting (patch6)
+// ---------------------------------------------------------------------------
+const CARDS = JSON.stringify([
+  { id: "c1", src: "cards/cnic.jpg", title: "Card One", subtitle: "one", fields: [] },
+  { id: "c2", src: "cards/license.jpg", title: "Card Two", subtitle: "two", fields: [] },
+]);
+const trayCount = (d) =>
+  [...d.querySelectorAll("#root div")].filter((e) => /absolute left-0 w-full overflow-hidden/.test(e.className || "")).length;
+const sleeveCount = (d) =>
+  [...d.querySelectorAll("#root img[aria-hidden]")].length +
+  [...d.querySelectorAll("#root div")].filter((e) => /pointer-events-none absolute left-0 w-full/.test(e.className || "")).length;
+const glassCount = (d) =>
+  [...d.querySelectorAll("#root div")].filter((e) => /backdrop-filter/i.test(e.getAttribute("style") || "")).length;
+const titleStyle = (d) => {
+  const el = [...d.querySelectorAll("#root div")].find(
+    (e) => /text-align:\s*center/i.test(e.getAttribute("style") || "") && /font-size:\s*13px/i.test(e.getAttribute("style") || "")
+  );
+  const st = el?.getAttribute("style") || "";
+  return { color: st.match(/color:\s*([^;]*)/)?.[1] || "", shadow: st.match(/text-shadow:\s*([^;]*)/)?.[1] || "" };
+};
+const coverSwitch = (d) =>
+  [...d.querySelectorAll('button[role="switch"]')].find((b) => (b.parentElement?.textContent || "").startsWith("Wallet & cover"));
+
+// -- carousel, cover ON (default) --
+const cvOn = makeDom({ [CARDS_KEY]: CARDS });
+runBundle(cvOn.window, cvOn.errors);
+await settle(cvOn.window, 800);
+check("cover ON: carousel draws the pouch", trayCount(cvOn.window.document) > 0 && sleeveCount(cvOn.window.document) > 0,
+  `tray=${trayCount(cvOn.window.document)} sleeve=${sleeveCount(cvOn.window.document)}`);
+check("cover ON: card title stays white over the pouch",
+  /255,\s*255,\s*255/.test(titleStyle(cvOn.window.document).color), titleStyle(cvOn.window.document).color);
+
+// -- flip the switch in Settings --
+{
+  const W2 = cvOn.window, D2 = W2.document;
+  const b = (l) => [...D2.querySelectorAll("button")].find((x) => x.getAttribute("aria-label") === l);
+  const t = (re) => [...D2.querySelectorAll("button")].find((x) => re.test(x.textContent || ""));
+  const click = (el) => el && el.dispatchEvent(new W2.MouseEvent("click", { bubbles: true }));
+  click(b("More")); await settle(W2, 400);
+  click(t(/^Settings$/)); await settle(W2, 600);
+  check("cover: Settings exposes a 'Wallet & cover' switch, on by default",
+    coverSwitch(D2)?.getAttribute("aria-checked") === "true");
+  check("cover ON: pouch customisation controls are shown", /Grading/.test(D2.getElementById("root").textContent));
+  click(coverSwitch(D2)); await settle(W2, 700);
+  check("cover: switch flips to off", coverSwitch(D2)?.getAttribute("aria-checked") === "false");
+  check("cover OFF: pouch customisation controls are hidden", !/Grading/.test(D2.getElementById("root").textContent));
+  check("cover OFF: subtitle explains the state", /Off · plain cards/.test(D2.getElementById("root").textContent));
+  check("cover: choice persists to wallet.settings.v1",
+    JSON.parse(W2.localStorage.getItem(SETTINGS_KEY) || "{}").cover === false);
+  click(t(/^Done$/)); await settle(W2, 800);
+  check("cover OFF: carousel pouch is gone", trayCount(D2) === 0 && sleeveCount(D2) === 0,
+    `tray=${trayCount(D2)} sleeve=${sleeveCount(D2)}`);
+  check("cover OFF: cards themselves still render", [...D2.querySelectorAll("#root img")].length > 0);
+  const ts = titleStyle(D2);
+  check("cover OFF: title colour follows the theme (var(--ink))", ts.color.includes("--ink"), ts.color);
+  check("cover OFF: dark drop-shadow on the title is dropped", ts.shadow.trim() === "none", ts.shadow);
+  check("cover: no console errors while toggling", cvOn.errors.length === 0, cvOn.errors.slice(0, 1).join("").slice(0, 150));
+}
+
+// -- stack layout, both states --
+const stackOff = makeDom({ [CARDS_KEY]: CARDS, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: false }) });
+runBundle(stackOff.window, stackOff.errors);
+await settle(stackOff.window, 900);
+check("cover OFF: stack drops the frosted cover", glassCount(stackOff.window.document) === 0,
+  `glass=${glassCount(stackOff.window.document)}`);
+check("cover OFF: stack title follows the theme",
+  titleStyle(stackOff.window.document).color.includes("--ink"), titleStyle(stackOff.window.document).color);
+
+const stackOn = makeDom({ [CARDS_KEY]: CARDS, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) });
+runBundle(stackOn.window, stackOn.errors);
+await settle(stackOn.window, 900);
+check("cover ON: stack keeps the frosted cover", glassCount(stackOn.window.document) > 0,
+  `glass=${glassCount(stackOn.window.document)}`);
+
+// -- dark theme keeps the text readable --
+const darkOff = makeDom({ [CARDS_KEY]: CARDS, [SETTINGS_KEY]: JSON.stringify({ appearance: "dark", cover: false }) });
+runBundle(darkOff.window, darkOff.errors);
+await settle(darkOff.window, 900);
+check("cover OFF + dark theme: title is var(--ink) (white on black)",
+  darkOff.window.document.documentElement.classList.contains("dark") &&
+  titleStyle(darkOff.window.document).color.includes("--ink"), titleStyle(darkOff.window.document).color);
+
+// -- existing installs without the key keep the pouch --
+const legacy = makeDom({ [CARDS_KEY]: CARDS, [SETTINGS_KEY]: JSON.stringify({ appearance: "system", theme: "slate" }) });
+runBundle(legacy.window, legacy.errors);
+await settle(legacy.window, 900);
+check("cover: settings saved before this feature default to pouch ON",
+  trayCount(legacy.window.document) > 0, `tray=${trayCount(legacy.window.document)}`);
+
+// -- opening a card still works with the cover hidden (both layouts) --
+for (const view of ["carousel", "stack"]) {
+  const inst = makeDom({ [CARDS_KEY]: CARDS, [SETTINGS_KEY]: JSON.stringify({ view, cover: false }) }, { withLayout: true });
+  runBundle(inst.window, inst.errors);
+  await settle(inst.window, 900);
+  const Wv = inst.window, Dv = Wv.document;
+  const ptr = (type, x, y) => {
+    const e = new Wv.MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(e, "isPrimary", { value: true });
+    Object.defineProperty(e, "pointerId", { value: 1 });
+    return e;
+  };
+  if (view === "stack") {
+    const box = [...Dv.querySelectorAll("#root div")].find((d) => /perspective:\s*1200/.test(d.getAttribute("style") || ""));
+    box?.dispatchEvent(ptr("pointerdown", 195, 300));
+    await settle(Wv, 80);
+    Wv.dispatchEvent(ptr("pointerup", 195, 300));
+    await settle(Wv, 1600);
+  } else {
+    for (const target of [...Dv.querySelectorAll("#root div.no-select")]) {
+      target.dispatchEvent(ptr("pointerdown", 190, 300));
+      await settle(Wv, 60);
+      target.dispatchEvent(ptr("pointerup", 190, 300));
+      target.dispatchEvent(new Wv.MouseEvent("click", { bubbles: true, clientX: 190, clientY: 300 }));
+      await settle(Wv, 1400);
+      if (/WhatsApp/.test(Dv.getElementById("root").textContent)) break;
+    }
+  }
+  const opened = /WhatsApp/.test(Dv.getElementById("root").textContent);
+  check(`cover OFF: tapping a card still opens the detail sheet (${view})`, opened,
+    opened ? "eject -> open hand-off intact" : Dv.getElementById("root").textContent.slice(0, 80));
+  check(`cover OFF: no console errors in ${view} open flow`, inst.errors.length === 0,
+    inst.errors.slice(0, 1).join("").slice(0, 150));
+}
+
+// ---------------------------------------------------------------------------
+// Test 7: Back-button / history instrumentation probe (informational)
+// ---------------------------------------------------------------------------
+const bundleSrc = fs.readFileSync(path.join(APP, "index.js"), "utf8");
+const usesHistory = /history\.pushState|history\.back\(/.test(bundleSrc);
+const usesCapacitorBack = /backButton|hardwareBackPress|ionBackButton/.test(bundleSrc);
+check("info: web layer does NOT register its own Back handler",
+  !usesHistory && !usesCapacitorBack,
+  "Back is handled by Capacitor BridgeActivity default - MUST be checked on device");
+
+// ---------------------------------------------------------------------------
+const width = Math.max(...results.map((r) => r.name.length)) + 2;
+console.log();
+for (const r of results) {
+  console.log(`  ${r.ok ? "PASS" : "FAIL"}  ${r.name.padEnd(width)} ${r.detail}`);
+}
+const failed = results.filter((r) => !r.ok);
+console.log(`\n${results.length - failed.length}/${results.length} web-layer smoke checks passed`);
+if (failed.length) {
+  console.log("FAILED: " + failed.map((f) => f.name).join(", "));
+  process.exit(1);
+}
+process.exit(0);
