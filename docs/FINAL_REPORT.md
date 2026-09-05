@@ -754,3 +754,71 @@ files ki wajah se auto-updated.
 
 **Abhi bhi device par depend karti ha:** glass ka GPU cost (blur 34px mid-range Android par),
 slider drag karte waqt row ki smoothness, aur R1-R13 - `docs/DEVICE_TEST_PLAN.md` §R.
+
+
+---
+
+## 15. Stack apni jagah, sheet compact, sliders smooth (patches 21 + 22), 2026-09-05
+
+**Maqsad (round 11).** "Layout mein stack ki alag setting ho aur carousel ki alag", "jo
+sliders hain un ko smooth karo", "stack preview mein show nahi ho raha", "create button thora
+chota", aur "settings mein bohat zyada button ho gaye hain - kam se kam chahiye".
+
+**Kya mila.**
+
+1. *Stack preview sach me dikhta ha (patch21).* `__cwStack` apne cards `window.innerWidth/
+   innerHeight` se size karta ha - sheet ke 176px box me matlab poori phone-size stack ek
+   zero-height flex parent me, yaani kuch nazar nahi aata tha. Ab uska optional `fit` box
+   caller se aata ha (preview `fit:{w:388,h:302}` deta ha, `.cw-preview-in` `.56` par scale)
+   aur **wallet ki apni sizing ka formula jaisa tha waisa hi raha** - smoke test ternary ke
+   *dono* branches assert karta ha, taake preview ki sizing khiskar wallet par na lage.
+2. *Layout view ke sath chalta ha (patch22).* `Carousel|Stack` select karte hi us view ka
+   sub-label aur uske controls aate hain: carousel = Wallet & cover, Size, Spacing; stack =
+   Wallet & cover, Size, Spread, aur `Flat|Fan|Deck` fan. Preview wohi component mount karta
+   ha jo wallet render karta ha, is liye sheet aur wallet hamesha ek tasveer dikhate hain.
+3. *Buttons 22 -> 7 (Stack me 10).* `Cards` wala preview-filter row (jo user ne maanga hi nahi
+   tha) gaya, aur Material/Border ki chip rows `Sheen`/`Edge` **sliders** ban gaein - wohi
+   `custom.material`/`custom.border` fields likhti hain jo patch20 paint karta ha, yaani
+   functionality loss zero. Bachchi hui 4 chip rows: Slate|Classic, Carousel|Stack,
+   Flat|Fan|Deck (Stack only), System|Light|Dark.
+4. *Sliders smooth - teen hisson me.* Sab se bara hissa React ka tha: controlled input har event
+   par "last committed" value par wapas restore ho jata ha - **yehi thumb ke neeche ka jitter
+   tha**. Ab drag do-tier hai: sheet ke andar local state (`setDrag`) drag ki value hold karta
+   ha, wallet par commit **per frame ek baar** `requestAnimationFrame` queue se (na hone par
+   `setTimeout` fallback), aur `pend.current` mirror hai taake dono tier kabhi alag na hon.
+   Doosra hissa CSS: har pouch slider step `.01`, `--p` se bhara hua 4px track 26px hit area me
+   (`touch-action:none` - sheet drag ke doran scroll nahi hoti), 20px thumb, tabular read-out.
+   Teesra: sleeve canvas ka cache key `JSON.stringify(custom)` tha - har step par poora canvas
+   re-paint + `toDataURL`. Ab `__cwSig` paint-only fields ko 1/8 grid par quantize karta ha,
+   to ek sweep me ~10 repaints hote ha ~100 ki jagah, aur tray par `.16s` easing fine values ko
+   continuous dikhati ha.
+5. *Create button chota.* Header ka filled `+` aur do bare siblings 44px -> 40px, glyphs
+   23/26 -> 21/24; sheet ka `Done` pill bhi `text-[13.5px]` par. patch7 ke span me yeh rewrite
+   hai, is liye patch7 ko `DOWNSTREAM_KEEP` mila; patch19/20 ko bhi markers mile (patch22 ne un
+   ke spans rewrite kiye) - marker ke bagair wo apne aap ko "stale" bol kar chain rok dete.
+
+**Gates.** Smoke **178 -> 197** (19 naye checks: header size, fit sizing, `__cwSig`, tray easing,
+CSS slider kit, chip budget 7/10, view-specific rows, stack preview ka card box, drag par
+snap-back na hona, **6 events -> 1 storage write**, aur wallet ka tray radius 22.3 x 147% = 32.8px).
+Controls: patch22 hataa kar **188/197**, patch21+22 hataa kar **184/197** - theek round-11 ke
+checks girtay hain. `patches/replay_chain.py` ab patch 22 tak chalata ha aur shipped bundle
+**IDENTICAL** (459,776 B). `animation_audit` 10 checks / 1 pre-existing WARN - card/pouch path par
+koi naya transition nahi (easing sirf tray ki background/radius par, jo transform path me nahi).
+
+**Do apni ghutiyan jo tests ne pakri, shipping se pehle.** (i) patch22 ka pehla draft object keys
+template literals se likha gaya tha (`` `data-on`: ``) - JS me key sirf string/identifier/[expr]
+hosakta ha, `node --check` ne bundle likhne se pehle rok diya. (ii) Storage par `setItem` spy
+lagane ki koshish jsdom ke proxy ne `setItem` naam ka *key* store kar diya, is liye "1 write"
+count 0 aaya; spy `Storage.prototype` par move kiya. Teesri cheez harness me mili: replay
+scripts scratch copies ki jagah repo ki scripts chala raha tha - wo bug pichle section me note
+ho chuka ha, ab `ORDER` bhi 21/22 tak hai.
+
+**Build.** `CardWallet_settings_compact.apk` = 11,651,779 bytes, sha256
+`41bdc836641f012219b6e3d471702cf730a62239cc9b5e846f2c2e4595ddb7d5`, same debug key
+(`adb install -r`, data salamat). APK ke andar JS/CSS tree se byte-identical aur 20/20 content
+greps (fit prop, fit sizing, `__cwSig`, purana JSON key ka na hona, tray easing, header sizes,
+view-specific rows, do-tier drag state, Sheen/Edge, aur CSS slider kit). `verify_release` 28/29
+(soli FAIL debug cert), preview (:8080) symlink se auto-updated.
+
+**Device par abhi bhi dekhna ha:** S1-S11 - khaas taur par S4/S5 (thumb ke neeche ka jitter aur
+wallet ki hitching) aur S3 (stack preview ka box), kyunke frame timing machine par nahi napte.

@@ -115,12 +115,23 @@ EDITS = [
 ]
 
 
+# Patch 22 rewrote this sheet again (Layout per view, sliders instead of chip rows, the stack
+# given a stage box). Its span carries patch 19's work on - the Custom Pouch panel, the live
+# preview mounted from the wallet's own components, and patch 18's glass chrome - so the
+# successor's text is the proof, and a re-run of this patch must not restore the older sheet.
+SUPERSEDED = {
+    "settings sheet: Custom Pouch with live preview": "fit:isStack?{w:388,h:302}",
+}
+
+
 def status(data):
     todo, done, bad = [], [], []
     for old, new, label in EDITS:
         if old == "SPAN":
             i, j = data.find(HEAD), data.find(TAIL)
-            if new in data:
+            if SUPERSEDED.get(label) and SUPERSEDED[label] in data:
+                done.append(label)
+            elif new in data:
                 done.append(label)
             elif i > 0 and j > i:
                 todo.append((data[i:j], new, label))  # the span stops before TAIL, so do not re-add it

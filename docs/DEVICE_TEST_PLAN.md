@@ -331,9 +331,31 @@ three plumbing paths to look at.
 
 ---
 
+## S. Compact sheet, view-specific Layout, smooth sliders (patches 21 + 22)
+
+| # | Step | Expected |
+|---|---|---|
+| S1 | Settings -> look at the whole panel | Count the buttons: Slate/Classic, Carousel/Stack, System/Light/Dark (plus Flat/Fan/Deck only when Stack is selected). No card-name chips, no Matte/Satin/Gloss row, no Border row - those two are sliders (`Sheen`, `Edge`) now |
+| S2 | Layout: tap **Stack** | Under the segment a `Stack` label appears with `Wallet & cover`, `Size`, `Spread` and `Flat/Fan/Deck`, and the preview at the top becomes the stacked deck. Tap **Carousel** and `Fan`/`Spread` go away, `Spacing` returns |
+| S3 | With the preview visible, tap **Stack** | The stack is actually *drawn* in the preview box - two or three pouches fanned - not an empty glass rectangle, and not clipped past the box |
+| S4 | Drag **Radius** (or Shadow / Sheen / Edge) slowly end to end | The thumb follows the finger with no back-step and no stutter; the percentage on the right changes without the row's width jogging; the tray corners grow smoothly. Release mid-way: the value stays where you left it |
+| S5 | Drag **Size** or **Spread** quickly back and forth | No visible frame drops on the wallet behind the sheet (this is the row that used to repaint a canvas per step). If the whole app hitches while only the sheet's slider moves, that is a fail - note the device |
+| S6 | Drag a slider inside the scrolling sheet | The sheet must not scroll under the thumb (`touch-action:none` on the input), and lifting mid-drag must settle on the last value, not jump back |
+| S7 | Look at the header's **+** button | Slightly smaller than before (40px box, 21px glyph), still comfortably tappable, disc and glyph centred; the add menu opens exactly as before |
+| S8 | Change a few controls, close Settings, kill the app, reopen | Every value is still applied (radius / sheen / edge / fan / spacing / size / view). Nothing reverts, and the number of stored writes was small (one commit per frame while dragging) |
+| S9 | Existing interactions after all this | Tap a Stack card to eject, swipe the carousel, open a card, flip it - unchanged. The empty bands above/below the pouch row stay inert (patch 14/15 rules still hold) |
+| S10 | Dark theme with the new sliders | Track, thumb and read-out stay legible; the filled part of the track is still visible against the frosted panel |
+| S11 | Landscape and 360dp | The preview box and both views fit; the stack preview does not overlap `Design`; every slider stays reachable and none of the four chip rows wraps into the next |
+
+If S4/S5 fail, note *which* control and whether the stutter is in the sheet or in the wallet behind
+it: sheet-only stutter means the local drag state is not holding (React snapping the input back to
+the committed value), wallet stutter means the canvas signature `__cwSig` is quantizing too finely.
+
+---
+
 ## Sign-off
 
-The build may only be called production-ready once A–R are green on at least
+The build may only be called production-ready once A–S are green on at least
 one physical device. Record device model, Android version and result per row,
 and file anything that fails with the section id (e.g. "F3 fails: Back exits
 the app with Settings open").

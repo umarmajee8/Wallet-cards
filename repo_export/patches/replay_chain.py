@@ -29,7 +29,7 @@ HERE = Path(__file__).resolve().parent
 APP = HERE.parent / "app"
 BACKUP = Path("/tmp/cardwallet-replay-backup.js")   # outside the tree, so a control run cannot commit it
 
-ORDER = [7, 8, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+ORDER = [7, 8, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
 
 
 def scripts(upto, work):

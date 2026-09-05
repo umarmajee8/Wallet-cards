@@ -128,11 +128,18 @@ EDITS = [
 ]
 
 
-def find_anchor(data: str, olds: list[str], new: str) -> str | None:
+# Patch 21 shrinks these buttons (h-11 -> h-10, glyph 23 -> 21) *inside* the span patch 7
+# wrote. The colour/tone work all survives, so the successor's text marks this edit as kept.
+DOWNSTREAM_KEEP = {"header buttons": "flex h-10 items-center justify-center rounded-full"}
+
+
+def find_anchor(data: str, olds: list[str], new: str, label: str = "") -> str | None:
     """The span to replace: the current output (already applied -> None) or the
     first older shape present exactly once."""
     if data.count(new) == 1 and all(data.count(o) == 0 for o in olds):
         return None
+    if DOWNSTREAM_KEEP.get(label) and DOWNSTREAM_KEEP[label] in data and all(o not in data for o in olds):
+        return None                       # a later patch re-tuned this span; do not undo it
     hits = [o for o in olds if data.count(o) == 1]
     if len(hits) != 1:
         raise AssertionError(f"expected exactly 1 of {len(olds) + 1} shapes, found {len(hits)}")
@@ -142,7 +149,7 @@ def find_anchor(data: str, olds: list[str], new: str) -> str | None:
 if CHECK:
     for olds, new, label in EDITS:
         try:
-            find_anchor(data, olds, new)
+            find_anchor(data, olds, new, label)
             print(f"ok    {label}")
         except AssertionError as e:
             print(f"STALE {label}: {e}")
@@ -151,7 +158,7 @@ if CHECK:
     raise SystemExit(0)
 
 for olds, new, label in EDITS:
-    anchor = find_anchor(data, olds, new)
+    anchor = find_anchor(data, olds, new, label)
     if anchor is None:
         print(f"skip  {label}: already applied")
         continue

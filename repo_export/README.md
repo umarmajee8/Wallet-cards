@@ -156,12 +156,46 @@ This repo contains the patched source for the CardWallet app.
      `slide` by Spacing and both radii by Radius (with `Sd()` recomputing on change), so the
      change lands on the wallet, not just the preview. Every new field defaults to the neutral
      value, so an untouched install paints byte-for-byte what patch 17 painted.
+15. **Stack gets its own Layout, the sheet loses half its buttons, sliders go smooth, and the
+   create button shrinks** (patches 21 + 22). *"layout meh stack ki alag setting ho or carousel
+   ki alag … sliders ko smooth kro … stack preview meh show nhi ho rha … create button ko thora sa
+   chota kro … bhot zada setting meh button ho gya han."*
+   - **The stack preview was invisible, and that was a real bug**: `__cwStack` sizes its cards
+     from `window.innerWidth/innerHeight`, so inside the sheet it laid a phone-sized stack into a
+     176px box. It now takes an optional `fit` box from its caller (`fit:{w:388,h:302}` from the
+     preview, scaled `.56`) and keeps the viewport maths untouched for the wallet - the smoke test
+     asserts both branches of that ternary, so the wallet cannot silently inherit the preview's
+     sizing.
+   - **Layout follows the view**: `Carousel|Stack` selects the wallet, a sub-label names whose
+     settings are shown below it, and only that view's controls appear - `Wallet & cover`, `Size`,
+     `Spacing` for the carousel; `Wallet & cover`, `Size`, `Spread` and the `Flat|Fan|Deck` fan for
+     the stack. The preview mounts the same component the wallet renders, so sheet and wallet are
+     always the same picture.
+   - **Chip buttons: 22 -> 7 (10 in Stack)**. The `Cards` preview-filter row is gone, and the
+     Material and Border chip rows became the `Sheen` and `Edge` sliders - they write the same
+     `custom.material` / `custom.border` fields patch 20 paints from, so nothing was lost and both
+     still reach the wallet. What is left is four chip rows: Slate|Classic, Carousel|Stack,
+     Flat|Fan|Deck (Stack only) and System|Light|Dark.
+   - **Smooth sliders**, in three parts. React restores a controlled input to the last committed
+     value on every event - that flicker under the thumb was the complaint - so a drag is now a
+     two-tier write: local sheet state holds the dragged value, while the wallet is committed once
+     per frame through a `requestAnimationFrame` queue (`setTimeout` fallback, and one storage
+     write per frame instead of one per event). Every pouch slider is step `.01` with a filled
+     track (`--p`) and a 20px thumb inside a 26px hit area (`touch-action:none`, so the sheet stops
+     scrolling under the drag) and tabular read-out digits. And the sleeve canvas cache key was
+     `JSON.stringify(custom)` - a full canvas repaint plus `toDataURL` per slider step - which is
+     now a quantized signature (`__cwSig`): a whole sweep costs ~10 repaints instead of ~100, with
+     `.16s` of easing on the tray so the fine values still read as continuous.
+   - **Create button**: the header's filled `+` and its two bare siblings went 44px -> 40px with
+     21px/24px glyphs, and the sheet's `Done` pill a step smaller (`text-[13.5px]`). patch 7 owns
+     that span, so it carries a `DOWNSTREAM_KEEP` marker for this rewrite; patch 19 and 20 gained
+     the same for the sheet span patch 22 rewrites.
 
 
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.
-- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch20), plus
+- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch22), plus
   `patch19_settings.src.js` (readable source for the settings sheet; `patch19_custom_pouch.py`
   minifies it - one flat node per line, no comments) and `replay_chain.py` (rebuild
   `app/index.js` from the pristine bundle through the whole chain and compare, which is how a
@@ -246,7 +280,7 @@ Verification gates:
 (`pip install --user apksigtool`); without it those 3 checks cannot run.
 
 **Test builds without the release key:** `python3 patches/build_debug_apk.py`
-writes `../CardWallet_custom_pouch.apk`, signed with a throwaway key it creates
+writes `../CardWallet_settings_compact.apk`, signed with a throwaway key it creates
 under `repo_export/signing/`. Same bundle, same manifest hardening, same
 alignment - only the signature differs, so Android will not update an existing
 install over it (`adb uninstall com.arena.cardwallet` first). Never distribute it.

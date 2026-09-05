@@ -587,14 +587,15 @@ for (const view of ["carousel", "stack"]) {
       return bg === wantBg(o) && fg === wantGlyph(o);
     }),
     chips.map((c) => `${HEX(colorOf(c, "color"))} on ${HEX(colorOf(c, "background"))}`).join(" | "));
-  check("header: bare glyph size is set by patch7 (26px outside a disc)",
+  check("header: the create button is the smaller round-11 size (40px box, 21/24px glyphs)",
     (() => {
       const bare = HEADER_CFG.options.findIndex((o) => !o.chip);
-      if (bare < 0) return true;
-      const svg = chips[bare]?.querySelector("svg");
-      return svg?.getAttribute("width") === "26";
+      const svg = (i) => chips[i]?.querySelector("svg");
+      return chips.every((c) => /h-10/.test(c.className || "") && /w-10/.test(c.className || "")) &&
+        (bare < 0 || svg(bare)?.getAttribute("width") === "24") &&
+        svg(0)?.getAttribute("width") === "21";
     })(),
-    HEADER_CFG.options.map((o) => `${o.id}:${o.chip ? "23(disc)" : "26(bare)"}`).join(" "));
+    HEADER_CFG.options.map((o) => `${o.id}:${o.chip ? "21(disc)" : "24(bare)"}`).join(" "));
   check("header: no console errors in the dark theme", dark.errors.length === 0,
     dark.errors.slice(0, 1).join("").slice(0, 150));
 }
@@ -1265,9 +1266,10 @@ for (const view of ["carousel", "stack"]) {
     const doc = win.document;
     const sheet = sheetOf(doc);
     const txt = sheet ? sheet?.textContent || "" : "";
-    check("settings: Design, Layout, Cards and Appearance sit in one panel",
-      ["Custom Pouch", "Design", "Layout", "Cards", "Appearance"].every((h) => txt.includes(h)),
-      [ "Custom Pouch", "Design", "Layout", "Cards", "Appearance"].filter((h) => !txt.includes(h)).join(",") || "all five present");
+    check("settings: Custom Pouch holds Design and Layout, Appearance is its own card (patch22)",
+      ["Custom Pouch", "Design", "Layout", "Appearance"].every((h) => txt.includes(h)) &&
+      !/(^|[^a-zA-Z])Cards([^a-zA-Z]|$)/.test(txt),
+      "groups: " + ["Custom Pouch", "Design", "Layout", "Appearance"].filter((h) => txt.includes(h)).join("/"));
     check("settings: every explanatory line is gone",
       !/Original pouch shape|Folded Slate pouch|Swipe pouches left and right|Horizontal 3D carousel|Follows the phone|Always dark|Dashed seam|everything stays on this phone/.test(txt),
       "controls carry the state instead");
@@ -1287,21 +1289,36 @@ for (const view of ["carousel", "stack"]) {
       [...doc.querySelectorAll("#root div.absolute.top-0[data-cwc]")].length >= 4,
       `${[...doc.querySelectorAll("#root div.absolute.top-0[data-cwc]")].length} real card wrappers (wallet + preview)`);
     const chips = q(sheet, "button.cw-chip");
-    check("settings: controls are compact chips and sliders, not full-width buttons",
-      chips.length >= 10 && q(sheet, "input[type=range]").length >= 5,
-      `${chips.length} chips, ${q(sheet, "input[type=range]").length} sliders`);
-    check("settings: the Cards row is a preview filter only (chip per card + All)",
-      ["All", "Alpha", "Beta"].every((l) => chips.some((c) => (c.textContent || "").trim() === l)),
-      chips.slice(0, 14).map((c) => c.textContent.trim()).join(",").slice(0, 70));
+    const labels = () => chips.map((c) => (c.textContent || "").trim()).join(",");
+    check("settings: the carousel view offers 7 chip buttons and 9 sliders, no pills",
+      labels() === "Slate,Classic,Carousel,Stack,System,Light,Dark" &&
+      q(sheet, "input[type=range]").length === 9 &&
+      !/background:#0a84ff/.test(q(sheet, "button").map(st).join("|")),
+      `${chips.length} chips (${labels()}), ${q(sheet, "input[type=range]").length} sliders`);
+    check("settings: material and border became the Sheen and Edge sliders",
+      q(sheet, "input[type=range]").map((i) => i.getAttribute("aria-label")).join(",") ===
+      "Background,Radius,Shadow,Sheen,Edge,Grading,Grain,Size,Spacing",
+      q(sheet, "input[type=range]").map((i) => i.getAttribute("aria-label")).join(","));
     const before = win.localStorage.getItem(CARDS_KEY);
-    const beta = chips.find((c) => (c.textContent || "").trim() === "Beta");
-    tapEl(win, beta);
-    await settle(win, 500);
-    const prev2 = q(sheet, "cw-preview-in")[0] || q(sheet, "div").find((d) => /cw-preview-in/.test(d.className || ""));
-    check("settings: picking a card re-filters the preview, not the wallet",
-      (win.localStorage.getItem(CARDS_KEY) || "") === before &&
-      [...(prev2?.querySelectorAll("div.absolute.top-0") || [])].length === 1,
-      `${[...(prev2?.querySelectorAll("div.absolute.top-0") || [])].length} card in the preview, cards untouched`);
+    const prevIn = () => q(sheet, "div").find((d) => /cw-preview-in/.test(d.className || ""));
+    tapEl(win, chips.find((c) => (c.textContent || "").trim() === "Stack"));
+    await settle(win, 700);
+    const chipsNow = q(sheet, "button.cw-chip").map((c) => (c.textContent || "").trim());
+    const stage = q(prevIn() || sheet, "div").find((d) => /relative w-full/.test(d.className || ""));
+    const widest = () => Math.max(0, ...q(prevIn(), "div").map((d) => parseFloat((st(d).match(/width:\s*([\d.]+)px/) || [0, "0"])[1])));
+    check("settings: Stack swaps in the stack's own rows - Fan chips and a Spread slider",
+      chipsNow.length === 10 && chipsNow.join(",").includes("Flat,Fan,Deck") &&
+      /Spread/.test(sheet?.textContent || "") && /Fan/.test(sheet?.textContent || "") &&
+      /Stack/.test(q(sheet, ".cw-sub").map((e) => e.textContent).join(",")),
+      chipsNow.join(",").slice(0, 96));
+    check("preview: the stack is really mounted, sized from the stage box (patch21's fit)",
+      !!stage && /perspective-origin/.test(st(stage)) && /min-height: 0px/.test(st(stage)) &&
+      widest() > 120 && widest() < 400,
+      `widest ${widest().toFixed(0)}px, stage ${st(prevIn()).match(/width:[^;]+/)?.[0] || "-"}`);
+    check("settings: switching the view in the sheet moves the wallet too, cards untouched",
+      /flex min-h-0 flex-1 flex-col/.test(doc.querySelector("#root main")?.className || "") &&
+      (win.localStorage.getItem(CARDS_KEY) || "") === before,
+      doc.querySelector("#root main")?.className || "-");
     check("settings: no console errors from the new sheet", g18.errors.length === 0,
       g18.errors.slice(0, 1).join("").slice(0, 160));
   }
@@ -1398,6 +1415,130 @@ for (const view of ["carousel", "stack"]) {
     check("settings: no console errors while driving a control", m.errors.length === 0,
       m.errors.slice(0, 1).join("").slice(0, 160));
   }
+}
+
+
+// ---------------------------------------------------------------------------
+// Test 6l: round 11 - the smaller header control, the view-specific rows, and
+// sliders that stay smooth (patches 21 + 22)
+// ---------------------------------------------------------------------------
+{
+  const st = (el) => (el && el.getAttribute("style")) || "";
+  const L19 = JSON.stringify([{ id: "l1", src: "cards/one.jpg", title: "One", subtitle: "", fields: [] }]);
+  const mount = async (settings) => {
+    const m = makeDom({ [CARDS_KEY]: L19, [SETTINGS_KEY]: JSON.stringify(settings) }, { withLayout: true });
+    runBundle(m.window, m.errors);
+    await settle(m.window, 900);
+    const btnLabel = (l) => [...m.window.document.querySelectorAll("#root button[aria-label]")].find((b) => b.getAttribute("aria-label") === l);
+    const btnText = (re) => [...m.window.document.querySelectorAll("#root button")].find((b) => re.test((b.textContent || "").trim()));
+    const click = (el) => el && el.dispatchEvent(new m.window.MouseEvent("click", { bubbles: true }));
+    click(btnLabel("More"));
+    await settle(m.window, 300);
+    click(btnText(/^Settings$/));
+    await settle(m.window, 600);
+    return { ...m, doc: m.window.document, win: m.window, click, btnText };
+  };
+  const sheetOf = (doc) => [...doc.querySelectorAll("#root div")].find((d) => /cw-glass-sheet/.test(d.className || ""));
+  const q = (root, sel) => (root ? [...root.querySelectorAll(sel)] : []);
+  const setCtl = (win, el, v) => {
+    Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, "value").set.call(el, String(v));
+    el.dispatchEvent(new win.Event("input", { bubbles: true }));
+  };
+
+  // ---- patch21: what the CSS and the bundle now promise -------------------
+  check("slider kit: a 4px filled track inside a 26px hit area, thumb that can be grabbed",
+    /\.cw-range\{[^}]*height:26px[^}]*padding:11px 0[^}]*background-clip:content-box/.test(CSS_SRC) &&
+    /linear-gradient\(90deg,var\(--accent\) 0 var\(--p,50%\)/.test(CSS_SRC) &&
+    /\.cw-range::-webkit-slider-thumb\{[^}]*width:20px;height:20px/.test(CSS_SRC) &&
+    /\.cw-range\{[^}]*touch-action:none/.test(CSS_SRC),
+    (CSS_SRC.match(/\.cw-range\{[^}]{0,120}/) || ["-"])[0]);
+  check("slider kit: the read-out is tabular so digits do not jog while dragging",
+    /\.cw-val\{font-variant-numeric:tabular-nums\}/.test(CSS_SRC) && /\.cw-preview\{height:176px\}/.test(CSS_SRC),
+    "cw-val + a preview box tall enough for the stack");
+  check("slider kit: firefox gets a real track and progress too",
+    /\.cw-range::-moz-range-progress\{height:4px/.test(CSS_SRC) && /\.cw-range::-moz-range-thumb\{/.test(CSS_SRC),
+    "the WebView is Chromium, but the browser preview should match");
+  check("smoothness: the sleeve cache is quantized, not JSON.stringify(custom)",
+    /function __cwSig\(e\)\{let c=e\.custom\|\|\{\},q=\(v,d,s\)=>Math\.round\(\(v==null\?d:\+v\)\*s\)/.test(BUNDLE_SRC) &&
+    !BUNDLE_SRC.includes("${JSON.stringify(e.custom||{})}"),
+    BUNDLE_SRC.match(/function __cwSig\(e\)\{.{0,60}/)?.[0] || "-");
+  check("smoothness: the tray eases background and radius so a step reads as continuous",
+    BUNDLE_SRC.includes("transition:`background .16s linear,border-radius .16s ease-out`"),
+    "one line on the tray, nothing on the card transform path");
+  check("stack: it sizes from the box its caller gives, viewport otherwise",
+    BUNDLE_SRC.includes("landW=ft?Math.min((ft.h-14)*zsz,ft.w*.94*zsz,520*zsz):Math.min((vh-230)*zsz,w*.92*zsz,520*zsz)"),
+    "the wallet path keeps its old numbers exactly");
+
+  // ---- the sheet: one control per row, progress fill, no snap-back ---------
+  const m = await mount({ cover: true, theme: "slate", slateColor: "#5c6574", custom: { color: "#5c6574", design: "slate", grain: 0.2, grade: 1 } });
+  const sheet = sheetOf(m.doc);
+  const rngs = q(sheet, "input[type=range]");
+  check("sliders: every one carries its fill and a fine step",
+    rngs.length === 9 && rngs.every((i) => /--p:\s*\d+%/.test(st(i)) &&
+      ["0.01", "0.5"].includes(i.getAttribute("step"))),
+    rngs.map((i) => `${i.getAttribute("aria-label")}@${i.getAttribute("step")}`).join(",").slice(0, 120));
+  check("sliders: the fill tracks the value (50% in the middle of a range)",
+    (() => {
+      const r = rngs.find((i) => i.getAttribute("aria-label") === "Shadow");
+      return st(r).includes("--p: 53%") || st(r).includes("--p:53%");
+    })(),
+    st(rngs.find((i) => i.getAttribute("aria-label") === "Shadow")).slice(0, 60) || "-");
+  check("sheet: the Done pill is a size smaller than a wallet button",
+    q(sheet, "button").some((b) => (b.textContent || "").trim() === "Done" && /text-\[13\.5px\]/.test(b.className || "")),
+    q(sheet, "button").find((b) => (b.textContent || "").trim() === "Done")?.className || "-");
+
+  // a drag must land the last value, and must not write to storage once per event
+  let writes = 0;
+  // Storage is a proxy whose set trap stores keys, so a spy has to sit on the prototype
+  const realSet = m.win.Storage.prototype.setItem;
+  m.win.Storage.prototype.setItem = function (k, v) { if (k === SETTINGS_KEY) writes += 1; return realSet.call(this, k, v); };
+  const radius = rngs.find((i) => i.getAttribute("aria-label") === "Radius");
+  for (const v of [1.05, 1.12, 1.2, 1.31, 1.4, 1.47]) setCtl(m.win, radius, v);
+  check("smoothness: the thumb keeps the value being dragged, no snap-back to the commit",
+    parseFloat(radius.value) === 1.47, `input shows ${radius.value}`);
+  await settle(m.win, 400);
+  const savedL = JSON.parse(m.win.localStorage.getItem(SETTINGS_KEY) || "{}");
+  check("smoothness: six events in a frame cost one commit, and it is the last one",
+    writes === 1 && Math.abs((savedL.custom || {}).radius - 1.47) < 0.001,
+    `${writes} write(s), custom.radius=${(savedL.custom || {}).radius}`);
+  const trayRadius = (doc) => parseFloat((((([...doc.querySelectorAll("#root div")].map(st).find((x) => /linear-gradient/.test(x)) || "").match(/border-radius:\s*([\d.]+)px/) || [0, "0"])[1])));
+  const after = trayRadius(m.doc);
+  check("smoothness: and the wallet's pouch carries the last value, not an intermediate one",
+    after > 30 && Math.abs(after - 22.3 * 1.47) < 1.5, `tray border-radius ${after.toFixed(1)}px at radius 147%`);
+  m.win.Storage.prototype.setItem = realSet;
+
+  // ---- the Layout split: Fan and Spread belong to Stack -------------------
+  const stackChip = q(sheet, "button.cw-chip").find((c) => (c.textContent || "").trim() === "Stack");
+  m.click(stackChip);
+  await settle(m.win, 600);
+  const inStack = q(sheet, "button.cw-chip").map((c) => (c.textContent || "").trim());
+  check("layout: picking Stack reveals the stack's own controls",
+    inStack.join(",").includes("Flat,Fan,Deck") && /Spread/.test(sheet?.textContent || "") &&
+    q(sheet, "input[type=range]").some((i) => i.getAttribute("aria-label") === "Spread"),
+    inStack.join(",").slice(0, 90));
+  const deck = q(sheet, "button.cw-chip").find((c) => (c.textContent || "").trim() === "Deck");
+  m.click(deck);
+  await settle(m.win, 500);
+  const savedDeck = JSON.parse(m.win.localStorage.getItem(SETTINGS_KEY) || "{}");
+  check("layout: Fan writes the stack field the wallet reads (Deck = 1.5)",
+    (savedDeck.custom || {}).stack === 1.5 && /custom\.stack|1\.5/.test(JSON.stringify(savedDeck)),
+    `custom.stack=${(savedDeck.custom || {}).stack}`);
+  const backCarousel = q(sheet, "button.cw-chip").find((c) => (c.textContent || "").trim() === "Carousel");
+  m.click(backCarousel);
+  await settle(m.win, 600);
+  const inCar = q(sheet, "button.cw-chip").map((c) => (c.textContent || "").trim());
+  check("layout: back on Carousel those rows go away again (7 chips, Spacing not Spread)",
+    inCar.length === 7 && /Spacing/.test(sheet?.textContent || "") && !/Spread/.test(sheet?.textContent || "") &&
+    !inCar.join(",").includes("Flat"),
+    inCar.join(",").slice(0, 80));
+  check("layout: Wallet & cover stays available in both views",
+    (() => {
+      const sw = q(sheet, "button[role=switch]").find((b) => /^Wallet & cover/.test((b.parentElement?.textContent || "").trim()));
+      return !!sw;
+    })(),
+    q(sheet, "button[role=switch]").map((b) => (b.parentElement?.textContent || "").trim().slice(0, 18)).join(",").slice(0, 80));
+  check("round 11: no console errors from the compact sheet", m.errors.length === 0,
+    m.errors.slice(0, 1).join("").slice(0, 160));
 }
 
 // ---------------------------------------------------------------------------

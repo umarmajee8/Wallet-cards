@@ -166,6 +166,16 @@ EDITS = [
 ]
 
 
+# Patch 21 lets __cwStack size itself from a box its caller passes (that is how the settings
+# preview shows the stack at all) and adds one line of easing to the tray. Both rewrite spans
+# this patch owns, while keeping the size/radius/depth scaling - so the successor's text is the
+# proof this patch still stands.
+DOWNSTREAM_KEEP = {
+    "stack: size factor in scope": "landW=ft?Math.min((ft.h-14)*zsz",
+    "stack: card box scales with size": "ft.w*.94*zsz,520*zsz",
+}
+
+
 def status(data):
     todo, done, bad = [], [], []
     for old, new, label in EDITS:
@@ -173,7 +183,7 @@ def status(data):
             done.append(label)
         elif data.count(old) == 1 and data.count(new) == 0:
             todo.append((old, new, label))     # insertions/edits may legitimately match >1
-        elif data.count(new) >= 1:
+        elif data.count(new) >= 1 or (DOWNSTREAM_KEEP.get(label) or "") in data:
             done.append(label)
         else:
             bad.append(label)
