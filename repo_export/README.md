@@ -191,15 +191,65 @@ This repo contains the patched source for the CardWallet app.
      that span, so it carries a `DOWNSTREAM_KEEP` marker for this rewrite; patch 19 and 20 gained
      the same for the sheet span patch 22 rewrites.
 
+16. **Stack and Carousel become two independent configuration modes, the preview never runs dry,
+   and the sliders glide the wallet** (patches 23 + 24). *"Stack aur Carousel ko completely separate
+   configuration modes banao … Stack ki settings Carousel par apply nahi honi chahiye aur Carousel ki
+   settings Stack par apply nahi honi chahiye … preview static image na ho, minimum 3 actual cards
+   render karo … sliders mein smooth interpolation … create button thora chota, extra padding/height
+   hatao … settings panel configuration dashboard jaisi na lage."*
+   - **Two namespaces, not two copies of one field.** The layout numbers now live in
+     `custom.stack` (`size, gap, overlap, spacing, vOff, shrink, rot, visible`) and
+     `custom.carousel` (`size, gap, side, peek, pos`). The renderers keep reading the flat names they
+     always read - the wallet hands each view `{...custom, ...custom[view]}` through one helper
+     (`__cwMrg`), so the same field name in two objects is what keeps the views apart, and a
+     `radius`/`shadow` change still reaches both (they are design, not layout). Round 11 shared
+     `custom.size`/`gap` between the views; that is exactly what this removes.
+   - **Every requested control is real geometry**, read where the card is already being placed:
+     `overlap` is the x step as a fraction of card width (`l*(cw*overlap + spacing)`), `vOff` adds a
+     vertical step on the *transform* (`ly`) so it costs no layout, `shrink` is the per-depth scale
+     falloff, `rot` the per-depth 3D turn (and how far its clamp opens), `visible` the depth at which
+     a card stops being opaque. On the carousel: `gap` is the slide advance, `size` the card scale,
+     `side` the side-card opacity graded by distance, `peek` the lateral factor (`0.56 * peek`) that
+     decides how much of a neighbour shows past the front card, `pos` a bias of the whole row.
+     `overlap .7` + `spacing 0` + `visible 3` reproduce patch 20/22's numbers exactly, so a wallet
+     that never touched these sliders looks pixel-identical; `$p()` folds an older flat
+     `size`/`gap`/`stack` (the Fan multiplier) into both namespaces once.
+   - **The preview is the wallet's own tree and never shows one card.** It stages the wallet's real
+     cards and pads them with stand-ins built by the same components (each carrying its own pouch
+     colour, so a stack reads as separate cards) - three in the carousel, six in the stack, which is
+     what makes `Visible cards` and `Vertical offset` legible while dragging. The sheet is now fed
+     eight cards instead of four. It receives settings through the same `__cwMrg`, so the preview and
+     the wallet behind it cannot disagree.
+   - **A third tier on the sliders.** Geometry writes are ramped: each frame covers 42% of the
+     distance to the finger and snaps onto the target when the remainder is under the rounding it
+     writes with, so the last commit *is* the value. Non-geometry fields still commit once per frame;
+     the dragged row still holds its own value in sheet state (round 11's fix), and the drag is only
+     released when that field's glide finishes - otherwise the thumb would slide backwards under the
+     finger.
+   - **Fan chips are gone** (rotation and overlap cover what `Flat|Fan|Deck` preset) and `Spread`
+     became `Spacing`, so Layout is now two chips plus one switch. The whole sheet is 7 chip buttons,
+     2 switches, 11 colour dots, 18 sliders and one Done pill. The create button went 40px -> 36px
+     with 19px/21px glyphs - padding and height, not just the glyph.
+   - **Two bugs the harness caught, both worth knowing.** `Sd`'s dependency list still named only
+     `size/gap/radius`, so `peek`/`side`/`pos` would have been settings with no effect; and patch 13's
+     eject spring was declared as `let n = {…}` inside a component whose progress motion value is also
+     `n`, so reading the depth there threw at render. The first was invisible because a Python
+     multi-line string literal without parentheses had silently turned that edit into a no-op - patch
+     23 now refuses an edit whose anchor and replacement are identical and re-checks that the old
+     shape is gone afterwards.
+
+
 
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.
-- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch22), plus
-  `patch19_settings.src.js` (readable source for the settings sheet; `patch19_custom_pouch.py`
-  minifies it - one flat node per line, no comments) and `replay_chain.py` (rebuild
-  `app/index.js` from the pristine bundle through the whole chain and compare, which is how a
-  shipped bundle is proven to contain no hand edits),
+- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch24), plus
+  the readable sources of the settings sheet - `patch19_settings.src.js`,
+  `patch22_settings.src.js` and `patch24_settings.src.js`, each minified by its own script (one
+  flat node per line, no comments; the newest one owns the span and the older two report it as
+  superseded) - and `replay_chain.py` (rebuild `app/index.js` from the pristine bundle through the
+  whole chain and compare, which is how a shipped bundle is proven to contain no hand edits;
+  `--upto N --swap` / `--restore` are how the negative controls are run),
   plus the release toolchain: `build_release_apk.py` (build + sign),
   `build_debug_apk.py` (same bundle, throwaway debug key - for hands-on testing),
   `apkbuilder.py` (aligned zip, v1/v2/v3 signing, PKCS#12 keystore),
@@ -267,7 +317,7 @@ Verification gates:
 - `python3 patches/verify_release.py ../CardWallet_release.apk` - 29 package checks
   (the header ones read `header_options.json`, so a bundle that drifted from the
   config fails the build instead of shipping quietly)
-- `node patches/smoke_test_webview.mjs` - 138 web-layer checks (`npm i jsdom`);
+- `node patches/smoke_test_webview.mjs` - 216 web-layer checks (`npm i jsdom`);
   the carousel tests drive real pointer events: they reproduce the stuck half-shifted
   row (58.4px) and prove it recovers to 0.00px, prove a swipe in the empty band moves
   nothing, read each pouch's painted gradient to prove a per-card colour wins, and read
@@ -280,7 +330,7 @@ Verification gates:
 (`pip install --user apksigtool`); without it those 3 checks cannot run.
 
 **Test builds without the release key:** `python3 patches/build_debug_apk.py`
-writes `../CardWallet_settings_compact.apk`, signed with a throwaway key it creates
+writes `../CardWallet_stack_carousel_modes.apk`, signed with a throwaway key it creates
 under `repo_export/signing/`. Same bundle, same manifest hardening, same
 alignment - only the signature differs, so Android will not update an existing
 install over it (`adb uninstall com.arena.cardwallet` first). Never distribute it.

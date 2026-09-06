@@ -822,3 +822,83 @@ view-specific rows, do-tier drag state, Sheen/Edge, aur CSS slider kit). `verify
 
 **Device par abhi bhi dekhna ha:** S1-S11 - khaas taur par S4/S5 (thumb ke neeche ka jitter aur
 wallet ki hitching) aur S3 (stack preview ka box), kyunke frame timing machine par nahi napte.
+
+---
+
+## 16. Round 12 - Stack aur Carousel ab do alag configuration modes (patches 23 + 24)
+
+**User ki request (Roman Urdu):** *"Overall goal: settings simple aur clean hon, minimum buttons,
+kam text, compact controls, bade headings, smooth sliders, real-time preview, independent Stack
+settings, independent Carousel settings. Layout section mein Stack aur Carousel completely separate
+configuration modes hon - Stack ke liye card overlap, vertical offset, scale, rotation, visible
+cards, spacing; Carousel ke liye card spacing, scale, side card visibility, peek amount, horizontal
+positioning. Stack ki settings Carousel par apply nahi honi chahiye aur Carousel ki settings Stack
+par apply nahi honi chahiye. Preview static image na ho - minimum 3 actual cards, live components.
+Sliders fluid hon, koi jump ya lag na ho, smooth interpolation ho. Create button thora aur chota,
+extra padding/height hatao. Panel configuration dashboard jaisi na lage."*
+
+Round 11 ne Layout ko view-specific *rows* toh bana diya tha, lekin dono views ek hi
+`custom.size` / `custom.gap` / `custom.stack` field likh rahe the - matlab "Size" slider carousel
+mein bhi pouch ko bada karta tha aur stack mein bhi. Yeh user ki main shikayat thi, is liye is
+round mein asal namespacing ki gayi.
+
+**Kya bana (patch 23 - bundle):** layout numbers ab do alag objects mein rehte hain -
+`custom.stack = {size, gap, overlap, spacing, vOff, shrink, rot, visible}` aur
+`custom.carousel = {size, gap, side, peek, pos}`. Renderers ko koi naya field nahi chahiye tha:
+wallet har view ko `{...custom, ...custom[view]}` de deta ha ek chhote helper se (`__cwMrg`), isi
+liye same naam do namespaces mein hone se views alag ho jate hain, aur design fields (radius,
+shadow, colour, material) shared rehte hain kyunke wo layout nahi hain. Har requested control asal
+geometry se juda ha: stack mein `overlap` = card width ka kitna hissa card khisakta ha
+(`l*(cw*overlap + spacing)`), `vOff` = transform par vertical step (layout cost nahi), `shrink` =
+per-depth scale, `rot` = per-depth 3D turn (aur clamp kitna khulta ha), `visible` = kis depth ke baad
+card opaque nahi rehta. Carousel mein `gap` = slide advance, `size` = card scale, `side` = side cards
+ki opacity (distance ke saath graded), `peek` = lateral factor (`0.56 * peek`) jo tay karta ha
+pichla card kitna dikhta ha, `pos` = poore row ka horizontal bias. Defaults
+(`.7 / 0 / 3 / 1`) patch 20-22 ke numbers exactly reproduce karte hain, aur `$p()` ek dafa purane
+flat `size`/`gap`/`stack` (Fan multiplier) ko dono namespaces mein fold kar deta ha, so kisi
+purani install ka look nahi badalta.
+
+**Kya bana (patch 24 - sheet):** Layout ke paas ab sirf do chips + ek switch hain (`Flat|Fan|Deck`
+chips delete kar diye kyunke Rotation/Overlap whi kaam sliders se kar dete hain; `Spread` ab
+`Spacing`). Preview wallet ke apne components mount karta ha aur kabhi ek card par nahi rukta:
+wallet ke real cards pehle, phir stand-in cards (whi components, har card ka apna pouch colour) -
+carousel mein 3 aur stack mein 6 tak, tabhi `Visible cards` aur `Vertical offset` drag karte waqt
+saaf dikhte hain. Sheet ko ab 8 cards diye jate hain (pehle 4). Teesri tier smoothness ki: geometry
+writes **ramp** hote hain - har frame finger ke distance ka 42% cover hota ha aur aakhri step target
+par *exact* snap karta ha, so jo value store hoti ha wahi hoti ha jo aapne chuni. Jo field dragged
+ha uski value sheet ke paas rehti ha (React input ko wapas na kheenche) aur drag us field ki glide
+khatam hone par hi chhooti ha.
+
+**Do bugs jo harness ne pakde - dono batane layak hain.**
+(i) `Sd` (geometry hook) ki dependency list abhi bhi `[size, gap, radius]` padh rahi thi, so
+`peek`/`side`/`pos` settings store toh hoti lekin wallet unhe dobara layout mein recompute na karta
+- yaani slider bilkul be-asar. Yeh is liye chhoot gaya kyunke patch 23 ke Python file mein multi-line
+string literal bina parentheses ke tha, so `SD_NEW` sirf pehli line ban kar reh gaya aur edit no-op
+ho gaya (patch ka apna status usko "applied" keh raha tha). Ab patch aise edit ko khud rok deta ha:
+`old == new` ho toh refuse, aur apply ke baad `old` dobara dhoondhta ha.
+(ii) patch 13 ka eject spring `let n = {…}` kehlaata tha, usi component mein jahan progress motion
+value ka naam bhi `n` ha - shadowing ki wajah se render par `n.get is not a function` aaya aur poora
+sheet crash hua. Ab us object ka naam `spg` ha, aur whi test ne ye crash pakra.
+Iske ilawa markers update karne pare patch 7/13/17/19/20/21/22 ko (jahan 23/24 ne unka span dubara
+likha), aur replay harness ke `--swap/--restore` ne ek purana backup bacha liya tha jis se restore
+dobara buggy state de raha tha - ab wo swap aur restore dono par batate ha ke restore kis state par
+le jayega (size + md5).
+
+**Gate.** Smoke suite 216/216 (round 11 ki 197 checks ko round-12 ke field names par retarget kiya,
+aur ek naya block 6m joda: dono taraf ki isolation, neutral defaults, migration, `Sd` deps, preview
+ke 3/6 cards, ramp ki glide + exact landing, aur button budget). Negative controls: patch 24 hata kar
+**13 FAIL**, patches 23 + 24 hata kar **22 FAIL** - dono mein sirf round-12 ke checks gire, purane
+green (matlab naye checks naye kaam ke liye hain, decoration ke liye nahi). `animation_audit` 10
+checks / 1 pehle se wali WARN. `replay_chain` seed -> patch 24 = **IDENTICAL** (463,130 B).
+
+**Build.** `CardWallet_stack_carousel_modes.apk` = 11,653,136 bytes, sha256
+`4ee95622b99ccb9fd578d86084a0c28319021d1f87869f931b47e338f3198e11`, same throwaway debug key
+(`adb uninstall com.arena.cardwallet && adb install …`). APK ke andar JS/CSS tree se byte-identical
+(md5 `211101a1…` / `4037f6c0…`) aur 42/42 content greps; `verify_release` 28/29 (sole FAIL = debug
+cert subject, jo debug build ke liye expected ha). Preview (:8080) repo files ko symlink karta ha,
+is liye har edit foran live.
+
+**Device par abhi bhi dekhna ha:** section T (T1-T10) - khaas taur par T1/T2 (isolation: ek view ki
+settings dusre par lag hi na hone chahiye), T4 (stack preview mein 3+ cards aur `Visible cards`),
+T5/T6 (glide: thumb ke neeche preview smooth, release par exact value) aur T10 (36px create button
+ka tap area device par theek lagta ha ya nahi).

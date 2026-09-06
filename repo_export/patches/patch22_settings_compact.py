@@ -98,12 +98,22 @@ if not (NEW.startswith("function Np(") and NEW.endswith("}")):
 
 EDITS = [("SPAN", NEW, "settings sheet: Layout per view, sliders only, stack preview fitted")]
 
+# Patch 24 rewrote this span again - Layout became two independent namespaces and the sliders
+# learned to ramp. Its opening rows carry every control patch 22 introduced, so the successor's
+# text is the proof that this rewrite is still what ships (and must not be re-applied).
+SUPERSEDED = {
+    "settings sheet: Layout per view, sliders only, stack preview fitted":
+        "Rng(`Sheen`,`material`,.4,1.8,.01",
+}
+
 
 def status(data):
     todo, done, bad = [], [], []
     for old, new, label in EDITS:
         i, j = data.find(HEAD), data.find(TAIL)
         if new in data:
+            done.append(label)
+        elif SUPERSEDED.get(label) and SUPERSEDED[label] in data:
             done.append(label)
         elif i > 0 and j > i:
             todo.append((data[i:j], new, label))   # the span stops before TAIL, so do not re-add it

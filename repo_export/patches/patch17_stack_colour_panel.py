@@ -107,6 +107,10 @@ EDITS = [
 # Patch 20 keeps this panel's colour work and re-tunes only the shadow alpha *inside*
 # the span it wrote, so this edit counts as applied when that successor text is present.
 DOWNSTREAM_KEEP = {
+    # patch 23 spliced the layout-namespace migration into this loader block right after the
+    # migration it pins, so the tail is no longer contiguous - this half proves both stand.
+    "loader: nfc stays off + one-time appearance migration":
+        "n.custom={...Xu,...n.custom||{}},n.autoDetect=!1,n.nfc=!1,",
     "stack cover: painted from the wallet colour, not glass": "(0.55*sh).toFixed(2)",
 }
 
@@ -128,7 +132,7 @@ def status(data):
             done.append(label)
         elif data.count(old) == 1:
             todo.append((old, new, label))
-        elif data.count(new) >= 1 or (DOWNSTREAM_KEEP.get(label) or "") in data:
+        elif data.count(new) >= 1 or (DOWNSTREAM_KEEP.get(label) is not None and DOWNSTREAM_KEEP[label] in data):
             done.append(label)
         else:
             bad.append(label)

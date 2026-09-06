@@ -350,12 +350,37 @@ three plumbing paths to look at.
 If S4/S5 fail, note *which* control and whether the stutter is in the sheet or in the wallet behind
 it: sheet-only stutter means the local drag state is not holding (React snapping the input back to
 the committed value), wallet stutter means the canvas signature `__cwSig` is quantizing too finely.
+---
+
+## T. Round 12 - two independent layout modes, a staged preview, ramped sliders (patches 23 + 24)
+
+The point of this round is that Stack and Carousel are configured *apart*, so most of these rows
+are "does it stay put" checks. Numbers in brackets are the shipped defaults.
+
+| # | What to do | What must happen |
+|---|---|---|
+| T1 | Settings -> Layout: Stack. Move `Card overlap`, `Vertical offset`, `Scale`, `Rotation`, `Visible cards`, `Spacing` one at a time, then switch to Carousel | Every stack slider changes the stacked deck (x step, a vertical step, card size, per-card 3D turn, how many cards stay opaque, extra px). Switching to Carousel shows the carousel's five rows and **none of the stack values moved the carousel row**: same spacing, scale, side dim, peek and position as before |
+| T2 | Now the other way: on Carousel set `Card spacing` 44px, `Scale` 114%, `Side cards` to Hidden, `Peek amount` 150%, `Position` fully Left. Go back to Stack | The carousel row reflects all five; the stack looks exactly as it did before, and `custom.stack` in the wallet is untouched (Settings -> reopen shows the same six values) |
+| T3 | Kill the app and reopen | Both views keep their own numbers side by side (they are separate objects in `wallet.settings.v1`) - `stack.overlap` and `carousel.size` are not the same field any more |
+| T4 | Open Settings on a wallet with **one** card | The preview still shows a real stack of at least three cards (six in Stack view), built by the same card components - no screenshot, no empty box. `Visible cards` 3 -> 6 visibly adds cards on stage |
+| T5 | Drag any slider slowly, watch the wallet *behind* the sheet | It glides to the value while the finger is still moving: no stepping, no hitch, and the row's own number/thumb never jumps back. Release and the value lands exactly on where you left it (e.g. `Radius` 147% -> the pouch corner is 147% of its default) |
+| T6 | Flick a slider far in one jump (e.g. `Card spacing` 20 -> 44px) and release immediately | The row shows 44 at once, the wallet arrives at 44 within a few frames and then stops (no drift, no further repaint loop, no battery tick) |
+| T7 | Swipe the carousel and tap-eject a Stack card while Settings is open behind | The gestures still feel like before: short springs, eject in place. The ramp is only in the sheet's writer, so nothing in the card path animates that used to snap |
+| T8 | Count the controls in the sheet | 7 chip buttons (Slate/Classic, Carousel/Stack, System/Light/Dark), 2 switches, the colour row, 18 sliders and Done - no `Flat/Fan/Deck` chips, no `Spread`, no `Size` row that both views share |
+| T9 | Update from an older build (install over the previous round's data, or paste an old `wallet.settings.v1`) | Old `size`/`gap` values are folded into both views once and the wallet looks like it did before this round; a Fan-preset deck keeps its spread/rotation |
+| T10 | Header: tap the `+` create button (now 36px, 19px glyph) with a thumb | Comfortable to hit and centred, disc and glyph still aligned with the search/hamburger icons; the menu opens as before. If it feels too small, say so - this is the second round of shrinking it |
+
+If T1 or T2 fails, capture `wallet.settings.v1` (Settings are stored as one JSON object) - the two
+`custom.stack` / `custom.carousel` objects should be independent; a value appearing in both means the
+sheet wrote the wrong namespace, and a value in the right namespace with no visual change means the
+geometry hook is not recomputing (`Sd`'s dependency list).
+
 
 ---
 
 ## Sign-off
 
-The build may only be called production-ready once A–S are green on at least
+The build may only be called production-ready once A–T are green on at least
 one physical device. Record device model, Android version and result per row,
 and file anything that fails with the section id (e.g. "F3 fails: Back exits
 the app with Settings open").

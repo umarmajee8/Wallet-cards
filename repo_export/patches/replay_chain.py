@@ -21,6 +21,7 @@ The stock bundle is read from --stock (default: the `index.stock.js` next to thi
 """
 from pathlib import Path
 import argparse
+import hashlib
 import shutil
 import subprocess
 import sys
@@ -29,7 +30,7 @@ HERE = Path(__file__).resolve().parent
 APP = HERE.parent / "app"
 BACKUP = Path("/tmp/cardwallet-replay-backup.js")   # outside the tree, so a control run cannot commit it
 
-ORDER = [7, 8, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
+ORDER = [7, 8, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
 
 
 def scripts(upto, work):
@@ -61,7 +62,9 @@ def main():
         if not BACKUP.exists():
             raise SystemExit(f"nothing to restore ({BACKUP} does not exist)")
         shutil.move(str(BACKUP), str(APP / "index.js"))
-        print("restored app/index.js from", BACKUP.name)
+        back = (APP / "index.js").read_bytes()
+        print(f"restored app/index.js from {BACKUP.name} - {len(back)} bytes, "
+              f"md5 {hashlib.md5(back).hexdigest()[:12]}")
         return
 
     stock = None
@@ -69,6 +72,18 @@ def main():
         if cand and Path(cand).exists():
             stock = Path(cand)
             break
+    if not stock:
+        # last resort: the bundle as it stood on the commit this session branched from - the seed
+        # patch 7's anchors were written against, so /tmp copies surviving is not a requirement
+        for ref in ("eb98ba0", "HEAD"):
+            got = subprocess.run(["git", "-C", str(ROOT), "show", f"{ref}:repo_export/app/index.js"],
+                                 capture_output=True, text=True)
+            if got.returncode == 0 and got.stdout:
+                tmp = Path("/tmp/index.stock.js")
+                tmp.write_text(got.stdout, encoding="utf-8")
+                stock = tmp
+                print(f"(using the bundle from {ref}: {len(got.stdout)} chars)")
+                break
     if not stock:
         raise SystemExit("no pristine bundle: pass --stock /path/to/index.stock.js")
 
@@ -93,10 +108,16 @@ def main():
         Path(a.out).write_bytes(got)
         print("wrote", a.out)
     if a.swap:
+        cur = APP / "index.js"
         if not BACKUP.exists():
-            shutil.copy(APP / "index.js", BACKUP)
-        (APP / "index.js").write_bytes(got)
-        print(f"swapped replayed bundle into the tree (backup: {BACKUP})")
+            shutil.copy(cur, BACKUP)
+            print(f"swapped replayed bundle into the tree (backup: {BACKUP})")
+        else:
+            # the first swap of a session owns the backup, so a chain of control runs can all be
+            # undone with one --restore; say so, because --restore then returns to *that* state
+            same = BACKUP.read_bytes() == cur.read_bytes()
+            print(f"swapped replayed bundle into the tree; keeping the backup already there "
+                  f"({BACKUP}{'' if same else ' - taken before an earlier swap in this session'})")
 
     want = (APP / "index.js").read_bytes()
     same = got == want

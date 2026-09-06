@@ -133,6 +133,10 @@ EDITS = [
 # dropped outright, not only during the fold). The marker proves the rest of patch 13's
 # output is still in there, so `--check` and a chain replay stay quiet.
 DOWNSTREAM_KEEP = {
+    # patch 23 lets the stack's own vertical offset be a setting, so the eject now rests back on
+    # that offset instead of on zero; the lift/growth spring this patch tuned is unchanged.
+    "lift retuned + growth on the scale spring":
+        "Ju(ly,s?-i*.11:-Math.abs(t-n.get())*vof,spg),Ju(d,s?1.05:1,spg)",
     # patch 20 drives the corner radius from the pouch settings, inside this same span
     "no animated clip": "style:{inset:0,borderRadius:16*rd,background:`#09090b`},children:",
     "flap: blur only at rest":

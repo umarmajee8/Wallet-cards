@@ -171,6 +171,17 @@ EDITS = [
 # this patch owns, while keeping the size/radius/depth scaling - so the successor's text is the
 # proof this patch still stands.
 DOWNSTREAM_KEEP = {
+    # patch 23 added the carousel's own three fields to the same dependency list, so the bracket
+    # text this patch wrote is no longer verbatim - the list still recomputes on them
+    "geometry hook recomputes when they change":
+        "[k&&k.size,k&&k.gap,k&&k.radius,k&&k.peek,k&&k.pos,k&&k.side]",
+    # patch 23 moved these fields into per-view namespaces (custom.stack / custom.carousel) and
+    # widened the card math; every multiplier this patch introduced is still what paints.
+    "geometry: size, spacing and radius applied":
+        "pouchRadius:n*bd.pouchRadius*rd,cardRadius:n*bd.cardRadius*rd",
+    "stack card: radius/fan/spacing/shadow in scope":
+        "rd=pc2.radius==null?1:+pc2.radius,sh=pc2.shadow==null?1:+pc2.shadow",
+    "stack card: fan and spread applied": "sg=r*ov+sp;a.set(l*sg)",
     "stack: size factor in scope": "landW=ft?Math.min((ft.h-14)*zsz",
     "stack: card box scales with size": "ft.w*.94*zsz,520*zsz",
 }
@@ -183,7 +194,7 @@ def status(data):
             done.append(label)
         elif data.count(old) == 1 and data.count(new) == 0:
             todo.append((old, new, label))     # insertions/edits may legitimately match >1
-        elif data.count(new) >= 1 or (DOWNSTREAM_KEEP.get(label) or "") in data:
+        elif data.count(new) >= 1 or (DOWNSTREAM_KEEP.get(label) is not None and DOWNSTREAM_KEEP[label] in data):
             done.append(label)
         else:
             bad.append(label)

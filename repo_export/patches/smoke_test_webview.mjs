@@ -587,15 +587,15 @@ for (const view of ["carousel", "stack"]) {
       return bg === wantBg(o) && fg === wantGlyph(o);
     }),
     chips.map((c) => `${HEX(colorOf(c, "color"))} on ${HEX(colorOf(c, "background"))}`).join(" | "));
-  check("header: the create button is the smaller round-11 size (40px box, 21/24px glyphs)",
+check("header: the create button is the compact round-12 size (36px box, 19/21px glyphs)",
     (() => {
       const bare = HEADER_CFG.options.findIndex((o) => !o.chip);
       const svg = (i) => chips[i]?.querySelector("svg");
-      return chips.every((c) => /h-10/.test(c.className || "") && /w-10/.test(c.className || "")) &&
-        (bare < 0 || svg(bare)?.getAttribute("width") === "24") &&
-        svg(0)?.getAttribute("width") === "21";
+      return chips.every((c) => /h-9/.test(c.className || "") && /w-9/.test(c.className || "")) &&
+        (bare < 0 || svg(bare)?.getAttribute("width") === "21") &&
+        svg(0)?.getAttribute("width") === "19";
     })(),
-    HEADER_CFG.options.map((o) => `${o.id}:${o.chip ? "21(disc)" : "24(bare)"}`).join(" "));
+    HEADER_CFG.options.map((o) => `${o.id}:${o.chip ? "19(disc)" : "21(bare)"}`).join(" "));
   check("header: no console errors in the dark theme", dark.errors.length === 0,
     dark.errors.slice(0, 1).join("").slice(0, 150));
 }
@@ -1290,14 +1290,14 @@ for (const view of ["carousel", "stack"]) {
       `${[...doc.querySelectorAll("#root div.absolute.top-0[data-cwc]")].length} real card wrappers (wallet + preview)`);
     const chips = q(sheet, "button.cw-chip");
     const labels = () => chips.map((c) => (c.textContent || "").trim()).join(",");
-    check("settings: the carousel view offers 7 chip buttons and 9 sliders, no pills",
+check("settings: the carousel view offers 7 chip buttons and 12 sliders, no pills",
       labels() === "Slate,Classic,Carousel,Stack,System,Light,Dark" &&
-      q(sheet, "input[type=range]").length === 9 &&
+      q(sheet, "input[type=range]").length === 12 &&
       !/background:#0a84ff/.test(q(sheet, "button").map(st).join("|")),
       `${chips.length} chips (${labels()}), ${q(sheet, "input[type=range]").length} sliders`);
     check("settings: material and border became the Sheen and Edge sliders",
       q(sheet, "input[type=range]").map((i) => i.getAttribute("aria-label")).join(",") ===
-      "Background,Radius,Shadow,Sheen,Edge,Grading,Grain,Size,Spacing",
+      "Background,Radius,Shadow,Sheen,Edge,Grading,Grain,Card spacing,Scale,Side cards,Peek amount,Position",
       q(sheet, "input[type=range]").map((i) => i.getAttribute("aria-label")).join(","));
     const before = win.localStorage.getItem(CARDS_KEY);
     const prevIn = () => q(sheet, "div").find((d) => /cw-preview-in/.test(d.className || ""));
@@ -1306,11 +1306,11 @@ for (const view of ["carousel", "stack"]) {
     const chipsNow = q(sheet, "button.cw-chip").map((c) => (c.textContent || "").trim());
     const stage = q(prevIn() || sheet, "div").find((d) => /relative w-full/.test(d.className || ""));
     const widest = () => Math.max(0, ...q(prevIn(), "div").map((d) => parseFloat((st(d).match(/width:\s*([\d.]+)px/) || [0, "0"])[1])));
-    check("settings: Stack swaps in the stack's own rows - Fan chips and a Spread slider",
-      chipsNow.length === 10 && chipsNow.join(",").includes("Flat,Fan,Deck") &&
-      /Spread/.test(sheet?.textContent || "") && /Fan/.test(sheet?.textContent || "") &&
-      /Stack/.test(q(sheet, ".cw-sub").map((e) => e.textContent).join(",")),
-      chipsNow.join(",").slice(0, 96));
+    check("settings: Stack swaps in the stack's own six rows - no chips, nothing shared",
+      chipsNow.length === 7 && !chipsNow.join(",").includes("Fan") &&
+      q(sheet, "input[type=range]").slice(7).map((i) => i.getAttribute("aria-label")).join(",") ===
+      "Card overlap,Vertical offset,Scale,Rotation,Visible cards,Spacing",
+      `${chipsNow.length} chips / ${q(sheet, "input[type=range]").slice(7).map((i) => i.getAttribute("aria-label")).join(",")}`);
     check("preview: the stack is really mounted, sized from the stage box (patch21's fit)",
       !!stage && /perspective-origin/.test(st(stage)) && /min-height: 0px/.test(st(stage)) &&
       widest() > 120 && widest() < 400,
@@ -1335,9 +1335,10 @@ for (const view of ["carousel", "stack"]) {
   const rowOf = (root, label) => q(root, ".cw-row").find((r) => (r.textContent || "").startsWith(label));
 
   const base = await mount19({ cover: true, theme: "slate", slateColor: "#5c6574", custom: { color: "#5c6574", design: "slate", grain: 0.2, grade: 1 } });
-  const tuned = await mount19({
+const tuned = await mount19({
     cover: true, theme: "slate", slateColor: "#5c6574",
-    custom: { color: "#5c6574", design: "slate", grain: 0.2, grade: 1, radius: 1.6, size: 0.9, shadow: 0, border: 0, material: 1.6, depth: 0.55 },
+    // patch 23 moved size/spacing into the two view namespaces, so a tuned wallet sets both
+    custom: { color: "#5c6574", design: "slate", grain: 0.2, grade: 1, radius: 1.6, shadow: 0, border: 0, material: 1.6, depth: 0.55, carousel: { size: 0.9, gap: 20, side: 1, peek: 1, pos: 0 }, stack: { size: 0.9, gap: 20, overlap: 0.7, spacing: 0, vOff: 0, shrink: 1, rot: 1, visible: 3 } },
   });
   {
     const bTray = trayOf(base.window.document.getElementById("root"));
@@ -1351,7 +1352,7 @@ for (const view of ["carousel", "stack"]) {
     const rad = (el) => parseFloat((st(el).match(/border-radius:\s*([\d.]+)px/) || [0, "0"])[1]);
     check("pouch: Radius grows the pouch corners", rad(tTray) > rad(bTray) + 4, `${rad(bTray).toFixed(1)}px -> ${rad(tTray).toFixed(1)}px`);
     const cardW = (m) => parseFloat((st(m.window.document.querySelector("#root div.relative.no-select")).match(/width:\s*([\d.]+)px/) || [0, "0"])[1]);
-    check("pouch: Size scales the real pouch, not just the preview", cardW(tuned) < cardW(base) - 10,
+check("pouch: the view's own Scale sizes the real pouch, not just the preview", cardW(tuned) < cardW(base) - 10,
       `${cardW(base).toFixed(0)}px -> ${cardW(tuned).toFixed(0)}px`);
     const shadow = (m) => [...m.window.document.getElementById("root").querySelectorAll("div")].map(st).filter((x) => /box-shadow:\s*0 30px/.test(x))[0] || "";
     check("pouch: Shadow off removes the card cast shadow",
@@ -1473,9 +1474,9 @@ for (const view of ["carousel", "stack"]) {
   const m = await mount({ cover: true, theme: "slate", slateColor: "#5c6574", custom: { color: "#5c6574", design: "slate", grain: 0.2, grade: 1 } });
   const sheet = sheetOf(m.doc);
   const rngs = q(sheet, "input[type=range]");
-  check("sliders: every one carries its fill and a fine step",
-    rngs.length === 9 && rngs.every((i) => /--p:\s*\d+%/.test(st(i)) &&
-      ["0.01", "0.5"].includes(i.getAttribute("step"))),
+check("sliders: every one carries its fill and a step fine enough to drag",
+    rngs.length === 12 && rngs.every((i) => /--p:\s*\d+%/.test(st(i)) &&
+      ["0.01", "0.5", "0.005", "1"].includes(i.getAttribute("step"))),
     rngs.map((i) => `${i.getAttribute("aria-label")}@${i.getAttribute("step")}`).join(",").slice(0, 120));
   check("sliders: the fill tracks the value (50% in the middle of a range)",
     (() => {
@@ -1507,38 +1508,214 @@ for (const view of ["carousel", "stack"]) {
     after > 30 && Math.abs(after - 22.3 * 1.47) < 1.5, `tray border-radius ${after.toFixed(1)}px at radius 147%`);
   m.win.Storage.prototype.setItem = realSet;
 
-  // ---- the Layout split: Fan and Spread belong to Stack -------------------
+  // ---- the Layout split: each view's rows write only their own object -----
   const stackChip = q(sheet, "button.cw-chip").find((c) => (c.textContent || "").trim() === "Stack");
   m.click(stackChip);
   await settle(m.win, 600);
-  const inStack = q(sheet, "button.cw-chip").map((c) => (c.textContent || "").trim());
+  const inStack = q(sheet, "input[type=range]").map((i) => i.getAttribute("aria-label"));
   check("layout: picking Stack reveals the stack's own controls",
-    inStack.join(",").includes("Flat,Fan,Deck") && /Spread/.test(sheet?.textContent || "") &&
-    q(sheet, "input[type=range]").some((i) => i.getAttribute("aria-label") === "Spread"),
-    inStack.join(",").slice(0, 90));
-  const deck = q(sheet, "button.cw-chip").find((c) => (c.textContent || "").trim() === "Deck");
-  m.click(deck);
-  await settle(m.win, 500);
-  const savedDeck = JSON.parse(m.win.localStorage.getItem(SETTINGS_KEY) || "{}");
-  check("layout: Fan writes the stack field the wallet reads (Deck = 1.5)",
-    (savedDeck.custom || {}).stack === 1.5 && /custom\.stack|1\.5/.test(JSON.stringify(savedDeck)),
-    `custom.stack=${(savedDeck.custom || {}).stack}`);
+    ["Card overlap", "Vertical offset", "Scale", "Rotation", "Visible cards", "Spacing"]
+      .every((l) => inStack.includes(l)) && !inStack.includes("Spread") && !inStack.includes("Peek amount"),
+    inStack.slice(7).join(",").slice(0, 96));
+  const savedBefore = JSON.parse(m.win.localStorage.getItem(SETTINGS_KEY) || "{}");
+  const ovRow = q(sheet, "input[type=range]").find((i) => i.getAttribute("aria-label") === "Card overlap");
+  if (!ovRow) check("layout: the stack offers its own overlap slider", false, "no Card overlap row in the stack view");
+  if (ovRow) {
+    setCtl(m.win, ovRow, 1.05);
+    await settle(m.win, 600);
+    const savedOv = JSON.parse(m.win.localStorage.getItem(SETTINGS_KEY) || "{}");
+    check("layout: the overlap slider lands in custom.stack and leaves custom.carousel byte-equal",
+      Math.abs((((savedOv.custom || {}).stack) || {}).overlap - 1.05) < 0.001 &&
+      JSON.stringify((savedOv.custom || {}).carousel) === JSON.stringify((savedBefore.custom || {}).carousel),
+      `stack.overlap=${((savedOv.custom || {}).stack || {}).overlap}, carousel=${JSON.stringify((savedOv.custom || {}).carousel)}`);
+  }
   const backCarousel = q(sheet, "button.cw-chip").find((c) => (c.textContent || "").trim() === "Carousel");
   m.click(backCarousel);
   await settle(m.win, 600);
   const inCar = q(sheet, "button.cw-chip").map((c) => (c.textContent || "").trim());
-  check("layout: back on Carousel those rows go away again (7 chips, Spacing not Spread)",
-    inCar.length === 7 && /Spacing/.test(sheet?.textContent || "") && !/Spread/.test(sheet?.textContent || "") &&
-    !inCar.join(",").includes("Flat"),
-    inCar.join(",").slice(0, 80));
+  const carRows = q(sheet, "input[type=range]").map((i) => i.getAttribute("aria-label"));
+  check("layout: back on Carousel the stack's rows are gone and the carousel's are back (7 chips)",
+    inCar.length === 7 && ["Card spacing", "Side cards", "Peek amount", "Position"].every((l) => carRows.includes(l)) &&
+    !carRows.includes("Card overlap") && !carRows.includes("Visible cards"),
+    `${inCar.length} chips / ${carRows.slice(7).join(",")}`);
   check("layout: Wallet & cover stays available in both views",
     (() => {
       const sw = q(sheet, "button[role=switch]").find((b) => /^Wallet & cover/.test((b.parentElement?.textContent || "").trim()));
       return !!sw;
     })(),
     q(sheet, "button[role=switch]").map((b) => (b.parentElement?.textContent || "").trim().slice(0, 18)).join(",").slice(0, 80));
-  check("round 11: no console errors from the compact sheet", m.errors.length === 0,
+check("rounds 11-12: no console errors from the compact sheet", m.errors.length === 0,
     m.errors.slice(0, 1).join("").slice(0, 160));
+}
+
+
+// ---------------------------------------------------------------------------
+// Test 6m: round 12 - Stack and Carousel as independent configuration modes, a
+// preview that stages real cards for a one-card wallet, and sliders that glide
+// (patches 23 + 24)
+// ---------------------------------------------------------------------------
+{
+  const stl = (el) => (el && el.getAttribute("style")) || "";
+  const has = (...fs) => fs.every((f) => BUNDLE_SRC.includes(f));
+  const detail = (s) => (BUNDLE_SRC.match(new RegExp(s)) || ["-"])[0].slice(0, 96);
+
+  check("layout: each view is handed only its own numbers",
+    has("function __cwMrg(c,v){", "custom:__cwMrg(j.custom,`stack`)", "custom:__cwMrg(j.custom,`carousel`)") &&
+    BUNDLE_SRC.includes("s&&typeof s==`object`?{...o,...s}:{...o}"),
+    detail("function __cwMrg\\(c,v\\)\\{.{0,70}"));
+  check("layout: the stack reads overlap, vertical offset, scale, rotation, visible cards, spacing",
+    has("ov=pc2.overlap==null?.7", "sp=pc2.spacing==null?0", "vof=pc2.vOff==null?0", "sk=pc2.shrink==null?1",
+        "rt=pc2.rot==null?1", "vi=pc2.visible==null?3", "a.set(l*sg)", "sg=r*ov+sp",
+        "Math.max(-48*rt,Math.min(48*rt,l*-40*rt))", "d.set(c<.002?1:Math.max(1-.28*sk,1-.16*sk*c))",
+        "f.set(c>vi-.65?0:1)", "vof&&ly.set(-c*vof)"),
+    detail("let e=e=>\\{let l=t-e.{0,90}"));
+  check("layout: the carousel reads spacing, scale, side cards, peek amount, position",
+    has("pk=g.peek==null?1:+g.peek", "px=g.pos==null?0:+g.pos", "so=g.side==null?1:+g.side",
+        "sideGap:n*.56*pk", "posX:n*px", "sideOp:so", "h.set(t*sg+(i.posX||0))",
+        "op.set(a<.002?1:Math.max(.14,1-(1-(i.sideOp==null?1:i.sideOp))*a))"),
+    detail("sideGap:n\\*\\.56\\*pk.{0,60}"));
+  check("layout: the geometry recomputes when a view's own numbers move",
+    BUNDLE_SRC.includes("[k&&k.size,k&&k.gap,k&&k.radius,k&&k.peek,k&&k.pos,k&&k.side]"),
+    detail("t\\(xd\\(g\\.current\\)\\)\\},\\[[^\\]]*\\]"));
+  check("layout: neutral defaults, so a wallet that never touched them looks like round 11",
+    has("stack:{size:1,gap:20,overlap:.7,spacing:0,vOff:0,shrink:1,rot:1,visible:3}",
+        "carousel:{size:1,gap:20,side:1,peek:1,pos:0}"),
+    "overlap .7 / visible 3 reproduce .7+(gap-20)/120 and c>2.35 exactly");
+  check("layout: an older wallet keeps its look - flat size/gap/fan are folded into both views once",
+    has("fn=typeof c.stack==`number`?+c.stack:1",
+        "stack:st||{size:sz,gap:gp,overlap:.7*fn,spacing:(gp-20)*1.6,vOff:0,shrink:1,rot:fn,visible:3}",
+        "carousel:ca||{size:sz,gap:gp,side:1,peek:1,pos:0}", "if(st&&ca)return;"),
+    detail("if\\(!n\\.custom\\.stack\\|\\|!n\\.custom\\.carousel\\).{0,40}|\\(\\(\\)=>\\{let c=n\\.custom.{0,60}"));
+
+  // ---- live: no amount of Stack tuning can move the Carousel, or the reverse
+  const ONE = JSON.stringify([{ id: "one", src: "cards/one.jpg", title: "Alpha Card", subtitle: "", fields: [] }]);
+  const base = { cover: true, theme: "slate", slateColor: "#5c6574",
+    custom: { color: "#5c6574", design: "slate", grain: 0.2, grade: 1, radius: 1, shadow: 1 } };
+  const mountM = async (s, cards = ONE) => {
+    const m = makeDom({ [CARDS_KEY]: cards, [SETTINGS_KEY]: JSON.stringify(s) }, { withLayout: true });
+    runBundle(m.window, m.errors);
+    await settle(m.window, 900);
+    return m;
+  };
+  const pouchOf = (win) => stl(win.document.querySelector("#root div.relative.no-select"));
+  const stackCardOf = (win) => {
+    const d = [...win.document.querySelectorAll("#root div")].find((x) => /left: 50%/.test(stl(x)) && /will-change/.test(stl(x)));
+    return stl(d);
+  };
+  const wOf = (s) => parseFloat((s.match(/width:\s*([\d.]+)px/) || [0, "0"])[1]);
+
+  const carPlain = await mountM({ ...base, view: "carousel" });
+  const carWild = await mountM({ ...base, view: "carousel", custom: { ...base.custom,
+    stack: { size: 1.2, gap: 44, overlap: 0.05, spacing: 40, vOff: 22, shrink: 1.6, rot: 0, visible: 8 } } });
+  check("isolation: every Stack setting, pushed to its extreme, leaves the carousel pouch identical",
+    pouchOf(carWild.window) === pouchOf(carPlain.window) && wOf(pouchOf(carPlain.window)) > 100,
+    `${wOf(pouchOf(carPlain.window)).toFixed(1)}px vs ${wOf(pouchOf(carWild.window)).toFixed(1)}px`);
+
+  const stPlain = await mountM({ ...base, view: "stack" });
+  const stWild = await mountM({ ...base, view: "stack", custom: { ...base.custom,
+    carousel: { size: 1.2, gap: 44, side: 0.15, peek: 1.5, pos: 0.22 } } });
+  check("isolation: every Carousel setting, pushed to its extreme, leaves the stacked cards identical",
+    stackCardOf(stWild.window) === stackCardOf(stPlain.window) && wOf(stackCardOf(stPlain.window)) > 100,
+    `${wOf(stackCardOf(stPlain.window)).toFixed(1)}px vs ${wOf(stackCardOf(stWild.window)).toFixed(1)}px`);
+
+  const carBig = await mountM({ ...base, view: "carousel", custom: { ...base.custom,
+    carousel: { size: 1.16, gap: 20, side: 1, peek: 1, pos: 0 } } });
+  const stBig = await mountM({ ...base, view: "stack", custom: { ...base.custom,
+    stack: { size: 1.16, gap: 20, overlap: 0.7, spacing: 0, vOff: 0, shrink: 1, rot: 1, visible: 3 } } });
+  check("isolation: yet each view's own Scale does size what it renders",
+    wOf(pouchOf(carBig.window)) > wOf(pouchOf(carPlain.window)) + 8 &&
+    wOf(stackCardOf(stBig.window)) > wOf(stackCardOf(stPlain.window)) + 8,
+    `carousel ${wOf(pouchOf(carPlain.window)).toFixed(0)} -> ${wOf(pouchOf(carBig.window)).toFixed(0)}px, ` +
+    `stack ${wOf(stackCardOf(stPlain.window)).toFixed(0)} -> ${wOf(stackCardOf(stBig.window)).toFixed(0)}px`);
+
+  // ---- the preview: components, three cards minimum, live per view
+  const openSheet = async (win) => {
+    const btnLabel = (l) => [...win.document.querySelectorAll("#root button[aria-label]")].find((b) => b.getAttribute("aria-label") === l);
+    const btnText = (re) => [...win.document.querySelectorAll("#root button")].find((b) => re.test((b.textContent || "").trim()));
+    const click = (el) => el && el.dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+    click(btnLabel("More"));
+    await settle(win, 300);
+    click(btnText(/^Settings$/));
+    await settle(win, 600);
+    return [...win.document.querySelectorAll("#root div")].find((d) => /cw-glass-sheet/.test(d.className || ""));
+  };
+  const previewBox = (doc) => [...doc.querySelectorAll("#root div")].find((d) => /cw-preview-in/.test(d.className || ""));
+  const staged = (box) => (box ? Math.max(box.querySelectorAll("[data-cwc]").length,
+    [...box.querySelectorAll("div")].filter((d) => /left: 50%/.test(stl(d))).length) : 0);
+  const mPrev = await mountM({ ...base, view: "carousel" });
+  const sheet = await openSheet(mPrev.window);
+  const boxCar = previewBox(mPrev.window.document);
+  check("preview: a one-card wallet still stages three real cards in the carousel",
+    staged(boxCar) >= 3, `${staged(boxCar)} card roots on stage`);
+  check("preview: they are the wallet's own components, not a flattened picture",
+    !!boxCar && boxCar.querySelectorAll(":scope > img").length === 0 && boxCar.querySelectorAll("div").length >= 4 &&
+    (!!boxCar.querySelector("[data-cwc]") || [...boxCar.querySelectorAll("div")].some((d) => /left: 50%/.test(stl(d)))),
+    `>img:${boxCar ? boxCar.querySelectorAll(":scope > img").length : -1}, divs:${boxCar ? boxCar.querySelectorAll("div").length : -1}, roots:${boxCar ? boxCar.querySelectorAll("[data-cwc]").length : -1}`);
+  const chipStack = sheet && [...sheet.querySelectorAll("button.cw-chip")].find((c) => (c.textContent || "").trim() === "Stack");
+  chipStack && chipStack.dispatchEvent(new mPrev.window.MouseEvent("click", { bubbles: true }));
+  await settle(mPrev.window, 700);
+  const boxSt = previewBox(mPrev.window.document);
+  check("preview: switching to Stack restages the same six cards as a stack, instantly",
+    staged(boxSt) >= 6, `${staged(boxSt)} stacked card roots`);
+  check("preview: the stack on stage is not a picture either",
+    !!boxSt && boxSt.querySelectorAll(":scope > img").length === 0 &&
+    [...boxSt.querySelectorAll("div")].filter((d) => /left: 50%/.test(stl(d))).length >= 6,
+    boxSt ? `${[...boxSt.querySelectorAll("div")].filter((d) => /left: 50%/.test(stl(d))).length} stacked` : "no stage");
+
+  // ---- smoothness: the finger owns the row, the wallet glides to it
+  const q2 = (root, sel) => (root ? [...root.querySelectorAll(sel)] : []);
+  const setCtl2 = (win, el, v) => {
+    Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, "value").set.call(el, String(v));
+    el.dispatchEvent(new win.Event("input", { bubbles: true }));
+  };
+  // back to the carousel first: Card spacing is the carousel's row, and the stack view does not
+  // show it - which is exactly the isolation the two modes are supposed to have
+  const chipCar = sheet && [...sheet.querySelectorAll("button.cw-chip")].find((c) => (c.textContent || "").trim() === "Carousel");
+  chipCar && chipCar.dispatchEvent(new mPrev.window.MouseEvent("click", { bubbles: true }));
+  await settle(mPrev.window, 700);
+  const gapRow = q2(sheet, "input[type=range]").find((i) => i.getAttribute("aria-label") === "Card spacing");
+  if (!gapRow) check("smoothness: the carousel offers its own spacing row to drag", false,
+    "no Card spacing row after switching back to the carousel");
+  if (gapRow) {
+  const seen = [];
+  let writes = 0;
+  const realSet = mPrev.window.Storage.prototype.setItem;
+  mPrev.window.Storage.prototype.setItem = function (k, v) {
+    if (k === SETTINGS_KEY) {
+      writes += 1;
+      try { seen.push((((JSON.parse(v).custom || {}).carousel) || {}).gap); } catch { /* ignore */ }
+    }
+    return realSet.call(this, k, v);
+  };
+  setCtl2(mPrev.window, gapRow, 44);
+  const shownAtOnce = parseFloat(gapRow.value);
+  for (let i = 0; i < 16; i += 1) { await settle(mPrev.window, 20); if (seen.length && seen[seen.length - 1] === 44) break; }
+  mPrev.window.Storage.prototype.setItem = realSet;
+  check("smoothness: the dragged row shows the finger's value on the spot", shownAtOnce === 44,
+    `input reads ${gapRow.value}`);
+  check("smoothness: the wallet is interpolated to it - the first commit is not the target",
+    seen.length >= 2 && seen[0] > 20 && seen[0] < 43.5,
+    `commits ${seen.map((v) => (v == null ? "-" : v.toFixed(1))).join(" -> ").slice(0, 90)}`);
+  const wBefore = writes;
+  await settle(mPrev.window, 400);
+  check("smoothness: the glide lands exactly on the value and then stops writing",
+    seen[seen.length - 1] === 44 && writes === wBefore && writes <= 24,
+    `${writes} commit(s), last gap=${seen[seen.length - 1]}, still ${writes - wBefore} after 400ms`);
+  }
+
+  // ---- the button budget the user keeps asking for
+  const btns = q2(sheet, "button");
+  check("controls: the sheet is 7 chips, 2 switches and a colour row - no per-option buttons",
+    q2(sheet, "button.cw-chip").length === 7 && q2(sheet, "button[role=switch]").length === 2 &&
+    btns.length <= 22 && /Overlap|Vertical offset|Visible cards|Card spacing|Peek amount/.test(sheet.textContent || ""),
+    `${btns.length} buttons, ${q2(sheet, "button.cw-chip").length} chips, ${q2(sheet, "button[role=switch]").length} switches`);
+  check("controls: the Fan chip row is gone, replaced by the Rotation and Overlap sliders it preset",
+    !/Flat,Fan,Deck/.test(q2(sheet, "button.cw-chip").map((c) => (c.textContent || "").trim()).join(",")) &&
+    BUNDLE_SRC.includes("rt=pc2.rot") && BUNDLE_SRC.includes("ov=pc2.overlap"),
+    q2(sheet, "button.cw-chip").map((c) => (c.textContent || "").trim()).join(","));
+  const errs = [carPlain, carWild, stPlain, stWild, carBig, stBig, mPrev].flatMap((m) => m.errors || []);
+  check("round 12: no console errors across the independent views, the staging and the glide",
+    errs.length === 0, errs.slice(0, 1).join("").slice(0, 200));
 }
 
 // ---------------------------------------------------------------------------

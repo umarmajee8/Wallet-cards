@@ -66,6 +66,14 @@ BTN_NEW = "className:`flex h-10 items-center justify-center rounded-full active:
 ICO_OLD = "(0,U.jsx)(h,{size:cp?23:26,children:r}),"
 ICO_NEW = "(0,U.jsx)(h,{size:cp?21:24,children:r}),"
 
+# Patch 24 shrank the create button again (40 -> 36px, glyphs 19/21) in the same two spans; the
+# disc/tone work this patch did is unchanged there, so the successor's text is the proof.
+DOWNSTREAM_KEEP = {
+    "header buttons: 44px -> 40px": "flex h-9 items-center justify-center rounded-full",
+    "header glyphs a touch smaller inside them": "size:cp?19:21",
+}
+
+
 EDITS = [
     (STACK_OLD, STACK_NEW, "__cwStack takes a fit box for the preview"),
     (SIZE_OLD, SIZE_NEW, "the stack sizes from that box, viewport otherwise"),
@@ -107,7 +115,9 @@ def status(data: str, css: str):
             done.append(label)
         elif data.count(old) == 1:
             todo.append((old, new, label))
-        elif data.count(new) >= 1:
+        elif data.count(new) >= 1 or (
+            DOWNSTREAM_KEEP.get(label) is not None and DOWNSTREAM_KEEP[label] in data
+        ):
             done.append(label)
         else:
             bad.append(label)

@@ -130,7 +130,7 @@ EDITS = [
 
 # Patch 21 shrinks these buttons (h-11 -> h-10, glyph 23 -> 21) *inside* the span patch 7
 # wrote. The colour/tone work all survives, so the successor's text marks this edit as kept.
-DOWNSTREAM_KEEP = {"header buttons": "flex h-10 items-center justify-center rounded-full"}
+DOWNSTREAM_KEEP = {"header buttons": "flex h-9 items-center justify-center rounded-full"}
 
 
 def find_anchor(data: str, olds: list[str], new: str, label: str = "") -> str | None:

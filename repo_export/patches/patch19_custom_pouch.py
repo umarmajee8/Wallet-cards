@@ -122,6 +122,14 @@ EDITS = [
 SUPERSEDED = {
     "settings sheet: Custom Pouch with live preview": "fit:isStack?{w:388,h:302}",
 }
+# Patch 23 re-laid out that same defaults line (its `stack`/`gap` fields became namespaces) with
+# every neutral field from this patch still on it, so the successor's text is the proof.
+DOWNSTREAM_KEEP = {
+    # patch 24 lets the preview stage up to six cards, so it feeds the sheet eight instead of four
+    "settings: the sheet receives the wallet's cards for the preview": "cards:e.slice(0,8)",
+    "defaults: the new pouch fields, all neutral":
+        "radius:1,shadow:1,material:1,depth:1,border:1,size:1,gap:20,",
+}
 
 
 def status(data):
@@ -139,7 +147,9 @@ def status(data):
                 bad.append(label)
         elif data.count(old) == 1:
             todo.append((old, new, label))
-        elif data.count(new) >= 1:
+        elif data.count(new) >= 1 or (
+                DOWNSTREAM_KEEP.get(label) is not None and DOWNSTREAM_KEEP[label] in data
+        ):
             done.append(label)
         else:
             bad.append(label)
