@@ -102,6 +102,14 @@ if not (NEW.startswith("function Np(") and NEW.endswith("}")):
 # the joiner forbids a template literal in an object-key position, so those keys must be quoted
 assert '"--p":' in NEW and '"data-on":' in NEW, "an object key lost its quotes"
 
+# Patch 25 rewrote this span again (it only repaired the preview inside it). The text below is
+# patch 24's own work that survives that rewrite, so it proves the sheet is still the one this
+# patch built - and keeps this patch from being re-applied over patch 25's fix.
+SUPERSEDED = {
+    "settings sheet: two independent Layout modes, ramped sliders, staged preview":
+        "want=isStack?6:3",
+}
+
 EDITS = [
     ("SPAN", NEW, "settings sheet: two independent Layout modes, ramped sliders, staged preview"),
     (BTN_OLD, BTN_NEW, "create button 40px -> 36px"),
@@ -115,6 +123,8 @@ def status(data):
     for old, new, label in EDITS:
         i, j = data.find(HEAD), data.find(TAIL)
         if new in data:
+            done.append(label)
+        elif label in SUPERSEDED and SUPERSEDED[label] in data:
             done.append(label)
         elif label.startswith("settings sheet") and i > 0 and j > i and data.count(HEAD) == 1:
             todo.append((data[i:j], new, label))   # re-splice: the sheet is owned by this patch

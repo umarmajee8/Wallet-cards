@@ -28,9 +28,10 @@ import sys
 
 HERE = Path(__file__).resolve().parent
 APP = HERE.parent / "app"
+ROOT = HERE.parents[1]   # the git checkout - the stock-bundle fallback reads the base blob from here
 BACKUP = Path("/tmp/cardwallet-replay-backup.js")   # outside the tree, so a control run cannot commit it
 
-ORDER = [7, 8, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+ORDER = [7, 8, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]
 
 
 def scripts(upto, work):
@@ -111,13 +112,21 @@ def main():
         cur = APP / "index.js"
         if not BACKUP.exists():
             shutil.copy(cur, BACKUP)
-            print(f"swapped replayed bundle into the tree (backup: {BACKUP})")
+            note = f"backup: {BACKUP}"
         else:
             # the first swap of a session owns the backup, so a chain of control runs can all be
             # undone with one --restore; say so, because --restore then returns to *that* state
-            same = BACKUP.read_bytes() == cur.read_bytes()
-            print(f"swapped replayed bundle into the tree; keeping the backup already there "
-                  f"({BACKUP}{'' if same else ' - taken before an earlier swap in this session'})")
+            note = ("keeping the backup already there" if BACKUP.read_bytes() == cur.read_bytes()
+                    else f"keeping an OLDER backup ({BACKUP} was taken before an earlier swap)")
+        before = len(cur.read_bytes())
+        cur.write_bytes(got)
+        # and prove it landed - a --swap that silently wrote nothing turns every negative control
+        # into a run of the shipped bundle, which looks exactly like "the new tests pass without
+        # the new patch" and is the worst possible thing for a control to say
+        after = cur.read_bytes()
+        if after != got:
+            raise SystemExit(f"--swap did not take: {cur} holds {len(after)} bytes, wanted {len(got)}")
+        print(f"swapped replayed bundle into the tree: {before} -> {len(after)} bytes ({note})")
 
     want = (APP / "index.js").read_bytes()
     same = got == want

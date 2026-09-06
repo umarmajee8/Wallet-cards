@@ -239,11 +239,40 @@ This repo contains the patched source for the CardWallet app.
      shape is gone afterwards.
 
 
+17. **The stack preview is given a box to fill** (patch 25). *"preview meh stack show nhi ho rha ha,
+   stack preview meh show hona chahiye"* - with a screenshot of an empty glass box.
+   - **Why it was empty**: round 11's fix taught `__cwStack` to size its *cards* from the `fit` box,
+     but the component's own stage still carried only `flex:1` - which means something only inside a
+     flex column. In the sheet it sits in `.cw-preview-in`, an absolutely positioned box, so the stage
+     computed a height of 0 and its own `overflow:hidden` clipped every card away. The wallet looks
+     fine because there the stage really is the last row of a flex column.
+   - **The fix is two properties, only when a box is given**: `flex:ft?`none`:1` plus
+     `width:ft?ft.w:void 0,height:ft?ft.h:void 0`. With no `fit` (the wallet) React writes neither
+     property, so that path is byte-identical; with `fit:{w:388,h:302}` (the preview) the stage becomes
+     388x302 and the cards land inside it at their real size.
+   - **The stand-in cards' artwork never loaded either**: their `src` was
+     `data:image/svg+xml,` + `encodeURIComponent(prefix)` + `#2c3d56` + `"/></svg>` - a raw `#` in a
+     URL starts the fragment, so the SVG was cut off at the fill colour. The colour is now an `rgb()`
+     triple inside one fully encoded string, and the stand-ins carry no title (three copies of the
+     wallet's first title read as a bug).
+   - **What the harness learned**: the round-11 check asserted a *width* on the stage's cards, and a
+     zero-height clipped box still reports real widths on its children - so nothing caught it. The
+     preview checks are now height-aware (the stage must carry the fit box's own `width`/`height`,
+     read as declared property names so `min-height` cannot pass for `height`; the wallet's stage must
+     *not*), and they assert the stand-in URL has no raw `#` and ends where the SVG ends. With patch 25
+     removed those two checks fail on exactly the string this bug produced
+     (`flex: 1 1 0%; min-height: 0px; overflow: hidden; …` with no height at all).
+   - Rebuilding this also flushed a bug in `replay_chain.py --swap`: a rewrite of that block had
+     dropped the line that writes the file, so the swap printed "swapped" while leaving the tree
+     untouched - which makes a negative control quietly test the shipped bundle. It now writes,
+     re-reads, and refuses if the bytes are not what it wrote.
+
+
 
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.
-- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch24), plus
+- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch25), plus
   the readable sources of the settings sheet - `patch19_settings.src.js`,
   `patch22_settings.src.js` and `patch24_settings.src.js`, each minified by its own script (one
   flat node per line, no comments; the newest one owns the span and the older two report it as
@@ -317,7 +346,7 @@ Verification gates:
 - `python3 patches/verify_release.py ../CardWallet_release.apk` - 29 package checks
   (the header ones read `header_options.json`, so a bundle that drifted from the
   config fails the build instead of shipping quietly)
-- `node patches/smoke_test_webview.mjs` - 216 web-layer checks (`npm i jsdom`);
+- `node patches/smoke_test_webview.mjs` - 220 web-layer checks (`npm i jsdom`);
   the carousel tests drive real pointer events: they reproduce the stuck half-shifted
   row (58.4px) and prove it recovers to 0.00px, prove a swipe in the empty band moves
   nothing, read each pouch's painted gradient to prove a per-card colour wins, and read
@@ -330,7 +359,7 @@ Verification gates:
 (`pip install --user apksigtool`); without it those 3 checks cannot run.
 
 **Test builds without the release key:** `python3 patches/build_debug_apk.py`
-writes `../CardWallet_stack_carousel_modes.apk`, signed with a throwaway key it creates
+writes `../CardWallet_stack_preview_fixed.apk`, signed with a throwaway key it creates
 under `repo_export/signing/`. Same bundle, same manifest hardening, same
 alignment - only the signature differs, so Android will not update an existing
 install over it (`adb uninstall com.arena.cardwallet` first). Never distribute it.

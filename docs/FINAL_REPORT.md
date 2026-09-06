@@ -902,3 +902,59 @@ is liye har edit foran live.
 settings dusre par lag hi na hone chahiye), T4 (stack preview mein 3+ cards aur `Visible cards`),
 T5/T6 (glide: thumb ke neeche preview smooth, release par exact value) aur T10 (36px create button
 ka tap area device par theek lagta ha ya nahi).
+
+---
+
+## 17. Round 13 - stack preview ka box asal mein bharta ha (patch 25)
+
+**User ki report:** screenshot ke saath preview area circle kiya hua tha aur likha *"preview meh stack
+show nhi ho rha ha, stack preview meh show hona chahiye"* — yaani glass box bilkul khaali.
+
+**Wajah (diagnosis, aur ye round 11 ki ghalti thi):** round 11 ne `__cwStack` ko `fit:{w:388,h:302}`
+de kar uske **cards** ko box se size karna sikhaya tha — ye hissa theek tha — lekin component ka apna
+**stage** ab bhi `flex:1` par chhora hua tha. `flex:1` ka matlab sirf flex column ke andar hota ha;
+sheet mein stage `.cw-preview-in` ke andar ha jo absolutely positioned box ha, is liye stage ki height
+**0** ban gayi aur uski apni `overflow:hidden` ne saare cards kaat diye. Wallet mein ye is liye theek
+dikhta ha kyunke wahan stage waqayi flex column ki aakhri row hoti ha.
+
+Doosri ghalti usi box mein: stand-in cards ka `src`
+`data:image/svg+xml,` + `encodeURIComponent(prefix)` + `#2c3d56` + suffix tha — URL mein kacha `#`
+fragment shuru karta ha, so SVG fill colour par hi kat ho jata tha aur image load hi nahi hoti thi.
+
+**Fix (patch 25):** do properties, aur sirf tab jab `fit` diya gaya ho:
+
+    style:{flex:ft?`none`:1, …, width:ft?ft.w:void 0, height:ft?ft.h:void 0, …}
+
+`fit` na ho (wallet) to React ye dono properties likhta hi nahi — wo path byte-identical ha. `fit` ho
+(preview) to stage 388x302 ho jata ha aur cards apne asal size ke andar baithte hain. Stand-in cards ka
+rang ab `rgb(44,61,86)` jaisa triple ha jo poori encoded string ka hissa ha, aur un par title nahi
+(teh qar copy wallet ka pehla title "broken" lagta tha).
+
+**Harness ne kya seekha:** round 11 ki check stage ke cards ka **width** napti thi — aur zero-height
+clipped box ke bachon ka width bilkul sahi aata ha, is liye kuch pakra hi nahi gaya. Ab preview checks
+height-aware hain: stage par fit box ki `width`/`height` declared honi chahiye (property *naam* padhe
+jate hain taake `min-height`, `height` ko pass na kar de), wallet ke stage par unka na hona chahiye,
+aur stand-in URL mein kacha `#` nahi hona chahiye aur woh SVG ke end par khatam hona chahiye. Patch 25
+hata kar ye do checks whi string par garte hain jo is bug ne di thi:
+`flex: 1 1 0%; min-height: 0px; overflow: hidden; …` (height ke bina).
+
+**Aur ek bug jo isi beech mila — apni ghalti maan leta hoon:** `replay_chain.py --swap` ke block ko
+rewrite karte waqt main ne wo line gira di thi jo file likhti ha, so swap "swapped" print karta lekin
+tree ko haath hi nahi lagata. Is ka matlab negative control chup-chaap **shipped bundle** par chalta
+(aisa lagta ha jaise naye tests patch ke bagair bhi pass ho rahe hain — control ka sab se khatarnak
+jhooth). Ab swap likh kar dobara padhta ha aur bytes match na hon to khud fail ho jata ha. Pichle turn
+ke controls (13 FAIL / 22 FAIL) is bug se pehle ke theen aur durust theen; is turn ka control pehli
+bar bekaar gaya tha, is liye dobara chalaya gaya.
+
+**Gate.** Smoke **220/220** (4 naye preview checks samet). Negative control: patch 25 hata kar
+**2 FAIL** — theek wahi do, stage-size aur stand-in URL. `replay_chain` seed → patch 25
+**IDENTICAL** (463,213 bytes). `animation_audit` 10 checks / 1 purani WARN. `verify_release` 28/29
+(sole FAIL debug cert), aur APK ke andar JS/CSS tree se byte-identical + naye fixes ke greps.
+
+**Build.** `CardWallet_stack_preview_fixed.apk` — same debug key, pehle
+`adb uninstall com.arena.cardwallet`.
+
+**Device par dekhna ha:** section U (U1-U4): U1 preview box mein 3+ cards saaf dikhein (Stack view mein
+6), U2 `Overlap`/`Visible cards`/`Vertical offset` slider hilate hi stage badle, U3 wallet ka stack
+har guzre round ki tarah behave kare (fit change sirf preview tak mehdood ha), U4 ek-card wallet par
+bhi stand-in cards colour ke saath aayen (pehle unki artwork load nahi hoti thi).

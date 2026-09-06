@@ -1657,6 +1657,40 @@ check("rounds 11-12: no console errors from the compact sheet", m.errors.length 
   const boxSt = previewBox(mPrev.window.document);
   check("preview: switching to Stack restages the same six cards as a stack, instantly",
     staged(boxSt) >= 6, `${staged(boxSt)} stacked card roots`);
+  // The check round 11 was missing: a stage clipped to zero height is invisible, and measuring
+  // the cards' widths cannot see that - which is exactly how an empty preview box shipped.
+  const stageOf = (box) => (box ? [...box.querySelectorAll("div")].find(
+    (d) => /relative/.test(d.className || "") && /w-full/.test(d.className || "") && /perspective/.test(stl(d))) : null);
+  const stStage = stl(stageOf(boxSt));
+  check("preview: the stack's stage is given the fit box's real size, not clipped to 0px",
+    /width:\s*388px/.test(stStage) && /height:\s*302px/.test(stStage) && /overflow: hidden/.test(stStage),
+    stStage.slice(0, 140) || "no stage element");
+  const stgReal = [...stPlain.window.document.querySelectorAll("#root div")].find(
+    (d) => /relative/.test(d.className || "") && /w-full/.test(d.className || "") && /perspective/.test(stl(d)));
+  const stageProps = (el) => stl(el).split(";").map((x) => (x.split(":")[0] || "").trim()).filter(Boolean);
+  check("preview: and only there - the wallet's stack still sizes from the viewport",
+    !!stgReal && stageProps(stgReal).includes("flex") &&
+    !stageProps(stgReal).includes("height") && !stageProps(stgReal).includes("width"),
+    `props: ${stageProps(stgReal).join(",")}` || "no wallet stage element");
+  check("preview: stand-in artwork is a fully encoded data URL (a raw # would truncate it)",
+    (() => {
+      const srcs = [...boxCar.querySelectorAll("img")].map((i) => (i.getAttribute("src") || ""))
+        .filter((x) => x.startsWith("data:image/svg+xml"));
+      return srcs.length >= 2 && srcs.every((x) => !x.slice(5).includes("#") && /%3Csvg/.test(x) && /%3E$/.test(x));
+    })(),
+    [...boxCar.querySelectorAll("img")].map((i) => (i.getAttribute("src") || "").slice(0, 46)).join(" | ").slice(0, 130));
+  check("preview: every stacked card has a non-zero box inside that stage",
+    (() => {
+      const cards = [...boxSt.querySelectorAll("div")].filter((d) => /left: 50%/.test(stl(d)));
+      return cards.length >= 6 && cards.every((d) => {
+        const w = parseFloat((stl(d).match(/width:\s*([\d.]+)px/) || [0, "0"])[1]);
+        const h = parseFloat((stl(d).match(/height:\s*([\d.]+)px/) || [0, "0"])[1]);
+        return w > 100 && h > 100 && w <= 388 && h <= 302;
+      });
+    })(),
+    `${[...boxSt.querySelectorAll("div")].filter((d) => /left: 50%/.test(stl(d))).length} cards, ` +
+    [...boxSt.querySelectorAll("div")].filter((d) => /left: 50%/.test(stl(d))).slice(0, 2)
+      .map((d) => (stl(d).match(/width:[^;]+;\s*height:[^;]+/) || ["-"])[0]).join(" / "));
   check("preview: the stack on stage is not a picture either",
     !!boxSt && boxSt.querySelectorAll(":scope > img").length === 0 &&
     [...boxSt.querySelectorAll("div")].filter((d) => /left: 50%/.test(stl(d))).length >= 6,

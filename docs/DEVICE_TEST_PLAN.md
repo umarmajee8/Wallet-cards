@@ -378,9 +378,27 @@ geometry hook is not recomputing (`Sd`'s dependency list).
 
 ---
 
+## U. Round 13 - the stack preview finally fills its box (patch 25)
+
+The stage the preview mounts used to have no height of its own, so the cards existed but were
+clipped away. These rows are about seeing them.
+
+| # | What to do | What must happen |
+|---|---|---|
+| U1 | Open Settings on a wallet with a few cards; look at the preview under `Custom Pouch` | Cards are actually painted in that glass box - not an empty rectangle. In Carousel view you see the row of cards; tap `Stack` in Layout and the same box instantly shows a stacked deck |
+| U2 | On Stack view, drag `Card overlap`, `Visible cards`, `Vertical offset`, `Rotation` | The stack *inside the preview* changes with your finger - wider/narrower fan, more/fewer cards, a vertical step, more turn. Same behaviour in the wallet behind the sheet |
+| U3 | Close Settings and swipe / tap-eject in the wallet's own stack | Unchanged from previous rounds: full-size stack, drag and eject still work, no card clipped or shifted by the preview fix (the wallet gets no `fit` box, so its stage still sizes from the viewport) |
+| U4 | Now do it on a wallet with exactly **one** card | The preview still shows a full stack (real card + stand-ins, each with its own colour and artwork loaded - no grey placeholder squares), while the wallet behind shows the single real card |
+
+If U1 is still an empty box on a device, the thing to read is the stage element's inline style in the
+WebView inspector (`chrome://inspect`): it must carry `width: 388px; height: 302px`. Without them the
+`fit` prop is not reaching `__cwStack`, which is a different bug from the one patch 25 fixed.
+
+---
+
 ## Sign-off
 
-The build may only be called production-ready once A–T are green on at least
+The build may only be called production-ready once A–U are green on at least
 one physical device. Record device model, Android version and result per row,
 and file anything that fails with the section id (e.g. "F3 fails: Back exits
 the app with Settings open").
