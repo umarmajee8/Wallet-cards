@@ -86,22 +86,34 @@ one Android 9–11 device if you support them (minSdk is 23).
 | E4 | WhatsApp Business installed instead | Still resolves |
 | E5 | Return to the wallet with Back from WhatsApp | Wallet is where it was, no duplicate activity |
 
-## F. Android system Back  ⚠ known risk — check first
+## F. Android system Back  ⚠ regression check for patch 26 — do this section first
 
-The web layer registers **no** Back handler and the app bundles **no**
-Capacitor plugins, so `BridgeActivity` falls through to "WebView can't go back
-→ finish the activity". Expect Back to close the whole app even when a sheet is
-open. Confirm the real behaviour for each case:
+**Status changed in this QA pass.** The app previously registered *no* Back
+handler at all, so Back from any sheet exited the app. Patch 26 added a
+history-based contract in the web layer: opening the topmost sheet pushes
+exactly one `history` entry, and a `popstate` listener closes that sheet again
+(z-order crop → camera → delete-all confirm → editor → card sheet → settings →
+pouch studio → tap → search). jsdom proves the contract (QA suite group 17 +
+2 smoke checks); **it cannot prove that the hardware key reaches `popstate` in
+`BridgeActivity`**, which is what this section is for. If a row below exits the
+app instead of closing the surface (see also V10 for the keyboard interplay), patch 26 is not working on that device/OS
+combination — capture `adb logcat -s chromium Capacitor` and file the row.
+
+Every "Likely app exits instead" note in the table below is the *old* behaviour,
+kept as a description of the bug, not an expectation.
 
 | # | State when Back is pressed | Expected (desired) | Watch for |
 |---|---|---|---|
 | F1 | Wallet home | App goes to background | — |
-| F2 | `+` menu open | Menu closes, app stays | Likely **app exits** instead |
-| F3 | Settings sheet open | Sheet closes | Likely **app exits** |
-| F4 | Card detail / preview sheet open | Sheet closes | Likely **app exits** |
-| F5 | Camera sheet open | Camera closes, wallet stays | Likely **app exits** with camera open |
-| F6 | Crop view open | Back to capture, no half-saved card | Data loss |
-| F7 | Predictive back gesture (Android 14+) | No flicker, no black frame | |
+| F2 | `+` menu open | Menu closes, app stays | Should close now (patch 26) — exit = regression |
+| F3 | Settings sheet open | Sheet closes | Exit = regression (patch 26) |
+| F4 | Card detail / preview sheet open | Sheet closes | Exit = regression (patch 26) |
+| F5 | Camera sheet open | Camera closes, wallet stays | Exit = regression; also confirm the preview stops |
+| F6 | Crop view open | Back to capture, no half-saved card | Should return to capture; a half-saved card is a regression |
+| F7 | Predictive back gesture (Android 14+) | No flicker, no black frame | The handler is `popstate`-based, so it is predictive-back compatible by construction - look for a double-close (the sheet closes, then the app exits), which would mean the entry was popped twice |
+| F8 | Search field open, keyboard up | Back closes the keyboard first, then the sheet | If the whole sheet vanishes with the keyboard still up, note the OEM/WebView |
+| F9 | Wallet home (nothing open) | App backgrounds; **must not** close a sheet that is not there | A second Back press must never leave a phantom history entry |
+| F10 | Editor open with an unsaved edit | Patch 26 keeps the edit: Back closes the sheet and the card is *not* written | Confirm nothing half-written appears in the deck |
 
 If F2–F6 exit the app, the fix belongs in the app source: register an
 `@capacitor/app` `backButton` listener (or push a `history` entry per overlay)
@@ -396,9 +408,58 @@ WebView inspector (`chrome://inspect`): it must carry `width: 388px; height: 302
 
 ---
 
+## V. Round 14 - production QA pass fixes (patches 26-29)  ⚠ the device half of this pass
+
+These four rows are the parts of the QA pass that jsdom could not settle. Each one
+maps to a finding in `docs/QA_HANDOVER_REPORT.md`.
+
+| # | Check | Expected | Finding |
+|---|---|---|---|
+| V1 | Import a HEIC / a Google-Photos *cloud-only* item / a 0-byte file from the gallery picker | Each failure shows "Could not read that image - try another photo" (or "1 of 3 added - the rest could not be read" for a partial batch), and a failed *replace photo* keeps the old image with its own toast | QA-4 (patch 28) - before the fix, the tap did nothing at all |
+| V2 | With the deck holding 8+ photo cards, add and edit cards until storage is full | The "No room left on the phone" toast appears, nothing is lost; note the card count where it starts | QA/PERFORMANCE-1 - `localStorage` is the photo store; measure the real ceiling (browser engines vary: 5-10 MB) |
+| V3 | Settings → Card layout: on **Stack** push Size and Spacing to maximum, then open **Carousel** | Carousel shows its own untouched values, deck renders normally, no giant/zero-size cards, and returning to Stack restores the extremes | QA-2 (patch 27) - the clamp table is per-namespace; a legacy numeric `custom.stack` must still move the fan |
+| V4 | Cold start, then `adb shell pm clear` style fresh install, launch, kill from Recents, relaunch × 5 | No card is ever missing from the deck that was there before the kill; a card without a photo still shows its title | QA-3 (patch 27) - the loader used to drop src-less cards and rewrite them out |
+| V5 | Long-press a stacked card → **Send to WhatsApp**, then **Save to gallery** | Share sheet opens (Web Share on 30+) and the image lands in the gallery. It must **not** silently do nothing. If WhatsApp does not receive a pre-filled message, that is the missing native `CardIO` plugin, not a JS bug | QA-5 (patch 29) - the plugin is absent from this build; the fix makes the call non-fatal and falls back |
+| V6 | Add-details editor: check the field list on a phone | No **CVV** chip in the suggestion row, and no stored card carries a CVV field. "no CVV, no PIN" copy must still be visible | QA-8 (patch 29) - PCI DSS forbids retaining a security code; storage here is plain `localStorage` |
+| V7 | Screenshot the wallet and check the Recents thumbnail | Decide: card images are visible unless the client adds `FLAG_SECURE` in native code | SECURITY-1 - not fixable from the web payload |
+| V8 | Small phone (360x640 / 320x568 if you can emulate or find one) and 200 % font scale in system settings | Nothing clipped or off-screen, tap targets still reachable, deck still shows ≥3 cards, no horizontal scroll | QA §19 - jsdom has no layout engine, so this whole class is device-only |
+| V9 | Rotate portrait ↔ landscape with a card editor open and a photo mid-crop | The activity is not recreated (`configChanges` covers orientation), the edit is still there, and the landscape layout uses its own geometry | QA §20 |
+| V10 | Tap into the Card number / Notes field with the keyboard up | The focused field stays visible above the keyboard, the sheet scrolls, and Save is still reachable. If the keyboard covers it, that is RELEASE-4 (no `windowSoftInputMode`) | QA §18 - needs the manifest attribute added in the native project |
+| V11 | Drag every slider full-range for ~30 s, then leave the wallet on Screen | No jank, no catch-up burst after release, no battery/thermal drama; `adb shell dumpsys meminfo com.arena.cardwallet` before/after a 20-card session should be flat | QA §21/§16 - PERFORMANCE-1/2 measured the JS side only |
+| V12 | Blur and type check: Settings sheet over the wallet, `Wallet` wordmark, headings | Glass reads as glass (not a flat panel), no banding, headings visibly bolder than body, no text touching a card edge | QA §14 - judgement calls excluded by rule here |
+| V13 | Delete a **middle** card and the **last** card by swiping the deck, and long-press vs tap on a blurred cover | Exactly one card goes, the deck re-centres, remaining ids untouched | QA §6 - synthetic drags through the spring physics are not honest in jsdom |
+| V14 | TalkBack on: focus the create button, a slider, a card | Each announces its label and value; sliders are adjustable with volume keys or the TalkBack gesture | QA §14, MINOR-4 (zoom lock) |
+
+## W. Round 15 - Liquid Glass (patch 30 + stylesheet)  ⚠ visual + performance half
+
+The material is verified numerically here (tier rules, blur budget, WCAG contrast through the glass
+in both themes) and `docs/liquid-glass-preview.svg` shows the composite the tokens describe - but a
+browser compositor is not involved in any of that, so these rows are what actually close the round.
+
+| # | Check | Expected | Watch for |
+|---|---|---|---|
+| W1 | Open Settings with a **bright** photo card and a **dark** card in the deck, one after the other | The sheet tints slightly differently over each, its text stays crisp in both, and captions never wash out | Text that disappears when a white card sits behind the sheet (the class of bug the audit caught at 1.05:1) |
+| W2 | Drag `Card overlap` / `Visible cards` / `Background` full range with the sheet open | 60 fps, no catch-up burst after release, no shimmer on the rim | Nested-blur jank - the build caps the app at 4 blurred selectors; if a device still stutters, the tier-1 blur radius is the first dial to lower |
+| W3 | Long-press a card on a glass cover, then open the card sheet over it | The sheet's blur does not double up with the cover's frosted layer; no flicker on the rim | Two stacked backdrop-filters recompositing per frame |
+| W4 | Create disc on a light wallpaper vs a dark one, and in dark mode | Glyph stays high contrast (measured 10.2:1 light / 13.0:1 dark through pure black/white), disc reads as glass, not as a flat chip | A disc that turns invisible on one theme, or a white halo (the rim must stay a hair line) |
+| W5 | Android 6/7 device (or a WebView without `backdrop-filter`) | Sheets and the disc fall back to **opaque** fills, everything still readable | Translucent panels with no blur = the failure mode `@supports not (...)` prevents |
+| W6 | System settings: "Reduce transparency" ON, and "Reduce motion" ON | Transparency tiers drop to solid fills; the press scale and cross-fade stop | The media queries not covering a tier |
+| W7 | Rotate with the sheet open, then scroll the sheet to the Custom Pouch tray | The recessed tray keeps its depth (no banding on the sheen), preview cards stay fully opaque inside the glass frame | Glass over the cards themselves - the brief forbids it, and `[data-cwc]` must carry no glass class |
+| W8 | Camera sheet open (tier 1 + scrim + live camera) for 60 s | No thermal/frame drop beyond the camera's own cost; leaving the sheet returns the frame budget to idle | Blur + camera stream compositing together |
+| W9 | Screenshot / screen-record the sheet over a card | Material looks like glass in the still (blur + sheen visible), not grey film | A compositor that renders `backdrop-filter` as nothing at all on that GPU |
+
 ## Sign-off
 
-The build may only be called production-ready once A–U are green on at least
-one physical device. Record device model, Android version and result per row,
-and file anything that fails with the section id (e.g. "F3 fails: Back exits
-the app with Settings open").
+The build may only be called production-ready once **A–W are green** on at least
+one physical device, and once the release-signed build has been produced and put
+through the same list (`docs/QA_HANDOVER_REPORT.md` §5 lists what cannot be
+cleared in the development environment at all — right now that includes release
+signing, NFC, the soft keyboard, rotation rendering and every smoothness/judgement
+call). Record device model, Android version and result per row, and file anything
+that fails with the section id (e.g. "F3 fails: Back exits the app with Settings
+open"). The Android UI-testable layer is complete and green: `qa_feature_suite.mjs`
+173/173 (group 33 covers the Liquid Glass material), `smoke_test_webview.mjs` 229/229,
+`liquid_glass_audit.py` 60/60 (tier rules + the WCAG contrast engine), `verify_release.py`
+28/29 with the only FAIL being the deliberate debug signature, and `apk_content_check.py`
+54/54 against the APK itself (including the four-blurred-selector budget read out of the
+shipped stylesheet).

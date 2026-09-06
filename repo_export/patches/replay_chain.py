@@ -31,7 +31,7 @@ APP = HERE.parent / "app"
 ROOT = HERE.parents[1]   # the git checkout - the stock-bundle fallback reads the base blob from here
 BACKUP = Path("/tmp/cardwallet-replay-backup.js")   # outside the tree, so a control run cannot commit it
 
-ORDER = [7, 8, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]
+ORDER = [7, 8, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
 
 
 def scripts(upto, work):

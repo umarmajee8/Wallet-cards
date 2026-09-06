@@ -260,7 +260,11 @@ check("header: every option in header_options.json renders a button",
 // "black", and it is exactly what disappeared on a dark-theme device.
 const toneOf = (o) => o.tone || HEADER_CFG.defaults?.tone || "auto";
 const literal = (t) => (t === "black" || t === "white" ? t : null);
-const wantBg = (o) => (o.chip ? (literal(toneOf(o)) === "white" ? "#fff" : literal(toneOf(o)) === "black" ? "#000" : "var(--solid)") : "transparent");
+// Round 15: the disc is Liquid Glass tier 1, so its fill is a themed glass token. It is still a
+// token (a theme flip re-colours it) - the check only stops accepting hardcoded #000/#fff, and
+// the token values themselves are asserted to invert, carry legible alpha, and stay translucent.
+const GLASS_BG = { white: "var(--lg-glass-white)", black: "var(--lg-glass-black)", auto: "var(--lg-solid-glass)" };
+const wantBg = (o) => (o.chip ? (GLASS_BG[literal(toneOf(o))] ?? GLASS_BG.auto) : "transparent");
 const wantGlyph = (o) => (o.chip
   ? (literal(toneOf(o)) === "white" ? "#000" : literal(toneOf(o)) === "black" ? "#fff" : "var(--on-solid)")
   : (literal(toneOf(o)) ?? "var(--ink)"));
@@ -273,6 +277,8 @@ const HEX = (v) => (["#000", "#000000"].includes(v) ? "#000" : ["#fff", "#ffffff
   const block = (re) => (re.exec(css)?.[1] || "");
   const token = (b, name) => (new RegExp(`--${name}:([^;}]*)`).exec(b)?.[1] || "").trim();
   const lum = (v) => {
+    let rgba = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(v);
+    if (rgba) return (0.2126 * +rgba[1] + 0.7152 * +rgba[2] + 0.0722 * +rgba[3]) / 255;
     let h = /^#([0-9a-f]{3})$/i.exec(v)?.[1];
     if (h) h = [...h].map((c) => c + c).join("");   // #fff -> #ffffff
     else h = /^#([0-9a-f]{6})$/i.exec(v)?.[1];
@@ -283,16 +289,48 @@ const HEX = (v) => (["#000", "#000000"].includes(v) ? "#000" : ["#fff", "#ffffff
   const lt = block(/:root\{([^}]*)\}/), dk = block(/\.dark\{([^}]*)\}/);
   const solidLt = lum(token(lt, "solid")), solidDk = lum(token(dk, "solid"));
   const inkLt = lum(token(lt, "ink")), inkDk = lum(token(dk, "ink"));
+  // the round-15 tokens live in their own :root / html.dark blocks (later in the file), so
+  // reading only the first block would come back empty - merge every block of each selector.
+  const declMap = (sel) => {
+    const out = {};
+    // a block may also follow a closing comment (the round-15 block does), so */ is a boundary too
+    for (const m of css.matchAll(new RegExp(`(?:^|[};]|\\*/)\\s*${sel}\\{([^}]*)\\}`, "g")))
+      for (const d of m[1].split(";")) {
+        const i = d.indexOf(":");
+        if (i > 0) out[d.slice(0, i).trim()] = d.slice(i + 1).trim();
+      }
+    return out;
+  };
+  const LT = declMap(":root"), DK = declMap("html\\.dark");
+  const glass = (name) => [`--${name}`in LT ? LT[`--${name}`] : "", `--${name}` in DK ? DK[`--${name}`] : LT[`--${name}`] ?? ""];
+  const alphaOf = (v) => +(/,\s*([\d.]+)\s*\)$/.exec(v)?.[1] ?? 1);
+  for (const name of ["lg-solid-glass", "lg-glass-black", "lg-glass-white", "lg-tint", "lg-tint-2"]) {
+    const [l, d] = glass(name);
+    check(`header/glass: --${name} is declared in both themes`, !!l && !!d, `${l} | ${d}`);
+  }
+  const [glassLt, glassDk] = glass("lg-solid-glass");
+  check("header/glass: the disc token inverts like --solid does (dark fill on light, light on dark)",
+    lum(glassLt) < 0.2 && lum(glassDk) > 0.8, `${glassLt} -> ${glassDk}`);
+  check("header/glass: the disc stays legible (alpha .70-.95) but is still glass, not a solid",
+    alphaOf(glassLt) >= 0.7 && alphaOf(glassLt) <= 0.95 && alphaOf(glassDk) >= 0.7 && alphaOf(glassDk) <= 0.95,
+    `light a=${alphaOf(glassLt)}, dark a=${alphaOf(glassDk)}`);
+  check("header/glass: tier 1 sheet fill is more transparent than the disc (material hierarchy)",
+    alphaOf(glass("lg-tint")[0]) < alphaOf(glassLt) && alphaOf(glass("lg-tint")[1]) < alphaOf(glassDk),
+    `sheet a=${alphaOf(glass("lg-tint")[0])}/${alphaOf(glass("lg-tint")[1])} vs disc a=${alphaOf(glassLt)}/${alphaOf(glassDk)}`);
   check("header: the --solid/--ink tokens invert between themes (auto tone is meaningful)",
     solidLt < 0.2 && solidDk > 0.8 && inkLt < 0.2 && inkDk > 0.8,
     `solid ${token(lt, "solid")}->${token(dk, "solid")}, ink ${token(lt, "ink")}->${token(dk, "ink")}`);
-  check("header: auto-tone options declare tokens, not literals (so a theme flip re-colours them)",
+  check("header: every option declares tokens, not literals (so a theme flip re-colours them)",
     HEADER_CFG.options.every((o) => {
       const t = toneOf(o);
-      if (t === "black" || t === "white") return true;
+      // even the pinned tones are tokens now, so a literal in any of them fails this
+      if (t === "black" || t === "white") {
+        const c = byLabel(o.label);
+        return o.chip ? /var\(--lg-glass-(black|white)\)/.test(styleDecl(c, "background")) : true;
+      }
       const c = byLabel(o.label);
       return o.chip
-        ? /var\(--solid\)/.test(styleDecl(c, "background")) && /var\(--on-solid\)/.test(styleDecl(c, "color"))
+        ? /var\(--lg-solid-glass\)/.test(styleDecl(c, "background")) && /var\(--on-solid\)/.test(styleDecl(c, "color"))
         : /var\(--ink\)/.test(styleDecl(c, "color"));
     }),
     HEADER_CFG.options.map((o) => `${o.id}:${toneOf(o)}`).join(" "));
@@ -1758,9 +1796,15 @@ check("rounds 11-12: no console errors from the compact sheet", m.errors.length 
 const bundleSrc = fs.readFileSync(path.join(APP, "index.js"), "utf8");
 const usesHistory = /history\.pushState|history\.back\(/.test(bundleSrc);
 const usesCapacitorBack = /backButton|hardwareBackPress|ionBackButton/.test(bundleSrc);
-check("info: web layer does NOT register its own Back handler",
-  !usesHistory && !usesCapacitorBack,
-  "Back is handled by Capacitor BridgeActivity default - MUST be checked on device");
+// Patch 26 moved this from "no handler - verify on device" to a real contract: the web layer owns
+// Back for its own sheets. The native half (does the system key reach popstate at all) is still a
+// device row in docs/DEVICE_TEST_PLAN.md section V.
+check("back: the web layer registers a history-based Back handler for its sheets (patch26)",
+  usesHistory && /cardwallet:`sheet`/.test(bundleSrc) && /`popstate`/.test(bundleSrc),
+  `pushState:${usesHistory} capacitor:${usesCapacitorBack}`);
+check("back: it consumes the topmost surface in a fixed order and never the wallet itself",
+  /shut=\(\)=>\{if\(f\)\{p\(null\)/.test(bundleSrc) && /if\(C\)w\(!1\)/.test(bundleSrc),
+  "shut() order not found");
 
 // ---------------------------------------------------------------------------
 const width = Math.max(...results.map((r) => r.name.length)) + 2;

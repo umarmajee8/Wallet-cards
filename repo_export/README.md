@@ -276,10 +276,109 @@ This repo contains the patched source for the CardWallet app.
 
 
 
+
+18. **Production QA pass: four real defects found and fixed** (patches 26-29), 2026-09-06. A full
+    A-to-Z test round was requested ("app opens" is not a pass) - 147 new behavioural checks driving
+    the real flows (create through the gallery input, crop, nine rapid Saves, edit, delete, every
+    slider, mode switching, restart with hostile storage), then a re-run of the 221-check smoke suite
+    after each fix. The results and the honest limits are in **`docs/QA_HANDOVER_REPORT.md`**.
+  - **QA-1 (Critical-class) - Back did nothing.** No `backbutton` and no `popstate` handler existed
+    anywhere, and the APK ships zero Capacitor plugins, so Back with Settings/editor/crop/import open
+    finished the activity: process gone, edit lost. Patch 26 gives the app a history-based contract -
+    one `pushState` per open sheet, `popstate` closes the topmost in z-order, and a Done-tap close
+    marks the entry so it is not popped twice. Reproduced in jsdom (`history.length` never grew),
+    fixed, and proven load-bearing: removing the patch fails exactly the Back rows.
+  - **QA-2/3 (Major) - stored settings were trusted, and the loader ate cards.**
+    `custom.stack.size = 1e9` in `wallet.settings.v1` rendered cards **226,229,508,197 px** wide;
+    negative sizes made every card 0 px (an empty wallet that looks like a crash). Patch 27 clamps at
+    load with the sliders' own ranges, per `stack`/`carousel` namespace - and keeps a *number* in
+    `custom.stack`, because that is the legacy fan multiplier, not garbage (my first version deleted
+    it and two long-standing pouch checks went red; the clamp now preserves it and a regression row was
+    added for both 1.5 and 0.4). Same patch fixed `om()`, which dropped any card without `src` **and
+    rewrote storage without it** - a silent, permanent loss for a card whose photo save was
+    interrupted. A card with a title but no photo is now kept.
+  - **QA-4 (Major) - an unreadable photo was a silent no-op.** `ye`/`ve` swallowed every decode error,
+    so a HEIC, a cloud-only item or a 0-byte share left the user staring at an unchanged wallet.
+    Patch 28 reports it: "Could not read that image - try another photo", "1 of 3 added - the rest
+    could not be read", and a failed replace keeps the old face with its own message. This is the one
+    fix fully verifiable in jsdom, and it is: negative control upto-27 fails exactly these two checks.
+  - **QA-5/8 (Major, device-side) - Share and Save dead-ended, and CVV was being offered.** The bundle
+    `await`s Capacitor plugin `CardIO` (`shareToWhatsApp`, `saveToGallery`) on native, but no such
+    plugin ships (dex holds Capacitor core only, `cordova_plugins.js` is 0 bytes), so the promise
+    rejected and the working Web-Share / download paths below it never ran. Patch 29 wraps both calls
+    so they fall through. jsdom cannot enter `isNativePlatform()` - the suite says so instead of
+    claiming a pass - so this half is device row V5. The same patch removes the `+ CVV` suggestion chip
+    and the empty CVV field the tap flow created: PCI DSS forbids retaining a security code and this
+    app stores everything unencrypted. (The two `CVV` substrings that remain are the copy that
+    promises *not* to read one.)
+  - **New tooling for the next reviewer:** `qa_feature_suite.mjs` (147 checks, 32 groups, including a
+    group that documents what the harness cannot reach), `apk_content_check.py` (40 checks run against
+    the bytes *inside* the APK: payload identical to the tree, every round's fix present, removed
+    features and every HTML-injection sink absent from app code), and `replay_chain.py --upto N
+    --swap` used as a negative control for all four fixes.
+  - **Verdict of the pass:** no open Critical, 6 Major closed in code with regression re-run
+    (147/147 + 221/221), and handover still **NOT READY** - the six fixes have never been pressed on a
+    phone, and release signing, `FLAG_SECURE`, `windowSoftInputMode`, the unused NFC permission and a
+    storage model that caps a photo deck at roughly 6-12 cards (measured: 20 cards = 16.4 MB, 67 ms
+    re-serialised per save) are open. §5 of the handover report lists exactly what each item needs.
+
+
+19. **Liquid Glass - a selective, tiered material system** (patch 30 + `app/index.css`), 2026-09-06.
+    The brief was premium Apple-inspired glass *on important surfaces only*, and the two risks that
+    kills are (a) a translucent UI nobody can read and (b) a sheet that stutters. Both are handled with
+    a tier system, and both are enforced by tests rather than by taste.
+  - **Tier 1 (`cw-lg-primary`, `cw-lg-fab`) is the only layer that blurs.** The bottom-sheet panel and
+    the create disc get a real `backdrop-filter` (30px blur + `saturate(1.72) brightness(1.03)` on the
+    sheet, a tighter 10px + `saturate(1.9)` on the disc), a top specular sheen, a hair rim and one soft
+    depth shadow. `blur + saturate + brightness` is what makes the material read as *glass over the
+    wallet's own cards* rather than as a grey film: the colour behind it genuinely bleeds through.
+  - **Tier 2 (`cw-lg-ctl`, `.cw-range`, `.cw-chip`, `.cw-dot`, `.cw-card`, `cw-lg-pouch`,
+    `cw-lg-preview`) never blurs.** That is the performance rule, and it is stated in the CSS as well
+    as tested: a nested `backdrop-filter` costs the Android compositor a readback plus a filtered layer
+    *per element*, so sliders, chips, swatches and rows get a translucent fill, a 1px rim and an inner
+    highlight instead - which still looks like glass because they sit on tier 1's blur. `apk_content_check.py`
+    fails the build if more than four selectors in the shipped stylesheet declare a blur, or if a tier-2
+    control ever starts declaring one; the QA suite asserts that the open sheet has **at most three**
+    blurred elements in the DOM (scrim + panel + disc), and that the wallet screen at rest has exactly
+    one (the create disc). The rest of the wallet - the deck, the flat-colour cover, the header bar,
+    toasts - is untouched, and nothing on the card path carries a glass class.
+  - **Legibility was measured, not assumed.** `liquid_glass_audit.py` composites each surface over the
+    worst thing a phone can put behind it - pure white artwork, mid grey, pure black - in both themes,
+    and requires WCAG contrast through the glass. The first numbers it produced were a real bug:
+    captions (`--sub`, a caption colour meant for an *opaque* sheet) measured **1.05:1** on light glass
+    over a dark card, i.e. invisible. The fix is a dedicated pair of on-glass text tokens
+    (`--lg-ink` #111113 / `--lg-sub` #3f3f46, light; #f7f7f9 / #c9c9d1, dark) plus tint alphas raised to
+    the 0.74-0.90 band, and the tier-2 checks composite *through* tier 1 the way the browser does.
+    Final measured worst case: sheet text 9.41:1, captions 5.21:1, pouch tray 11.52:1, chip labels
+    14.15:1, create-disc glyph 10.2:1 (dark theme: 9.67 / 6.29 / 8.66 / 8.78 / 13.00).
+  - **No proprietary anything.** No asset, glyph, gradient or metric was copied: the material is built
+    from the app's own tokens (`--glass-*`, `--line`, `--solid`, `--accent`) with SF Pro typography, the
+    26px sheet radius, the rounded geometry and both layouts intact. The disc keeps the round-13
+    contract that its colours are theme tokens - `background: var(--solid)` became
+    `var(--lg-solid-glass)` (and `var(--lg-glass-black)` / `var(--lg-glass-white)` for the pinned tones),
+    so a theme flip still re-colours it; the three header checks were widened to the new tokens and now
+    additionally assert the token inverts and that its alpha sits in the .70-.95 glass band.
+  - **Motion stays cheap.** Appearance is a cross-fade riding the existing spring
+    (`opacity:.92 -> 1` on the panel), state changes transition `background-color`, `border-color`,
+    `box-shadow` and a `scale(.94)` press - `backdrop-filter` is never animated, no keyframe loops ship,
+    and no permanent `will-change` is set (all four are asserted against the CSS text).
+  - **Graceful degradation is part of the material**: `@supports not (backdrop-filter:blur(2px))`
+    renders the surfaces opaque - which also answers COMPAT-1 from the QA pass (Android 6-9 system
+    WebViews have no `backdrop-filter`) - and `prefers-reduced-transparency` / `prefers-reduced-motion`
+    drop the blur, the sheen and the press scale.
+  - **Tooling and preview.** `patches/liquid_glass_audit.py` (60 checks: tier rules, blur budget,
+    transition hygiene, rim/glow limits, fallbacks, the contrast engine) and
+    `docs/liquid-glass-preview.svg`, which the audit generates *from the tokens it just read*, so the
+    picture cannot drift from the code. Gates: QA 173/173, smoke 229/229, replay IDENTICAL through
+    patch 30, in-APK content 54/54, `verify_release` 28/29 (debug cert). Negative controls: patch 30
+    out -> audit 54/60 and QA group 33 17/26; CSS block out -> group 33 18/26 and the audit refuses
+    with a clean verdict instead of a traceback.
+
+
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.
-- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch25), plus
+- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch30), plus
   the readable sources of the settings sheet - `patch19_settings.src.js`,
   `patch22_settings.src.js` and `patch24_settings.src.js`, each minified by its own script (one
   flat node per line, no comments; the newest one owns the span and the older two report it as

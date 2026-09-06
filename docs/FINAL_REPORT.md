@@ -6,7 +6,11 @@ SHA-256: `63dbd8b1929fdbcb673a19ebab585c0c723ae41518188ff437e84da0c2233e9a`
 
 ---
 
-## Status: ❌ NOT production ready — device verification not executed
+## Status: ❌ NOT production ready — QA pass complete (patches 26-29), device + release build still open
+
+> Round 14 ka poora natija **`docs/QA_HANDOVER_REPORT.md`** mein ha (sections 1-30, har finding ka
+> root cause + fix + negative control, aur §5 mein woh sab cheezen jo is environment mein
+> *verifiable hi nahi*). Yeh file uska summary ha; numbers neeche wale table se match karte han.
 
 **Khulasa (Urdu):** Release signing, `allowBackup` hardening, naya **Wallet &
 cover** on/off option aur release APK build — sab mukammal ho gaye. Signed APK
@@ -221,7 +225,7 @@ Not verified, all of it required before shipping:
 | Gallery picker, large/HEIC images, cancel path | ⛔ not tested |
 | NFC bank-card read, NFC-off handling, error cases | ⛔ not tested |
 | WhatsApp share (incl. WhatsApp-missing / W4B) | ⛔ not tested |
-| Android system Back in every state | ⛔ not tested (**known risk, below**) |
+| Android system Back in every state | ⛔ not tested — handler **added** by patch 26 (was: no handler at all); device check in plan §F1–F10 |
 | App restart, force-stop, reboot, persistence at scale | ⛔ not tested |
 | Fresh install vs existing-install upgrade path | ⛔ not tested |
 | "Wallet & cover" switch: real look with the pouch hidden, text contrast | ⛔ not tested (plan section K) |
@@ -239,7 +243,7 @@ A–K, ~70 numbered steps, with install commands and what to watch for).
 |---|---|---|---|
 | 1 | APK signed with a throwaway debug key | High | **Fixed** — RSA-4096 production keystore, v1+v2+v3, debug key blocked by the build gate |
 | 2 | `allowBackup="true"` exposed card photos/details to cloud & `adb backup` | High | **Fixed** — set to `false`, verified in the shipped binary manifest |
-| 3 | No Back-button handling anywhere: the bundle registers no `backButton`/history handler and the APK ships **zero** Capacitor plugins, so `BridgeActivity` finishes the activity when the WebView can't go back — Back likely closes the whole app even with a sheet/menu/camera open | Medium | **Not fixed — needs device confirmation first.** The correct fix is source-level (`@capacitor/app` backButton listener or a history entry per overlay); this repo only contains the minified bundle, and patching React internals blind, with no device to re-test on, would be worse than the bug. Test F2–F6 in the plan settles it. |
+| 3 | No Back-button handling anywhere — Back from any sheet exited the app | **Critical-class** | **Fixed in patch 26** (round 14): one history entry per open sheet + `popstate` closes the topmost. The earlier "don't patch minified code blind" stance was revisited and the fix is additive, reproduced before and after, and covered by 3 QA checks + 2 smoke checks. Device confirmation: plan §F. |
 | 4 | Three animations use layout-triggering properties (toggle `left`, ripple `width/height`, accordion `height:auto`) | Low | **Not fixed** — cosmetic, and a blind patch to minified code cannot be visually re-verified here. Convert to transforms if I11–I13 show jank |
 | 5 | ~17 MB of Tesseract OCR wasm/traineddata still shipped although auto-detect was removed in patch 5 (the dead code still references it, so the assets can't just be deleted from the APK) | Low | **Not fixed** — drop it in a real source rebuild; would roughly halve the download size |
 | 6 | `versionCode` is still `1` | Info | Fine for a first production build; every future update must bump it |
@@ -965,3 +969,114 @@ par depend karne wala test na hone se bura hota ha.)
 6), U2 `Overlap`/`Visible cards`/`Vertical offset` slider hilate hi stage badle, U3 wallet ka stack
 har guzre round ki tarah behave kare (fit change sirf preview tak mehdood ha), U4 ek-card wallet par
 bhi stand-in cards colour ke saath aayen (pehle unki artwork load nahi hoti thi).
+
+
+---
+
+## 18. Round 14 - poori production QA pass, 4 asli defects aur unke fixes (patches 26-29), 2026-09-06
+
+**Kya manga gaya:** client ko dene se pehle A-Z QA - har feature ko *use* karke test karo, har screen
+inspect karo, interactions repeat karo, edge cases, aur koi bhi issue chhupana nahi: reproduce karo,
+root cause nikalo, source mein fix karo, phir regression dobara.
+
+**Kya mila (char defects, sab fixed):**
+
+| # | Defect | Repro | Fix |
+|---|---|---|---|
+| QA-1 | Back button ka **koi handler hi nahi tha** - koi bhi sheet khuli ho to Back app khatam kar deta tha (adhi editing saath) | jsdom: `history.length` kabhi nahi barha, sheet khuli rahi | patch 26 - har open sheet par ek `pushState`, `popstate` sab se upar wali band karta ha (z-order), Done par double-pop guard |
+| QA-2 | Store shuda settings par koi clamp nahi: `custom.stack.size:1e9` -> card **226,229,508,197 px**; negative -> **0 px** (khali wallet, crash jaisa) | 4 hostile `wallet.settings.v1` fixtures | patch 27 - `cwClamp()` load par, har field ki apni slider range, stack/carousel alag namespace |
+| QA-3 | `om()` bina `src` wale card **delete** kar ke storage likh deta tha - permanent, khamosh data loss | src-less card fixture | patch 27 - filter ab `e.id && (e.src \|\| e.back \|\| e.title)` |
+| QA-4 | Na-parhne-layq photo = **kuch nahi hota** (na card, na message). HEIC, cloud-only photo, 0-byte share, 12 MP decode OOM | 0-byte file asli gallery input se | patch 28 - "Could not read that image - try another photo", partial batch counts, replace-photo purani tasveer rakhta ha |
+| QA-5 | Share/Save **native `CardIO` plugin** ko `await` karte han jo is APK mein hai hi nahi -> promise reject, aur neeche wali kaam karne wali Web-Share/download line tak kabhi pahunch hi nahihti | static: dex sirf Capacitor core, `cordova_plugins.js` 0 B | patch 29 - dono calls `try{}catch{}` -> fallback chalta ha (device row V5) |
+| QA-8 | Editor mein `+ CVV` chip aur tap-flow ka CVV field - app plain `localStorage` mein sab kuch rakhta ha, PCI DSS security code store karne se mana karta ha | UI text se | patch 29 - dono hataye; "no CVV, no PIN" copy ab sach ha |
+
+**Khud ka kiya hua nuqsan jo suite ne pakra:** patch 27 ki pehli version `custom.stack` ko (jo number
+tha) "ghareeb" samajh kar delete kar deta tha - haqeeqat mein woh legacy fan multiplier ha jo fold ab
+bhi parhta ha. Do purane pouch checks laal ho gaye (`229.5px -> 229.5px`). Fix: numbers mehfooz, aur
+donon (1.5, 0.4) ke liye naya regression check.
+
+**Negative controls (har fix ke liye):** `replay_chain.py --upto N --swap` se bundle dobara banakar
+poori suite dobara - upto 25 -> **127/141**, upto 26 -> **130/141** (theek Back rows), upto 27 ->
+**139/141** (clamp + loader + import), upto 28 -> **145/147** (CVV rows). Yehi saboot ha ke checks
+sachche han.
+
+**Jo verify nahi ho saka (chhupaya nahi gaya):** hardware Back ki delivery, soft keyboard, rotation ka
+visual, screen-size clipping, font scaling, camera/OCR/NFC asli silicon, WhatsApp hand-off, jank/
+memory/ANR, `FLAG_SECURE`, Play signing/AAB/versionCode. Sab §5 of the handover report mein, saath
+yeh ke kis row se band hoga. NFC ka status: is build mein NFC **hai hi nahi** (setting har load par
+`!1` pin hoti ha, native plugin bhi nahi) - permission remove karna chahiye.
+
+**Gates is round ke baad:** QA suite **147/147** (~119 s, 32 groups) · smoke **221/221** ·
+`animation_audit` 10/1 purani WARN · `replay_chain` 465,046 B **IDENTICAL** (patches 1->29) ·
+`verify_release` **28/29** (sole FAIL = debug cert, by design) · `apk_content_check` **40/40**.
+
+**Build.** `CardWallet_qa_fixed.apk` — 11,653,889 B, sha256 `f543dddf3b38e30efcb0bd86dc0631f390e33da162f599175abda7a3f1961368`,
+andar ka `index.js`/`index.css` tree se byte-identical. Debug key; pehle `adb uninstall
+com.arena.cardwallet`. Release-signed artifact is code ke liye **maujood nahi** (repo ka
+`CardWallet_release.apk` round-5 ka bundle ha - purana, handover ke qabil nahi).
+
+**Verdict: NOT READY FOR CLIENT HANDOVER** — 0 critical, 6 major closed; baaqi device pass (plan §A-V,
+khaas tor par §F aur §V1-V14) + ek release build with the production keystore.
+
+---
+
+## 19. Round 15 - Liquid Glass (selective), patch 30 + stylesheet, 2026-09-06
+
+**Manga gaya:** premium Apple-jaisa *Liquid Glass*, lekin har jagah nahi - sirf ahem surfaces
+(Settings panel, Custom Pouch container, create button, floating controls, Stack/Carousel controls,
+live preview container, sliders, aur agar bottom floating action area ho). Shartain: parhne mein
+easy, cards dominant rehain, hard glow/white borders na hon, light + dark dono par test, aur
+performance/jank ka koi nuqsan nahi. Apple ke assets ya exact layout copy nahi karna.
+
+**Design (do tiers, yehi asal faisla ha):**
+
+| Tier | Kahan | Kya |
+|---|---|---|
+| **1 - asal blur** | bottom-sheet panel (`cw-glass-sheet cw-lg-primary`), create disc (`cw-lg-fab`) | `backdrop-filter: blur(30px) saturate(1.72) brightness(1.03)` (disc: 10px + saturate 1.9), upar specular sheen, 1px hair rim, ek soft depth shadow |
+| **2 - "glass" magar blur nahi** | sliders, chips, swatches, rows, pouch tray (`cw-lg-pouch`), preview frame (`cw-lg-preview`), secondary buttons (`cw-lg-btn`) | translucent fill + hair rim + inner highlight - *kyunki yeh tier 1 ke blur par baithe han, inhein dobara blur karne ki zaroorat nahi* |
+
+**Kyun (performance ka core):** nested `backdrop-filter` har element par ek compositor readback +
+filtered layer maangta ha - 18 sliders/chips wahi karte to sheet 60 fps par hi atak jaati ✗ Is liye
+poore app CSS mein sirf **4 selectors** blur karte han (`.cw-glass-sheet`, `.cw-scrim`,
+`.cw-lg-primary`, `.cw-lg-fab`) - aur yeh number `apk_content_check.py` APK ke *andar se* verify karta
+ha. Sheet khuli ho to DOM mein zyada se zyada **3** blurred elements (scrim + panel + disc), wallet
+screen par akele **1** (sirf create disc) - dono QA checks han.
+
+**Readability - yahan test ne asli bug nikala:** glass ke upar purana caption colour
+(`--sub #8e8e93`, opaque sheet ke liye bana tha) **1.05:1** measure hua jab peeche kaali artwork thi
+= literal taur par andarsh ✗✗ Fix: `--lg-ink` / `--lg-sub` (on-glass text tokens) + tint alpha
+band 0.74-0.90. Ab `liquid_glass_audit.py` har surface ko **white / mid-grey / black** artwork ke
+upar, **dono themes** mein composite karke WCAG ratio nikalta ha: light = 9.41 (body), 5.21
+(captions), 11.52 (pouch tray), 14.15 (chips), 10.2 (disc glyph); dark = 9.67, 6.29, 8.66, 8.78,
+13.00. Sab ≥ 4.5:1 ✓ (tier-2 controls *tier-1 ke andar* composite hote han, jaise browser karta ha.)
+
+**Taste rules jo code mein daal de:** rim alpha ≤ .16 (white border nahi), koi `0 0 <bara blur>` glow
+nahi, koi infinite keyframe nahi, koi permanent `will-change` nahi, `backdrop-filter`/`filter`/
+layout properties kabhi animate nahi hoten, press = `transform:scale(.94)`, appearance = sheet ke
+spring par `opacity:.92 -> 1` cross-fade.
+
+**Contract jo toota nahi:** cards ka deck, flat-colour cover (round 9), header bar aur toasts par
+koi glass nahi (`[data-cwc]` par `cw-lg` class ka na hona = check). Create disc ab bhi
+theme-token-driven ha: `var(--solid)` -> `var(--lg-solid-glass)` (+ pinned tones
+`var(--lg-glass-black/white)`) - is liye theme flip par rang badalta ha; 3 purane header checks
+naye tokens par widen kiye aur ab woh alpha band + token inversion bhi check karte han.
+
+**Fallbacks:** `@supports not (backdrop-filter:blur(2px))` -> opaque (COMPAT-1, Android 6-9 WebView),
+`prefers-reduced-transparency` -> blur off + solid fills, `prefers-reduced-motion` -> transitions/press
+off.
+
+**Gates:** QA **173/173** (naya group 33: 26 checks) · smoke **229/229** (+8) · `liquid_glass_audit`
+**60/60** · `apk_content_check` **54/54** · `verify_release` **28/29** (sole FAIL debug cert) ·
+`replay_chain` patch 30 tak **IDENTICAL** (465,259 B) · `animation_audit` 10/1 (WARN purana, barqarar).
+**Negative controls:** patch 30 hatao -> audit 54/60 + group 33 **17/26**; CSS block hatao -> group 33
+**18/26** aur audit saaf verdict ke saath exit karta ha (traceback nahi).
+
+**Build.** `CardWallet_liquid_glass.apk` — 11,656,321 B, sha256
+`fc2a8bc6d849f9d955f53ddac8b7a69fdc131788f12afcb9efeed6f097054aa7` (debug key; pehle
+`adb uninstall com.arena.cardwallet`). Visual preview (tokens se generated):
+`docs/liquid-glass-preview.svg`.
+
+**Device par dekhna ha:** plan ka naya section **W** (blur ka asli look, jank, banding, Android 6-9
+par opaque fallback, reduced-transparency, light+dark artwork par caption contrast, camera sheet ke
+upar double-blur cost). Bottom floating action area **maujood nahi** (is liye us par kuch nahi kiya -
+sheet khud bottom par ha aur tier 1 le rahi ha).

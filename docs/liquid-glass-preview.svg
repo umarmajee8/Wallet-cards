@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="560" viewBox="0 0 900 560">
+<defs>
+<linearGradient id="sheenlight" x1="0" y1="0" x2=".35" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".30"/><stop offset=".28" stop-color="#fff" stop-opacity=".07"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<linearGradient id="sheendark" x1="0" y1="0" x2=".35" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".10"/><stop offset=".3" stop-color="#fff" stop-opacity=".02"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/></linearGradient>
+</defs>
+<rect width="900" height="560" fill="#f2f2f5"/>
+<text x="24" y="34" font-family="-apple-system,Helvetica,Arial" font-size="15" font-weight="700" fill="#111113">Liquid Glass - simulated composite from the real tokens (not a screenshot)</text>
+<text x="24" y="54" font-family="-apple-system,Helvetica,Arial" font-size="11" fill="#8e8e93">tier 1 blurs what is behind it; tier 2 controls reuse the same tokens without a second backdrop-filter</text>
+<g transform="translate(24,84)">
+<text x="0" y="-8" font-family="-apple-system,Helvetica,Arial" font-size="11" fill="#8a8a8e">LIGHT theme - sheet over bright artwork</text>
+<rect width="400" height="200" rx="22" fill="#ffffff"/>
+<g transform="translate(18.0,36.0) rotate(-6)"><rect width="168.0" height="104.0" rx="14" fill="#1f2a44"/><rect x="10" y="12" width="64.0" height="8" rx="4" fill="#ffffff88"/></g>
+<g transform="translate(131.33333333333331,46.0) rotate(-1)"><rect width="168.0" height="104.0" rx="14" fill="#c9a227"/><rect x="10" y="12" width="64.0" height="8" rx="4" fill="#ffffff88"/></g>
+<g transform="translate(244.66666666666666,56.0) rotate(4)"><rect width="168.0" height="104.0" rx="14" fill="#e6e6ea"/><rect x="10" y="12" width="64.0" height="8" rx="4" fill="#ffffff88"/></g>
+<clipPath id="cplight24"><rect y="60.0" width="400" height="140.0" rx="26"/></clipPath>
+<g clip-path="url(#cplight24)">
+<rect y="60.0" width="400" height="140.0" style="filter:blur(12.5px)" fill="#ffffff"/>
+<g transform="translate(18.0,36.0) rotate(-6)" style="filter:blur(12.5px)"><rect width="168.0" height="104.0" rx="14" fill="#1f2a44"/></g>
+<g transform="translate(131.33333333333331,46.0) rotate(-1)" style="filter:blur(12.5px)"><rect width="168.0" height="104.0" rx="14" fill="#c9a227"/></g>
+<g transform="translate(244.66666666666666,56.0) rotate(4)" style="filter:blur(12.5px)"><rect width="168.0" height="104.0" rx="14" fill="#e6e6ea"/></g>
+<rect y="60.0" width="400" height="140.0" fill="#f7f7f9" fill-opacity="0.74"/>
+<rect y="60.0" width="400" height="140.0" fill="url(#sheenlight)"/>
+</g>
+<rect y="60.0" width="400" height="140.0" rx="26" fill="none" stroke="#3c3c43" stroke-opacity="0.14"/>
+<line x1="18" y1="184.0" x2="220.00000000000003" y2="184.0" stroke="#3c3c43" stroke-opacity="0.14"/>
+<text x="18" y="86.0" font-family="-apple-system,Helvetica,Arial" font-size="13" font-weight="600" fill="#111113">Card overlap</text>
+<text x="382" y="86.0" text-anchor="end" font-family="-apple-system,Helvetica,Arial" font-size="11" fill="#8e8e93">70%</text>
+<rect x="18" y="96.0" width="364" height="4" rx="2" fill="#ffffff" fill-opacity="0.55"/>
+<rect x="18" y="96.0" width="254.79999999999998" height="4" rx="2" fill="#0a84ff"/>
+<circle cx="272.79999999999995" cy="98.0" r="9" fill="#fff" stroke="#3c3c43" stroke-opacity="0.14"/>
+<rect x="18" y="120.0" width="74" height="24" rx="12" fill="#ffffff" fill-opacity="0.55" stroke="#3c3c43" stroke-opacity="0.14"/>
+<text x="55" y="136.0" text-anchor="middle" font-family="-apple-system,Helvetica,Arial" font-size="12" font-weight="600" fill="#111113">Stack</text>
+<circle cx="370" cy="46.0" r="18" fill="#ffffff"/>
+<circle cx="370" cy="46.0" r="18" fill="#111113" fill-opacity="0.8"/>
+<path d="M363 46.0 h14 M370 39.0 v14" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+</g>
+<g transform="translate(24,320)">
+<text x="0" y="-8" font-family="-apple-system,Helvetica,Arial" font-size="11" fill="#8a8a8e">LIGHT theme - sheet over dark artwork</text>
+<rect width="400" height="200" rx="22" fill="#101014"/>
+<g transform="translate(18.0,36.0) rotate(-6)"><rect width="168.0" height="104.0" rx="14" fill="#0b1220"/><rect x="10" y="12" width="64.0" height="8" rx="4" fill="#ffffff88"/></g>
+<g transform="translate(131.33333333333331,46.0) rotate(-1)"><rect width="168.0" height="104.0" rx="14" fill="#5b3df5"/><rect x="10" y="12" width="64.0" height="8" rx="4" fill="#ffffff88"/></g>
+<g transform="translate(244.66666666666666,56.0) rotate(4)"><rect width="168.0" height="104.0" rx="14" fill="#1f1f22"/><rect x="10" y="12" width="64.0" height="8" rx="4" fill="#ffffff88"/></g>
+<clipPath id="cplight24"><rect y="60.0" width="400" height="140.0" rx="26"/></clipPath>
+<g clip-path="url(#cplight24)">
+<rect y="60.0" width="400" height="140.0" style="filter:blur(12.5px)" fill="#101014"/>
+<g transform="translate(18.0,36.0) rotate(-6)" style="filter:blur(12.5px)"><rect width="168.0" height="104.0" rx="14" fill="#0b1220"/></g>
+<g transform="translate(131.33333333333331,46.0) rotate(-1)" style="filter:blur(12.5px)"><rect width="168.0" height="104.0" rx="14" fill="#5b3df5"/></g>
+<g transform="translate(244.66666666666666,56.0) rotate(4)" style="filter:blur(12.5px)"><rect width="168.0" height="104.0" rx="14" fill="#1f1f22"/></g>
+<rect y="60.0" width="400" height="140.0" fill="#f7f7f9" fill-opacity="0.74"/>
+<rect y="60.0" width="400" height="140.0" fill="url(#sheenlight)"/>
+</g>
+<rect y="60.0" width="400" height="140.0" rx="26" fill="none" stroke="#3c3c43" stroke-opacity="0.14"/>
+<line x1="18" y1="184.0" x2="220.00000000000003" y2="184.0" stroke="#3c3c43" stroke-opacity="0.14"/>
+<text x="18" y="86.0" font-family="-apple-system,Helvetica,Arial" font-size="13" font-weight="600" fill="#111113">Card overlap</text>
+<text x="382" y="86.0" text-anchor="end" font-family="-apple-system,Helvetica,Arial" font-size="11" fill="#8e8e93">70%</text>
+<rect x="18" y="96.0" width="364" height="4" rx="2" fill="#ffffff" fill-opacity="0.55"/>
+<rect x="18" y="96.0" width="254.79999999999998" height="4" rx="2" fill="#0a84ff"/>
+<circle cx="272.79999999999995" cy="98.0" r="9" fill="#fff" stroke="#3c3c43" stroke-opacity="0.14"/>
+<rect x="18" y="120.0" width="74" height="24" rx="12" fill="#ffffff" fill-opacity="0.55" stroke="#3c3c43" stroke-opacity="0.14"/>
+<text x="55" y="136.0" text-anchor="middle" font-family="-apple-system,Helvetica,Arial" font-size="12" font-weight="600" fill="#111113">Stack</text>
+<circle cx="370" cy="46.0" r="18" fill="#101014"/>
+<circle cx="370" cy="46.0" r="18" fill="#111113" fill-opacity="0.8"/>
+<path d="M363 46.0 h14 M370 39.0 v14" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+</g>
+<g transform="translate(476,84)">
+<text x="0" y="-8" font-family="-apple-system,Helvetica,Arial" font-size="11" fill="#8a8a8e">DARK theme - sheet over dark artwork</text>
+<rect width="400" height="200" rx="22" fill="#000000"/>
+<g transform="translate(18.0,36.0) rotate(-6)"><rect width="168.0" height="104.0" rx="14" fill="#1c1c1e"/><rect x="10" y="12" width="64.0" height="8" rx="4" fill="#ffffff88"/></g>
+<g transform="translate(131.33333333333331,46.0) rotate(-1)"><rect width="168.0" height="104.0" rx="14" fill="#2f2f34"/><rect x="10" y="12" width="64.0" height="8" rx="4" fill="#ffffff88"/></g>
+<g transform="translate(244.66666666666666,56.0) rotate(4)"><rect width="168.0" height="104.0" rx="14" fill="#6b4df6"/><rect x="10" y="12" width="64.0" height="8" rx="4" fill="#ffffff88"/></g>
+<clipPath id="cpdark476"><rect y="60.0" width="400" height="140.0" rx="26"/></clipPath>
+<g clip-path="url(#cpdark476)">
+<rect y="60.0" width="400" height="140.0" style="filter:blur(12.5px)" fill="#000000"/>
+<g transform="translate(18.0,36.0) rotate(-6)" style="filter:blur(12.5px)"><rect width="168.0" height="104.0" rx="14" fill="#1c1c1e"/></g>
+<g transform="translate(131.33333333333331,46.0) rotate(-1)" style="filter:blur(12.5px)"><rect width="168.0" height="104.0" rx="14" fill="#2f2f34"/></g>
+<g transform="translate(244.66666666666666,56.0) rotate(4)" style="filter:blur(12.5px)"><rect width="168.0" height="104.0" rx="14" fill="#6b4df6"/></g>
+<rect y="60.0" width="400" height="140.0" fill="#f7f7f9" fill-opacity="0.74"/>
+<rect y="60.0" width="400" height="140.0" fill="url(#sheendark)"/>
+</g>
+<rect y="60.0" width="400" height="140.0" rx="26" fill="none" stroke="#3c3c43" stroke-opacity="0.14"/>
+<line x1="18" y1="184.0" x2="220.00000000000003" y2="184.0" stroke="#3c3c43" stroke-opacity="0.14"/>
+<text x="18" y="86.0" font-family="-apple-system,Helvetica,Arial" font-size="13" font-weight="600" fill="#111113">Card overlap</text>
+<text x="382" y="86.0" text-anchor="end" font-family="-apple-system,Helvetica,Arial" font-size="11" fill="#8e8e93">70%</text>
+<rect x="18" y="96.0" width="364" height="4" rx="2" fill="#ffffff" fill-opacity="0.55"/>
+<rect x="18" y="96.0" width="254.79999999999998" height="4" rx="2" fill="#0a84ff"/>
+<circle cx="272.79999999999995" cy="98.0" r="9" fill="#fff" stroke="#3c3c43" stroke-opacity="0.14"/>
+<rect x="18" y="120.0" width="74" height="24" rx="12" fill="#ffffff" fill-opacity="0.55" stroke="#3c3c43" stroke-opacity="0.14"/>
+<text x="55" y="136.0" text-anchor="middle" font-family="-apple-system,Helvetica,Arial" font-size="12" font-weight="600" fill="#111113">Stack</text>
+<circle cx="370" cy="46.0" r="18" fill="#000000"/>
+<circle cx="370" cy="46.0" r="18" fill="#111113" fill-opacity="0.8"/>
+<path d="M363 46.0 h14 M370 39.0 v14" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+</g>
+<g transform="translate(476,320)">
+<text x="0" y="-8" font-family="-apple-system,Helvetica,Arial" font-size="11" fill="#8a8a8e">DARK theme - bright artwork behind (worst case)</text>
+<rect width="400" height="200" rx="22" fill="#f6f6f8"/>
+<g transform="translate(18.0,36.0) rotate(-6)"><rect width="168.0" height="104.0" rx="14" fill="#f2c14e"/><rect x="10" y="12" width="64.0" height="8" rx="4" fill="#ffffff88"/></g>
+<g transform="translate(131.33333333333331,46.0) rotate(-1)"><rect width="168.0" height="104.0" rx="14" fill="#ffffff"/><rect x="10" y="12" width="64.0" height="8" rx="4" fill="#ffffff88"/></g>
+<g transform="translate(244.66666666666666,56.0) rotate(4)"><rect width="168.0" height="104.0" rx="14" fill="#d9d9df"/><rect x="10" y="12" width="64.0" height="8" rx="4" fill="#ffffff88"/></g>
+<clipPath id="cpdark476"><rect y="60.0" width="400" height="140.0" rx="26"/></clipPath>
+<g clip-path="url(#cpdark476)">
+<rect y="60.0" width="400" height="140.0" style="filter:blur(12.5px)" fill="#f6f6f8"/>
+<g transform="translate(18.0,36.0) rotate(-6)" style="filter:blur(12.5px)"><rect width="168.0" height="104.0" rx="14" fill="#f2c14e"/></g>
+<g transform="translate(131.33333333333331,46.0) rotate(-1)" style="filter:blur(12.5px)"><rect width="168.0" height="104.0" rx="14" fill="#ffffff"/></g>
+<g transform="translate(244.66666666666666,56.0) rotate(4)" style="filter:blur(12.5px)"><rect width="168.0" height="104.0" rx="14" fill="#d9d9df"/></g>
+<rect y="60.0" width="400" height="140.0" fill="#f7f7f9" fill-opacity="0.74"/>
+<rect y="60.0" width="400" height="140.0" fill="url(#sheendark)"/>
+</g>
+<rect y="60.0" width="400" height="140.0" rx="26" fill="none" stroke="#3c3c43" stroke-opacity="0.14"/>
+<line x1="18" y1="184.0" x2="220.00000000000003" y2="184.0" stroke="#3c3c43" stroke-opacity="0.14"/>
+<text x="18" y="86.0" font-family="-apple-system,Helvetica,Arial" font-size="13" font-weight="600" fill="#111113">Card overlap</text>
+<text x="382" y="86.0" text-anchor="end" font-family="-apple-system,Helvetica,Arial" font-size="11" fill="#8e8e93">70%</text>
+<rect x="18" y="96.0" width="364" height="4" rx="2" fill="#ffffff" fill-opacity="0.55"/>
+<rect x="18" y="96.0" width="254.79999999999998" height="4" rx="2" fill="#0a84ff"/>
+<circle cx="272.79999999999995" cy="98.0" r="9" fill="#fff" stroke="#3c3c43" stroke-opacity="0.14"/>
+<rect x="18" y="120.0" width="74" height="24" rx="12" fill="#ffffff" fill-opacity="0.55" stroke="#3c3c43" stroke-opacity="0.14"/>
+<text x="55" y="136.0" text-anchor="middle" font-family="-apple-system,Helvetica,Arial" font-size="12" font-weight="600" fill="#111113">Stack</text>
+<circle cx="370" cy="46.0" r="18" fill="#f6f6f8"/>
+<circle cx="370" cy="46.0" r="18" fill="#111113" fill-opacity="0.8"/>
+<path d="M363 46.0 h14 M370 39.0 v14" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+</g>
+</svg>
