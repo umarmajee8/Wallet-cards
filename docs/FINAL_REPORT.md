@@ -946,6 +946,13 @@ jhooth). Ab swap likh kar dobara padhta ha aur bytes match na hon to khud fail h
 ke controls (13 FAIL / 22 FAIL) is bug se pehle ke theen aur durust theen; is turn ka control pehli
 bar bekaar gaya tha, is liye dobara chalaya gaya.
 
+**Ek baat jo bug nahi ha:** preview deck ko dobara centre ya chhota nahi karta. Default
+`Card overlap` (.7) par fan kareeb chaar card-width tak jata ha, so bahar wale cards stage se kat
+jate hain — bilkul waise hi jaise phone ka viewport wallet ke stack ko kaatta ha. Ye is liye theek
+ha kyunke preview aur wallet ek hi component aur ek hi settings share karte hain; jab aap overlap kam
+karenge to dono jagah deck saath mein bund ho jayegi. (Main ne ek check likhi thi jo dono fans ka
+ratio tulna karti ha, phir hata di — transform settle hone ke liye frames chahiye, aur frame-timing
+par depend karne wala test na hone se bura hota ha.)
 **Gate.** Smoke **220/220** (4 naye preview checks samet). Negative control: patch 25 hata kar
 **2 FAIL** — theek wahi do, stage-size aur stand-in URL. `replay_chain` seed → patch 25
 **IDENTICAL** (463,213 bytes). `animation_audit` 10 checks / 1 purani WARN. `verify_release` 28/29

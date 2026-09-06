@@ -255,7 +255,14 @@ This repo contains the patched source for the CardWallet app.
      URL starts the fragment, so the SVG was cut off at the fill colour. The colour is now an `rgb()`
      triple inside one fully encoded string, and the stand-ins carry no title (three copies of the
      wallet's first title read as a bug).
-   - **What the harness learned**: the round-11 check asserted a *width* on the stage's cards, and a
+   - **What the preview does *not* do**: re-centre or shrink the deck to make it look tidier. At the
+    default `Card overlap` the fan reaches about four card-widths from the middle, so the outer cards
+    are cropped by the stage - exactly as the phone's viewport crops the wallet's own stack. That is
+    the point of a preview that shares the component and the settings; a check that compared the two
+    fans by ratio was written and then removed, because the deck's transforms only settle after enough
+    animation frames, and a test that depends on frame timing is worse than no test. Dragging overlap
+    down closes the deck in both places together.
+  - **What the harness learned**: the round-11 check asserted a *width* on the stage's cards, and a
      zero-height clipped box still reports real widths on its children - so nothing caught it. The
      preview checks are now height-aware (the stage must carry the fit box's own `width`/`height`,
      read as declared property names so `min-height` cannot pass for `height`; the wallet's stage must
