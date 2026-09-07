@@ -375,6 +375,53 @@ This repo contains the patched source for the CardWallet app.
     with a clean verdict instead of a traceback.
 
 
+20. **Round 16 - the header's controls move into a glass footer dock** (patch 31 + `app/index.css`),
+    2026-09-07.
+  - **What was asked.** "Jo b cheezein header me ha sab ko footer pe set karo": `Create +`, `Search`
+    and `Settings`/`More` were all in the top bar; they now live together in one floating glass pill at
+    the bottom, with the same material quality as the rest of the Liquid Glass system. The `Wallet`
+    wordmark stays at the top-left - it is the app's title, not a control, and it is the only thing left
+    in the top row (asserted).
+  - **The DOM re-wrap, not a CSS trick.** The wordmark and the three controls were siblings inside one
+    `pointer-events-auto mx-auto flex w-full max-w-[520px] justify-end` row, and the option menu was
+    anchored to that row. A CSS-only move therefore had no valid target: pinning the row to the bottom
+    drags the wordmark with it, and leaving the menu where it is points an options list at an empty top
+    corner. So `patch31_footer_dock.py` rewrites the structure - the top fixed container now holds **two
+    bars**: the unchanged row (wordmark only) and a new bottom bar
+    `pointer-events-none fixed inset-x-0 bottom-0 z-40` whose inner row is the dock itself
+    (`pointer-events-auto cw-dock ... justify-center`). The three `g(...)` button elements were sliced
+    out of the source **verbatim** (the patch asserts it finds exactly three, and runs `node --check`
+    before accepting its own output), and the dock stays a child of the container that owns `ref:d`,
+    because that ref is what closes the option menu when you tap outside it.
+  - **The dock is a first-class glass surface.** It gets its own tier-1 material, not a copy of the
+    sheet: radius 999 (a pill, so `blur(22px)` instead of the sheet's 30px - a short pill smears if you
+    blur it hard), `saturate(1.78) brightness(1.03)`, its own `--lg-dock-alpha` at **0.80 / 0.84**
+    versus the sheet's 0.74 / 0.82, because a deck of cards is always scrolling under it. The Create
+    disc inside keeps the round-9/15 contract exactly (36px box, 19px `+`, `var(--lg-solid-glass)`,
+    tier-2 rim) but loses its own `backdrop-filter`: **blur is not nested**, so the number of blurred
+    surfaces is unchanged - one at rest (the dock, where the disc used to be), three with a sheet open
+    (dock + scrim + panel). `liquid_glass_audit.py` pins all of that (dock blurs, has its own radius, is
+    more opaque than the sheet, suppresses the nested blur, has the opaque fallback) and the
+    "CSS declares a blur in at most five selectors" budget is checked into the APK as well.
+  - **It opens upward, and the deck gets out of its way.** The option menu re-anchors to the dock's
+    bottom-centre (`mx-auto mb-1 w-[248px]` with `transformOrigin: center bottom`) instead of hanging
+    off the top-right, and `<main>` reserves `calc(env(safe-area-inset-bottom) + 62px)` unconditionally
+    - the gesture inset is read, never invented, so the last card is never under the pill.
+  - **Gates.** QA feature suite **175/175** (group 33 is 28 checks, +3 for the dock), web smoke
+    **237/237** (+8 `header/foot` checks incl. an open/close behaviour test that drives the More menu in
+    a mounted jsdom app), `liquid_glass_audit.py` **72/72** (+12), `apk_content_check.py` **60/60**
+    against `CardWallet_footer_dock.apk`, `replay_chain.py` **IDENTICAL** through patch 31
+    (465,259 → 465,581 B), stylesheet 28,767 → 30,752 B, `verify_release.py` **28/29** (only FAIL = the
+    deliberate debug cert). Negative control: replay the bundle without patch 31 and smoke drops to
+    229/237 with exactly the eight new checks failing, and QA group 33 to 27/28 - the checks are
+    load-bearing, not decorative. Contrast through the new material was re-measured in both themes
+    (worst case still >= 4.5:1; captions 5.21:1 light / 6.29:1 dark, dock labels 11.52:1).
+  - **Not claimed:** how the blur actually composites over a moving deck on a real GPU, the safe-area
+    gap on a gesture-nav phone, and whether 36px controls in a 123px pill are comfortable on a 5-inch
+    screen - that is section **X** of `docs/DEVICE_TEST_PLAN.md`. `docs/liquid-glass-preview.svg` is
+    regenerated from the tokens, so the picture of the dock cannot drift from the code.
+
+
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.

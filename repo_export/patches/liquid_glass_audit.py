@@ -159,8 +159,9 @@ for cls in TIER2:
 BLUR_SELS = sorted({m.strip().splitlines()[-1].strip() for m in
                     re.findall(r"([^{}]+)\{[^{}]*backdrop-filter:\s*blur", BLOCK)})
 BLUR_DECLS = len(BLUR_SELS)
-check("no second blur layer is introduced anywhere in the round-15 block",
-      BLUR_DECLS == 2, f"{BLUR_DECLS} selectors blur: {BLUR_SELS}")
+check("exactly three glass selectors declare a blur (sheet, disc, dock)",
+      BLUR_DECLS == 3 and set(BLUR_SELS) == {".cw-lg-primary", ".cw-lg-fab", ".cw-dock"},
+      f"{BLUR_DECLS}: {BLUR_SELS}")
 
 # transitions: what may animate
 for m in re.finditer(r"transition:([^;}]+)", BLOCK):
@@ -178,6 +179,31 @@ check("press feedback is a transform (never a size change)",
       ".cw-lg-btn:active,.cw-lg-fab:active{transform:scale(.94)}" in BLOCK)
 check("press focus rings use the accent, not a glow",
       "cw-lg-fab:focus-visible" in BLOCK and "0 0 0 3px var(--accent)" in BLOCK)
+
+# round 16 - the footer dock
+SUP16 = BLOCK[BLOCK.index("@supports not"):] if "@supports not" in BLOCK else ""
+dock = rule(r"\.cw-dock\{")
+check("the footer dock is tier 1: it blurs the deck behind it",
+      "backdrop-filter:blur(22px) saturate(1.78) brightness(1.03)" in dock, dock[:70])
+check("the dock is its own radius and shape (a pill, not a slice of the sheet)",
+      "border-radius:999px" in dock and "width:max-content" in dock)
+check("the dock sits more opaque than the sheet (a small bar needs more separation)",
+      parse_color(var("--lg-tint-2"))[3] > parse_color(var("--lg-tint"))[3]
+      and parse_color(var("--lg-tint-2", "html.dark"))[3] > parse_color(var("--lg-tint", "html.dark"))[3],
+      f"{parse_color(var('--lg-tint-2'))[3]}/{parse_color(var('--lg-tint-2', 'html.dark'))[3]} vs "
+      f"{parse_color(var('--lg-tint'))[3]}/{parse_color(var('--lg-tint', 'html.dark'))[3]}")
+check("no nested blur: the create disc stops blurring inside the dock",
+      ".cw-dock .cw-lg-fab{backdrop-filter:none;-webkit-backdrop-filter:none}" in BLOCK,
+      "a blurred child of a blurred parent costs the compositor twice for nothing")
+check("every fallback covers the dock too (reduced transparency / no support / reduced motion)",
+      ".cw-dock{backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--raised)}" in BLOCK
+      and ".cw-dock{background:var(--sheet)}" in SUP16 and ".cw-dock{transition:none}" in BLOCK,
+      "COMPAT-1 + a11y")
+check("the dock's blur radius sits between the sheet and the control tier",
+      int(re.sub(r"\D", "", var("--lg-blur"))) > 22 > int(re.sub(r"\D", "", var("--lg-blur-ctl"))),
+      f"{var('--lg-blur')} sheet > 22px dock > {var('--lg-blur-ctl')} control")
+for name in ["--lg-tint-2"]:
+    check(f"dock fill token {name} is themed", DARK.get(name) is not None)
 
 # taste rules the brief asked for, expressed as limits
 rim = parse_color(var("--lg-rim")) or parse_color("rgba(0,0,0,1)")
@@ -214,6 +240,15 @@ check("reduced motion drops the transitions and the press scale",
       "transition:none" in rm and "transform:none" in rm)
 
 # the wallet's own cards must not be covered by glass
+for cls, where in [("cw-dock", "the footer dock holds the three controls"),]:
+    check(f"wired: {cls} is applied in the bundle ({where})", JS.count(cls) >= 1, f"{JS.count(cls)} use(s)")
+check("the option menu was re-anchored to open upward from the dock",
+      "transformOrigin:`center bottom`" in JS and "mb-1 w-[248px]" in JS, "-")
+check("the deck reserves the dock's height, safe area included",
+      "paddingBottom:`calc(env(safe-area-inset-bottom) + 62px)`" in JS, "-")
+check("the wallet bar keeps the wordmark alone (nothing but the deck sits at the top now)",
+      JS.count("children:`Wallet`") == 1 and "inset-x-0 bottom-0 z-40" in JS, "-")
+
 check("the deck is untouched: no lg class on the card path",
       not re.search(r"cw-lg-(primary|fab|pouch|preview|ctl)[^`]*`(?:[^`]*\bcw-card\b)", JS)
       and "cw-lg" not in (JS[JS.index("cover:") - 400:JS.index("cover:")] if "cover:" in JS else ""),
@@ -242,13 +277,14 @@ SUITES = [
     ("light", "--lg-tint", "--lg-ink", "sheet body text"),
     ("light", "--lg-tint", "--lg-sub", "sheet read-outs / captions"),
     ("light", "--lg-tint-2", "--lg-ink", "pouch tray body text"),
+    ("light", "--lg-tint-2", "--lg-ink", "dock control label (wordmark row is ink)"),
     ("light", "--lg-tint-3", "--lg-ink", "chip label on glass (nested)", True),
-    ("light", "--lg-solid-glass", "--on-solid", "glyph on the create disc"),
+    ("light", "--lg-solid-glass", "--on-solid", "glyph on the create disc (in the dock)"),
     ("dark", "--lg-tint", "--lg-ink", "sheet body text"),
     ("dark", "--lg-tint", "--lg-sub", "sheet read-outs / captions"),
     ("dark", "--lg-tint-2", "--lg-ink", "pouch tray body text"),
     ("dark", "--lg-tint-3", "--lg-ink", "chip label on glass (nested)", True),
-    ("dark", "--lg-solid-glass", "--on-solid", "glyph on the create disc"),
+    ("dark", "--lg-solid-glass", "--on-solid", "glyph on the create disc (in the dock)"),
 ]
 MIN_TEXT, MIN_GLYPH = 4.5, 4.5
 worst_rows = []
@@ -356,12 +392,34 @@ if MAKE_SVG:
                  f'stroke="{rim}" stroke-opacity="{ra}"/>')
         i.append(f'<text x="55" y="{ty+50}" text-anchor="middle" font-family="-apple-system,Helvetica,Arial" '
                  f'font-size="12" font-weight="600" fill="{col("--ink", scope)}">Stack</text>')
-        # the create disc, top right, over the artwork
-        i.append(f'<circle cx="{w-30}" cy="{h*0.30-14}" r="18" fill="{app_bg}"/>')
-        i.append(f'<circle cx="{w-30}" cy="{h*0.30-14}" r="18" fill="{col("--lg-solid-glass", scope)}" '
-                 f'fill-opacity="{alpha("--lg-solid-glass", scope)}"/>')
-        i.append(f'<path d="M{w-30-7} {h*0.30-14} h14 M{w-30} {h*0.30-14-7} v14" stroke="{col("--on-solid", scope)}" '
-                 f'stroke-width="2" stroke-linecap="round"/>')
+        # round 16: the create disc no longer sits in a top bar - Create / Search / More live in one
+        # glass pill at the bottom, so the preview draws that pill (and the wordmark up top).
+        dw, dh = 3 * 36 + 2 * 10 + 20, 48
+        dx, dy = (w - dw) / 2, h - dh - 10
+        i.append(f'<text x="14" y="26" font-family="-apple-system,Helvetica,Arial" font-size="26" '
+                 f'font-weight="800" letter-spacing="-.6" fill="{col("--ink", scope)}">Wallet</text>')
+        i.append(f'<rect x="{dx}" y="{dy}" width="{dw}" height="{dh}" rx="24" fill="{col("--lg-tint-2", scope)}" '
+                 f'fill-opacity="{alpha("--lg-tint-2", scope)}" stroke="{rim}" stroke-opacity="{ra}"/>')
+        i.append(f'<rect x="{dx}" y="{dy}" width="{dw}" height="{dh/2:.0f}" rx="24" fill="url(#sheen{scope})"/>')
+        for k in range(3):
+            cx = dx + 10 + 18 + k * 46
+            cy = dy + dh / 2
+            if k == 0:
+                i.append(f'<circle cx="{cx}" cy="{cy}" r="18" fill="{col("--lg-solid-glass", scope)}" '
+                         f'fill-opacity="{alpha("--lg-solid-glass", scope)}"/>')
+                i.append(f'<path d="M{cx-7} {cy} h14 M{cx} {cy-7} v14" stroke="{col("--on-solid", scope)}" '
+                         f'stroke-width="2.5" stroke-linecap="round"/>')
+            else:
+                g = col("--ink", scope)
+                if k == 1:
+                    i.append(f'<circle cx="{cx-1.5}" cy="{cy-1.5}" r="6.4" fill="none" stroke="{g}" stroke-width="2.3"/>'
+                             f'<path d="m{cx+3.4} {cy+3.4} 4.3 4.3" stroke="{g}" stroke-width="2.3" stroke-linecap="round"/>')
+                else:
+                    i.append(f'<path d="M{cx-7.5} {cy-4.9} h15 M{cx-7.5} {cy} h15 M{cx-7.5} {cy+4.9} h15" '
+                             f'stroke="{g}" stroke-width="2.7" stroke-linecap="round"/>')
+        i.append(f'<text x="{dx+dw/2:.0f}" y="{dy-6}" text-anchor="middle" '
+                 f'font-family="-apple-system,Helvetica,Arial" font-size="9" letter-spacing=".8" '
+                 f'fill="{col("--sub", scope)}">FOOTER DOCK - TIER 1</text>')
         i.append("</g>")
         return "\n".join(i)
 
@@ -381,8 +439,8 @@ if MAKE_SVG:
              'font-weight="700" fill="#111113">Liquid Glass - simulated composite from the real '
              'tokens (not a screenshot)</text>',
              '<text x="24" y="54" font-family="-apple-system,Helvetica,Arial" font-size="11" fill="#8e8e93">'
-             'tier 1 blurs what is behind it; tier 2 controls reuse the same tokens without a second '
-             'backdrop-filter</text>']
+             'round 16: Create / Search / More sit in one glass dock at the bottom, the wordmark keeps the '
+             'top-left, and the disc inside the dock does not blur again</text>']
     parts.append(svg_panel("light", "#ffffff", ["#1f2a44", "#c9a227", "#e6e6ea"], 24, 84, 400, 200, "LIGHT theme - sheet over bright artwork"))
     parts.append(svg_panel("light", "#101014", ["#0b1220", "#5b3df5", "#1f1f22"], 24, 320, 400, 200, "LIGHT theme - sheet over dark artwork"))
     parts.append(svg_panel("dark", "#000000", ["#1c1c1e", "#2f2f34", "#6b4df6"], 476, 84, 400, 200, "DARK theme - sheet over dark artwork"))

@@ -182,3 +182,37 @@ box-shadow:var(--lg-inner-2),0 8px 22px -18px rgba(15,23,42,.28)
 .cw-lg-primary,.cw-lg-btn,.cw-lg-fab,.cw-chip,.cw-range::-webkit-slider-thumb{transition:none}
 .cw-lg-btn:active,.cw-lg-fab:active,.cw-chip:active{transform:none}
 }
+
+/* =============================================================================
+   Round 16 - the controls moved out of the header into a floating footer dock
+   (patch 31): Create, Search and More now live in one glass bar at the bottom, the
+   `Wallet` wordmark keeps the top-left on its own.
+
+   The dock is a tier-1 surface - it sits directly over the wallet's cards, so it is
+   the one control surface that genuinely has content to sample. Its radius is between
+   the sheet's and the disc's (22px) and its fill is a shade more opaque, because a
+   small floating bar needs more separation from whatever card passes under it than a
+   full-width sheet does.
+
+   The create disc keeps its fill, rim and specular but NOT its own blur: it now sits
+   on a blurred parent, and a blurred child of a blurred parent is the one combination
+   that costs the compositor twice for no visual gain. That is what `.cw-dock
+   .cw-lg-fab` below is, and why the total blur count in the app did not grow.
+   ============================================================================= */
+.cw-dock{
+width:max-content;
+gap:10px;
+padding:6px 10px;
+border-radius:999px;
+background:var(--lg-sheen-soft),var(--lg-tint-2);
+-webkit-backdrop-filter:blur(22px) saturate(1.78) brightness(1.03);
+backdrop-filter:blur(22px) saturate(1.78) brightness(1.03);
+border:1px solid var(--lg-rim-2);
+box-shadow:var(--lg-inner-2),var(--lg-depth);
+transition:background-color var(--lg-dur) var(--lg-ease),border-color var(--lg-dur) var(--lg-ease),box-shadow var(--lg-dur) var(--lg-ease)
+}
+.cw-dock .cw-lg-fab{backdrop-filter:none;-webkit-backdrop-filter:none}
+.cw-dock .cw-lg-btn{border-radius:999px}
+@media (prefers-reduced-transparency:reduce){.cw-dock{backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--raised)}}
+@supports not ((backdrop-filter:blur(2px)) or (-webkit-backdrop-filter:blur(2px))){.cw-dock{background:var(--sheet)}}
+@media (prefers-reduced-motion:reduce){.cw-dock{transition:none}}

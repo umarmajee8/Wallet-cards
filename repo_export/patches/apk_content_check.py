@@ -59,6 +59,11 @@ MUST = [
     ("round 15  the Custom Pouch container is its own recessed tier", "cw-card cw-lg-pouch"),
     ("round 15  the live preview gets a glass frame", "cw-preview cw-lg-preview"),
     ("round 15  the material cross-fades with the sheet", "initial:{y:`100%`,opacity:.92}"),
+    ("round 16  Create/Search/More live in a bottom dock", "pointer-events-auto cw-dock mx-auto flex"),
+    ("round 16  the dock bar is anchored to the bottom edge", "fixed inset-x-0 bottom-0 z-40"),
+    ("round 16  the option menu opens upward from the dock", "transformOrigin:`center bottom`"),
+    ("round 16  the deck reserves the dock's height", "paddingBottom:`calc(env(safe-area-inset-bottom) + 62px)`"),
+    ("round 16  the wordmark is the only thing left in the top bar", "children:`Wallet`})]}),"),
     ("carry    NFC and auto-detect stay pinned off at load", "n.autoDetect=!1,n.nfc=!1"),
     ("carry    the Wallet wordmark is the header's own label", "children:`Wallet`"),
 ]
@@ -105,8 +110,11 @@ def main() -> int:
     chk("payload: embedded index.css is byte-identical to the reviewed tree", css == tree_css, f"{len(css)} chars")
     chk("round 15  the shipped stylesheet carries the Liquid Glass block", "Round 15 - Liquid Glass" in css)
     blurred = len(re.findall(r"[^{}]+\{[^{}]*backdrop-filter:\s*blur", css))
-    chk("perf budget: exactly 4 selectors blur in the shipped CSS (2 wallet-era + the 2 new tiers)",
-        blurred == 4, f"{blurred} blurred selectors")
+    chk("perf budget: exactly 5 selectors blur in the shipped CSS (2 wallet-era + the 3 glass tiers)",
+        blurred == 5, f"{blurred} blurred selectors - and .cw-dock .cw-lg-fab suppresses one, so at most "
+                      f"3 composite at a time")
+    chk("round 16  no nested blur: the disc inside the dock stops blurring",
+        ".cw-dock .cw-lg-fab{backdrop-filter:none" in css)
     for cls in (".cw-range", ".cw-chip", ".cw-dot", ".cw-card", ".cw-lg-preview", ".cw-lg-pouch"):
         m = re.search(r"\n\." + cls[1:] + r"\{([^}]*)\}", css)
         chk(f"perf budget: {cls} re-blurs nothing inside the sheet", not m or "backdrop-filter" not in m.group(1))

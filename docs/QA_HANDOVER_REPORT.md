@@ -231,3 +231,39 @@ class needs the device pass:
   banding on the sheen). Everything the round could be measured on - legibility through the glass in
   both themes, the blur budget, transition hygiene, the untouched card path - is measured, not
   asserted; `docs/QA_HANDOVER_REPORT.md` §4's MAJOR list is otherwise unchanged.
+
+---
+
+## Addendum - round 16 (footer dock) landed after this report was written
+
+Scope and verdict unchanged: **NOT READY FOR CLIENT HANDOVER**. Round 16 moved chrome, it did not close
+any open item - no CRITICAL was added or removed, none of the six MAJOR fixes gained a device run, and
+RELEASE-1/2/3/4 + SECURITY-1 stay open.
+
+- **What changed.** `Create +`, `Search` and `Settings`/`More` are no longer in the header: a patch
+  (31) re-wraps the DOM so the top fixed container holds the wordmark row plus a new bottom bar, and the
+  three controls sit in one glass pill (`cw-dock`) at the bottom-centre, 10px + the system inset above the
+  edge. The option menu re-anchors to open upward. `<main>` now reserves the dock's height, so the deck
+  is never obscured - the user's own cards stay the dominant layer (their rendering path is untouched).
+- **Material contract respected.** The dock is a *tier 1* surface with its own numbers (22px blur in a
+  999 radius, tint alpha 0.80 light / 0.84 dark - more opaque than the sheet because cards scroll under
+  it); the create disc inside it is demoted to tier 2 by containment, so **the blur budget is unchanged**
+  (1 blurred surface at rest, 3 with a sheet open). CSS blur-declaring selectors went 4 → 5 and the cap
+  is enforced in `apk_content_check.py`.
+- **Gates now:** QA feature suite **175/175** (group 33 = 28 checks), smoke **237/237** (+8
+  `header/foot` checks, including a live open/close of the More menu), `liquid_glass_audit.py` **72/72**
+  (+12 dock rules), `apk_content_check.py` **60/60**, `replay_chain.py` **IDENTICAL** through patch 31
+  (bundle 465,581 B, stylesheet 30,752 B), `verify_release.py` **28/29** (sole FAIL = the deliberate
+  debug cert), `animation_audit.py` unchanged (10 checks / 1 pre-existing WARN).
+- **Negative controls.** Bundle replayed without patch 31 → smoke **229/237** failing exactly the eight
+  new checks, QA group 33 **27/28**. So the layout contract is enforced, not described.
+- **Artifact:** `CardWallet_footer_dock.apk` (11,656,858 B, sha256
+  `1991407698b742d437bfc89052841ccac179a957309ec89dc3db5247297acdd2`) supersedes
+  `CardWallet_liquid_glass.apk`; bundle md5 `cb8fa8fbb04d0643f17c928a88094806` and the payload inside the
+  APK was verified byte-for-byte equal to the tree.
+- **New NOT-VERIFIED rows:** plan section **X1-X6** (real GPU composite over a moving deck, the safe-area
+  gap on gesture vs 3-button nav, last-card clearance in both modes, 36px targets in a ~123px pill on a
+  5-inch phone including outside-tap dismissal, the cost of the extra blurred surface while a sheet is
+  open and while a card ejects under the dock, and the opaque fallback + caption contrast on light and
+  dark artwork). Everything that can be measured here is measured; nothing in this list is marked PASS.
+

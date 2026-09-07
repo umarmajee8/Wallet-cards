@@ -448,6 +448,27 @@ browser compositor is not involved in any of that, so these rows are what actual
 | W8 | Camera sheet open (tier 1 + scrim + live camera) for 60 s | No thermal/frame drop beyond the camera's own cost; leaving the sheet returns the frame budget to idle | Blur + camera stream compositing together |
 | W9 | Screenshot / screen-record the sheet over a card | Material looks like glass in the still (blur + sheen visible), not grey film | A compositor that renders `backdrop-filter` as nothing at all on that GPU |
 
+---
+
+## X. Round 16 - the footer dock (patch 31 + stylesheet)  ⚠ the dock is a live-composited surface
+
+The layout, the safe-area arithmetic and the material tokens are all measured in code (smoke 237/237,
+QA group 33 28/28, `liquid_glass_audit.py` 72/72). What no environment here can decide is how a
+blurred pill floating over a scrolling deck *looks and feels* on real glass. Section **W** still
+applies to every glass surface; these rows are the dock specifically.
+
+| # | Check | Expected |
+|---|-------|----------|
+| X1 | Open the wallet, scroll the deck under the dock slowly, then flick it fast | The cards smear softly through the blur and re-emerge cleanly; the pill's rim and top sheen stay visible; no flicker, no rectangle of stale pixels, no frame drop while it scrolls. |
+| X2 | Install on a gesture-nav device (inset > 0) and a 3-button device (inset 0); note the gap below the pill | Gap under the pill = system inset + 10px in both cases; the pill never sits under the home indicator or the button bar, and it stays centred (max 520px) on a tablet/foldable rather than stretching edge to edge. |
+| X3 | Last-card clearance in both modes | With Stack and with Carousel, the last card of a long deck is fully readable above the dock, and the same holds in landscape and after rotating mid-list. |
+| X4 | Target and menu ergonomics on a 5-inch phone | Three 36px controls in a ~123px pill are pressable without mis-taps (test Create → Search → More in sequence); the More menu opens **upward** from the pill with both rows fully visible, and tapping outside closes it (this relies on the container `ref:d` that the restructure deliberately keeps as the dock's ancestor - the one behaviour a restructure could silently break). |
+| X5 | Cost of the extra blurred surface | Open Settings/the camera sheet over the dock and watch for the drop the double-blur could cause (dock + scrim + panel are blurred at once); also eject a card so it animates *under* the dock - the dock must not stutter during the spring. |
+| X6 | Degradation and contrast | Light/dark theme flip re-colours the pill and its controls (no rgba baked in); with system "reduce transparency" the blur and sheen drop out; on an Android 6-9 WebView the pill falls back to the opaque `--sheet` colour and is still distinguishable from a light card, and captions/labels over the dock's tint stay readable over both a white and a black card face (measured 5.21:1 light / 6.29:1 dark worst case). |
+
+Record: device, Android version, WebView version, and result per row. Anything that fails is filed with
+the row id (e.g. "X4: menu clipped above the pill on 4.7-inch").
+
 ## Sign-off
 
 The build may only be called production-ready once **A–W are green** on at least
@@ -458,8 +479,8 @@ signing, NFC, the soft keyboard, rotation rendering and every smoothness/judgeme
 call). Record device model, Android version and result per row, and file anything
 that fails with the section id (e.g. "F3 fails: Back exits the app with Settings
 open"). The Android UI-testable layer is complete and green: `qa_feature_suite.mjs`
-173/173 (group 33 covers the Liquid Glass material), `smoke_test_webview.mjs` 229/229,
-`liquid_glass_audit.py` 60/60 (tier rules + the WCAG contrast engine), `verify_release.py`
-28/29 with the only FAIL being the deliberate debug signature, and `apk_content_check.py`
-54/54 against the APK itself (including the four-blurred-selector budget read out of the
-shipped stylesheet).
+175/175 (group 33 covers the Liquid Glass material and the round-16 footer dock),
+`smoke_test_webview.mjs` 237/237, `liquid_glass_audit.py` 72/72 (tier rules + the WCAG contrast engine),
+`verify_release.py` 28/29 with the only FAIL being the deliberate debug signature, and
+`apk_content_check.py` 60/60 against the APK itself (including the five-blurred-selector budget read out
+of the shipped stylesheet).

@@ -1080,3 +1080,48 @@ off.
 par opaque fallback, reduced-transparency, light+dark artwork par caption contrast, camera sheet ke
 upar double-blur cost). Bottom floating action area **maujood nahi** (is liye us par kuch nahi kiya -
 sheet khud bottom par ha aur tier 1 le rahi ha).
+
+---
+
+## 20. Round 16 - header ke saare controls footer ke glass dock me (patch 31 + stylesheet), 2026-09-07
+
+**Kya manga gaya:** "header pr jo b ha - create, search, setting - sab ko footer pr set kro, woh b
+ Liquid Glass styling ke sath." Yaani top bar se teeno controls utha kar neeche ek floating glass pill
+ me bithana, aur wohi material quality jo round 15 ne set ki thi. `Wallet` wordmark upar hi raha (woh
+ app ka title ha, control nahi) - ab top row me sirf wohi ha, aur yeh assert bhi hota ha.
+
+**Css-only mumkin nahi tha, is liye DOM re-wrap.** Wordmark aur teeno buttons ek hi row ke siblings the
+ (`justify-end` wali fixed row) aur option menu usi row se anchored tha. CSS se row neeche le jate hi
+ wordmark bhi neeche chal jata, aur menu ek soonay upar-konay mein point karta. To patch 31 structure
+ badalta ha: top fixed container ke ab **do bars** hain - upar wahi row (sirf wordmark) aur neeche
+ `pointer-events-none fixed inset-x-0 bottom-0 z-40` wali bar jiske andar dock row ha. Teeno `g(...)`
+ button elements source se **verbatim** slice ho kar shift hue (patch pehle assert karta ha ke theek 3
+ buttons mile, phir `node --check` lagata ha), aur dock jaan-boojh kar us container ka bacha ha jis par
+ `ref:d` ha - bahar tap karne par menu isi ref se band hota ha.
+
+**Dock asal glass surface ha, sheet ki copy nahi.** Us ka apna tier-1 material: radius 999 (pill, is
+ liye 22px blur, sheet wala 30px nahi - itni choti cheez ko zyada blur karoge to smear hoti ha),
+ `saturate(1.78) brightness(1.03)`, aur `--lg-dock-alpha` **0.80 / 0.84** banaya (sheet 0.74 / 0.82 ha) kionke dock ke neeche hamesha cards scroll hote hain.
+andar ka create disc apna `backdrop-filter` haar
+ jata ha - **blur nested nahi hota** - is liye blurred surfaces ki tadaad pehle jaisi hi: rest par 1
+ (ab dock, disc ki jagah) aur sheet khule hue 3 (dock + scrim + panel). Audit yeh sab pin karta ha aur
+ stylesheet me "ziada se ziada 5 selectors blur declare karte hain" ki budget APK me bhi check hoti ha.
+
+**Upar khulta ha, aur deck rasta deta ha.** Option menu ab dock ke bottom-centre se anchor hota ha
+ (`mx-auto mb-1 w-[248px]` + `transformOrigin: center bottom`), aur `<main>` neeche
+ `calc(env(safe-area-inset-bottom) + 62px)` reserve karta ha - gesture inset padha jata ha,
+ banaya nahi jata - taake aakhri card pill ke neeche na dabay.
+
+**Gates:** QA **175/175** (group 33 me 28), smoke **237/237** (+8 `header/foot`, jin me More menu ka
+ open/close live jsdom app me chal kar verify hona shamil ha), `liquid_glass_audit` **72/72** (+12),
+ `apk_content_check` **60/60** on `CardWallet_footer_dock.apk`, `replay_chain` patch 31 tak
+ **IDENTICAL** (465,259 -> 465,581 B; stylesheet 28,767 -> 30,752 B), `verify_release` **28/29**
+ (sirf debug cert wala FAIL, jo design ha). Negative control: patch 31 nikaal do to smoke theek 8 naye
+ checks par 229/237 ho jata ha aur group 33 27/28 - yaani checks decorative nahi hain.
+
+**Device par dekhna ha:** section **X** (X1-X6) - GPU par moving deck ke sath blur ka asli composite,
+ gesture-nav phone par safe-area ka gap, 5-inch phone par 123px pill me 36px controls ka comfort, theme
+ flip + reduce-transparency, Android 6-9 par opaque `--sheet` fallback aur light/dark artwork par
+ caption contrast. Handover verdict round 14 jaisa hi **NOT READY** ha; round 16 ne us me koi open item
+ close nahi kiya.
+

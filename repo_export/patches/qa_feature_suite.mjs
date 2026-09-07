@@ -1077,8 +1077,22 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
     const home = boot({ [CARDS_KEY]: JSON.stringify(sample(4)) });
     await settle(home.w, 700);
     const blurredAtRest = all(home.w, "#root *").filter((e) => /cw-lg-(primary|fab)|cw-scrim/.test(e.className || "")).length;
-    check(g, "perf: the wallet screen at rest has exactly one blurred surface (the create disc)",
+    check(g, "perf: the wallet screen at rest has exactly one blurred surface (the footer dock)",
       blurredAtRest === 1, `blurred elements: ${blurredAtRest}`);
+    const dock = all(home.w, "#root .cw-dock").find(Boolean);
+    const topBar = all(home.w, "#root div").find((d) => /inset-x-0 top-0 z-40/.test(d.className || ""));
+    const botBar = all(home.w, "#root div").find((d) => /inset-x-0 bottom-0 z-40/.test(d.className || ""));
+    // the dock is a child of the top bar's container (its ref is what closes the menu on an outside
+    // tap), so the "nothing left at the top" claim is about the top *row*, the container's first child.
+    const topRow = topBar?.firstElementChild;
+    check(g, "round 16: Create / Search / More sit together in one bottom dock, and the top row holds only the wordmark",
+      !!dock && !!botBar && all(dock, "button[aria-label]").length === 3
+      && !!topRow && all(topRow, "button").length === 0 && /^Wallet$/.test((topRow.textContent || "").trim()),
+      `dock:${dock ? all(dock, "button[aria-label]").map((b) => b.getAttribute("aria-label")).join(",") : "-"} topRowButtons:${topRow ? all(topRow, "button").length : "?"}`);
+    check(g, "round 16: no nested blur - the disc inside the dock is told to stop blurring",
+      /\.cw-dock \.cw-lg-fab\{backdrop-filter:none;\s*-webkit-backdrop-filter:none\}/.test(CSS)
+      && /cw-lg-fab/.test(byLabel(home.w, "Add card")?.className || ""),
+      "the CSS carries the suppression rule and the disc keeps its tier-2 look");
     const fab = byLabel(home.w, "Add card");
     check(g, "the create button carries the tier-1 glass class", /cw-lg-fab/.test(fab?.className || ""), fab?.className || "-");
     check(g, "its fill is a themed glass token, never a hardcoded colour",
@@ -1117,13 +1131,15 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
     check(g, "sliders are the light tier: they restyle through CSS only, no extra class churn",
       sliders.length >= 6 && sliders.every((e) => !/cw-lg-/.test(e.className || "")) && /\.cw-range\{[^}]*var\(--lg-tint-3\)/.test(LG),
       `${sliders.length} range inputs`);
-    const blurred = all(b.w, "#root *").filter((e) => /cw-lg-(primary|fab)|cw-scrim/.test(e.className || "")).length;
-    check(g, "perf: at most 3 blurred surfaces exist at once (scrim + sheet + disc)", blurred <= 3, `${blurred} found`);
+    // counted by what *actually* blurs: the disc carries cw-lg-fab, but .cw-dock .cw-lg-fab switches
+    // its backdrop-filter off, so it is deliberately not in this set (the rule is checked below).
+    const blurred = all(b.w, "#root *").filter((e) => /cw-lg-primary|cw-scrim|cw-dock/.test(e.className || "")).length;
+    check(g, "perf: at most 3 blurred surfaces exist at once (dock + scrim + sheet)", blurred <= 3, `${blurred} found`);
 
     // the source-level half of the perf and taste contract - jsdom applies no cascade, so read the CSS
     const blurSels = [...LG.matchAll(/([^{}]+)\{[^{}]*backdrop-filter:\s*blur/g)].map((m) => m[1].trim().split("\n").pop().trim());
-    check(g, "perf: only two selectors in the whole material declare a backdrop blur",
-      blurSels.length === 2 && blurSels.every((sel) => /cw-lg-(primary|fab)/.test(sel)), blurSels.join(" | "));
+    check(g, "perf: three selectors in the material declare a backdrop blur (sheet, disc, dock)",
+      blurSels.length === 3 && blurSels.every((sel) => /cw-lg-(primary|fab)|cw-dock/.test(sel)), blurSels.join(" | "));
     const nested = [".cw-range", ".cw-chip", ".cw-dot", ".cw-card", ".cw-lg-preview", ".cw-lg-pouch", ".cw-val", ".cw-row"];
     check(g, "perf: no nested control blurs again inside the sheet (the jank trap)",
       nested.every((c) => {

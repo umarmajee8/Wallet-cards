@@ -314,6 +314,57 @@ const HEX = (v) => (["#000", "#000000"].includes(v) ? "#000" : ["#fff", "#ffffff
   check("header/glass: the disc stays legible (alpha .70-.95) but is still glass, not a solid",
     alphaOf(glassLt) >= 0.7 && alphaOf(glassLt) <= 0.95 && alphaOf(glassDk) >= 0.7 && alphaOf(glassDk) <= 0.95,
     `light a=${alphaOf(glassLt)}, dark a=${alphaOf(glassDk)}`);
+  const dockEl = all("#root .cw-dock")[0];
+  const topBar = all("#root div").find((d) => /inset-x-0 top-0 z-40/.test(d.className || ""));
+  const botBar = all("#root div").find((d) => /inset-x-0 bottom-0 z-40/.test(d.className || ""));
+  const inDock = (l) => {
+    const b = byLabel(l);
+    return !!b && !!b.closest(".cw-dock");
+  };
+  check("header/foot: Create, Search and More now sit in the bottom dock",
+    ["Add card", "Search cards", "More"].every((l) => inDock(l)),
+    (dockEl ? all(".cw-dock button[aria-label]").map((b) => b.getAttribute("aria-label")).join(", ") : "no .cw-dock"));
+  // the dock is a *child* of the top bar's container on purpose: `ref:d` there is what closes the
+  // menu on an outside tap, so moving the dock out of it would break dismissal. The check therefore
+  // looks at the top row (the container's first child), which must hold the wordmark and nothing else.
+  const topRow = topBar?.firstElementChild;
+  check("header/foot: the top row holds only the Wallet wordmark",
+    !!topRow && topRow.querySelectorAll("button").length === 0 && /^Wallet$/.test((topRow.textContent || "").trim()),
+    `${topRow ? topRow.querySelectorAll("button").length : "?"} buttons in the row, text \u201c${(topRow?.textContent || "").trim()}\u201d`);
+  check("header/foot: the dock is a bottom-anchored, centred pill with a safe-area gap",
+    !!dockEl && !!botBar && /fixed inset-x-0 bottom-0/.test(botBar.className) && /justify-center/.test(dockEl.className)
+    && /padding-bottom/i.test(dockEl.parentElement.getAttribute("style") || "")
+    && /env\(safe-area-inset-bottom\)/.test(dockEl.parentElement.getAttribute("style") || ""),
+    dockEl ? (dockEl.parentElement.getAttribute("style") || "-") : "-");
+  check("header/foot: the option menu opens upward from the dock",
+    CSS_SRC.match(/\.cw-dock/) && BUNDLE_SRC.includes("mb-1 w-[248px]") && !BUNDLE_SRC.includes("mt-1 w-[248px]")
+    && BUNDLE_SRC.includes("transformOrigin:`center bottom`"),
+    "the 248px menu is bottom-anchored to the bar instead of hanging off the header");
+  check("header/foot: the deck reserves the dock's height, safe area included",
+    // jsdom normalises the calc() operand order, so accept either
+    /padding-bottom: calc\((env\(safe-area-inset-bottom\) \+ 62px|62px \+ env\(safe-area-inset-bottom\))\)/
+      .test(all("#root main")[0]?.getAttribute("style") || ""),
+    all("#root main")[0]?.getAttribute("style")?.slice(0, 80) || "-");
+  check("header/foot: the create disc keeps its 36px box and its glass tier in the dock",
+    (() => {
+      const fab = all(".cw-dock button").find((b) => b.getAttribute("aria-label") === "Add card");
+      return !!fab && /h-9/.test(fab.className) && /w-9/.test(fab.className) && /cw-lg-fab/.test(fab.className)
+        && /background: var\(--lg-solid-glass\)/.test(fab.getAttribute("style") || "");
+    })(),
+    (all(".cw-dock button")[0]?.getAttribute("style") || "-").slice(0, 70));
+  tap(byLabel("More"));
+  await settle(W, 500);
+  const menuNode = all("#root div").find((d) => /w-\[248px\]/.test(d.className || ""));
+  const openRows = all("button").map((b) => (b.textContent || "").trim());
+  check("header/foot: the More menu still opens, and it opens above the dock",
+    openRows.some((t) => /^Settings$/.test(t)) && !!menuNode && !!botBar?.contains(menuNode) && /mb-1/.test(menuNode.className),
+    menuNode ? `rows: ${openRows.slice(-4).join(",")} | ${menuNode.className.slice(0, 40)}` : "no menu mounted");
+  tap(byLabel("More"));
+  await settle(W, 1400);
+  check("header/foot: tapping the dock control again closes it (no stuck overlay)",
+    !all("#root div").some((d) => /w-\[248px\]/.test(d.className || "")),
+    `${all("#root div").filter((d) => /w-\[248px\]/.test(d.className || "")).length} menu node(s) still mounted`);
+
   check("header/glass: tier 1 sheet fill is more transparent than the disc (material hierarchy)",
     alphaOf(glass("lg-tint")[0]) < alphaOf(glassLt) && alphaOf(glass("lg-tint")[1]) < alphaOf(glassDk),
     `sheet a=${alphaOf(glass("lg-tint")[0])}/${alphaOf(glass("lg-tint")[1])} vs disc a=${alphaOf(glassLt)}/${alphaOf(glassDk)}`);
@@ -1140,9 +1191,17 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
   {
     const kids = wm && wm.parentElement ? [...wm.parentElement.children] : [];
     const labels = kids.filter((k) => k.tagName === "BUTTON").map((k) => k.getAttribute("aria-label"));
-    check("header: the icons stay on the right of the same row, wordmark first",
-      kids[0] === wm && ["Add card", "Search cards", "More"].every((l) => labels.includes(l)),
-      labels.join(", ") || "-");
+    const dock0 = all("#root .cw-dock")[0];
+check("header: the wordmark owns the top row, the controls own the dock (round 16 moved them)",
+  (() => {
+    const row = all("#root div").find((d) => /inset-x-0 top-0 z-40/.test(d.className || ""))?.firstElementChild;
+    const dockRow = all("#root .cw-dock")[0];
+    const kids = (e) => [...(e?.children || [])].map((c) => c.tagName.toLowerCase() + (c.getAttribute("aria-label") ? ":" + c.getAttribute("aria-label") : ""));
+    return /^Wallet$/.test((row?.textContent || "").trim()) && kids(row).join() === "span"
+      && kids(dockRow).join() === "button:Add card,button:Search cards,button:More";
+  })(),
+  `row=${[...(all("#root div").find((d) => /inset-x-0 top-0 z-40/.test(d.className || ""))?.firstElementChild?.children || [])].length} dock=${[...(dock0?.children || [])].length}`);
+
   }
 
   // -- an install that never picked an appearance is migrated once --
