@@ -15,7 +15,9 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-APK = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "CardWallet_qa_fixed.apk")
+# Default is the newest artifact this repo ships; pass a path to check another one. Pointing this at a
+# stale APK is how round 17's markers "failed" while the tree was fine, so the file in use is printed below.
+APK = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "CardWallet_lock_backup.apk")
 JS_ENTRY = "assets/public/assets/index-DfWhHAzK.js"
 CSS_ENTRY = "assets/public/assets/index-BLmxUz06.css"
 
@@ -67,6 +69,11 @@ MUST = [
     ("round 16/17  the option menu opens upward from the dock", "transformOrigin:`right bottom`"),
     ("round 16  the deck reserves the dock's height", "paddingBottom:`calc(env(safe-area-inset-bottom) + 62px)`"),
     ("round 16  the wordmark is the only thing left in the top bar", "children:`Wallet`})]}),"),
+    ("round 18  the app ships a 4-digit gate with its own digit boxes", "cw-lock-digit"),
+    ("round 18  the lock state lives in its own store, apart from settings", "wallet.vault.v1"),
+    ("round 18  a backup file is encrypted with AES-GCM under PBKDF2-SHA256", '"PBKDF2-SHA256"'),
+    ("round 18  the export/import file carries its own .cwbak extension", ".cwbak"),
+    ("round 18  an unencrypted backup is refused, never written", "Backups are always encrypted"),
     ("carry    NFC and auto-detect stay pinned off at load", "n.autoDetect=!1,n.nfc=!1"),
     ("carry    the Wallet wordmark is the header's own label", "children:`Wallet`"),
 ]
@@ -118,6 +125,14 @@ def main() -> int:
                       f"3 composite at a time")
     chk("round 16  no nested blur: the disc inside the dock stops blurring",
         ".cw-dock .cw-lg-fab{backdrop-filter:none" in css)
+    chk("round 18  the shipped stylesheet carries the lock + backup block", "Round 18 - the lock gate" in css)
+    lock_rule = re.search(r"\.cw-lock\{([^}]*)\}", css)
+    chk("round 18  the gate is opaque and covers the whole viewport (it hides the data, it must not be glass)",
+        bool(lock_rule) and "backdrop-filter" not in lock_rule.group(1)
+        and "position:fixed" in lock_rule.group(1) and "inset:0" in lock_rule.group(1),
+        (lock_rule.group(1)[:70] if lock_rule else "no .cw-lock rule"))
+    chk("round 18  the danger colour is a token, not a literal, in the shipped CSS",
+        "--danger:#ff453a" in css and "#ff453a" not in css.split("Round 18 - the lock gate")[-1])
     for cls in (".cw-range", ".cw-chip", ".cw-dot", ".cw-card", ".cw-lg-preview", ".cw-lg-pouch"):
         m = re.search(r"\n\." + cls[1:] + r"\{([^}]*)\}", css)
         chk(f"perf budget: {cls} re-blurs nothing inside the sheet", not m or "backdrop-filter" not in m.group(1))

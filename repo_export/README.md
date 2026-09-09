@@ -468,6 +468,51 @@ This repo contains the patched source for the CardWallet app.
     since React writes numbers without a unit). No assertion was relaxed to pass: the same properties are
     required, read from a source that cannot silently drop them.
 
+22. **Round 18 - a 4-digit app lock and an encrypted backup file** (patch 33 + stylesheet), 2026-09-09.
+  - **Two asks, one shared plumbing.** "code add kro like 4 digit unlock code" and "Cloud Backup & Restore:
+    agar user phone change kare ya app delete ho jaye to cards zaya na hon". Both live in one reviewed source
+    file - `patches/vault_src.js`, appended verbatim into the bundle by `patch33_vault_lock_backup.py`, with
+    its stylesheet `patches/vault.css` appended into `app/index.css`. The Settings sheet grows **one** card
+    ("Lock & backup": one switch, three row buttons) so the minimum-controls rule of rounds 12-13 still
+    holds; the module owns every row inside it and is handed a mount point through
+    `ref: e => window.__cwVault && window.__cwVault.mount(e)`, so no React state is shared with the sheet.
+  - **Scope, as chosen.** No account and no Drive SDK - the backup is *a file the user keeps anywhere*.
+    The lock asks for the code on cold start and after more than 30 s in the background, with no timer
+    control. Five wrong codes put a 30 s cool-down on the gate and the only way out is the explicit
+    "Reset app" (two taps, it says what it will erase). There is no recovery backdoor.
+  - **The crypto, and its limits.** The backup is AES-GCM 256 with a PBKDF2-SHA256 150,000-round key from
+    a password the app never stores; the envelope carries `kdf`/`iters`/`salt`/`iv` and a file without an
+    `enc` block is refused ("Backups are always encrypted"). If `crypto.subtle` is missing the export and
+    import paths **refuse** rather than fall back to plaintext. The PIN is separate and deliberately cheap
+    (600 rounds of SHA-256 in JS, so it runs even where WebCrypto does not): it is a gate on the app, not
+    encryption of the stored deck - the card data in `localStorage` is in the same shape it always was,
+    and the new Settings caption says exactly that. `allowBackup=false` is untouched: an explicit,
+    user-initiated file export is a different mechanism and is documented as such.
+  - **Export path with no new native code.** The APK is repacked, not gradle-built, so no plugin can be
+    added: the file goes through the card-share chain already in the bundle - `navigator.canShare({files})`
+    -> `navigator.share` -> `<a download>` - and the Capacitor save bridges are left to the media paths.
+  - **Gates.** `liquid_glass_audit.py` **96/96** (79 -> 96: the round-18 block is asserted to exist, the
+    gate is asserted *opaque* (no backdrop-filter), its controls are token-driven with no colour literal
+    in the stylesheet block, `--danger` is added to both `:root` and `html.dark`, and the one keyframe
+    that ships moves `transform` only), QA feature suite **231/231** (177 -> 231: a new group
+    "34 lock & backup", 54 checks - including re-deriving the PIN digest with an independent Node
+    implementation of the same KDF and AES-GCM round-tripping the real `.cwbak` file through Node's
+    webcrypto, which must reject a wrong password), web smoke **239/239**, `apk_content_check.py`
+    **70/70** against `CardWallet_lock_backup.apk` (62 -> 70: the gate's digit boxes, `wallet.vault.v1`,
+    `PBKDF2-SHA256`, `.cwbak`, the refuse-plaintext copy, the shipped CSS block, and the gate's opacity
+    read out of the APK, not out of the tree), `verify_release.py` **28/29** (only the deliberate debug
+    cert). `replay_chain.py` reproduces the shipped 494,450-byte bundle byte-exactly **through patch 33**.
+  - **Negative control, and three findings worth keeping.** Bundle replayed without patch 33 -> audit
+    **90/96** and smoke **238/239**, failing exactly the round-18 rules; `--restore` then returns the tree
+    to md5 `f987513e46c6`. (1) `visibilitychange` is fired at **document**, not window - a window-only
+    listener never ran it in jsdom, which is how the auto-lock would have shipped dead on some WebViews, so
+    it is registered on both. (2) This repo does **not** inline CSS into `index.html`:
+    `build_debug_apk.py` swaps `assets/public/assets/index-*.js` and `...css` as separate entries, and
+    `app/index.html` stays the 1,185-byte Vite shell - a patch that "re-synced the inlined style" would be
+    editing a file that does not exist. (3) In jsdom, `delete w.Date.now` after `w.Date.now = fn` removes
+    the realm's own `Date.now` outright and every later app call throws; the fake clock now saves and
+    restores it (`qa_feature_suite.mjs`), after that bug made a working auto-lock look over-eager.
+
 
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.

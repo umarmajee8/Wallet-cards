@@ -355,6 +355,49 @@ SAT1 = "saturate(var(--lg-sat))" in decl or "saturate(1." in decl
 check("saturation lift differs by tier too",
       ("1.9" in fab) and SAT1, "controls lift chroma harder - small area, more edge")
 
+# ---------------------------------------------------------------- round 18: the gate + vault rows
+V18 = CSS[CSS.index("Round 18 - the lock gate"):] if "Round 18 - the lock gate" in CSS else ""
+check("round 18: the lock/backup stylesheet block is in the shipped CSS", bool(V18), f"{len(V18)} chars")
+LOCK = rule(r"\.cw-lock\{", V18)
+# the block's own banner comment *describes* backdrop-filter (to say it is not used), so every rule-level
+# test below reads declaration bodies only - a check that can be satisfied by prose is not a check
+BODIES18 = "".join(m.group(2) for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", V18))
+check("round 18: nothing in the new block declares a backdrop-filter (no extra blurred surface)",
+      bool(V18) and "backdrop-filter" not in BODIES18, "a gate over your own data has nothing to show through")
+check("round 18: the gate paints the app colour, opaque",
+      "background:var(--app)" in LOCK, LOCK[:60] or "-")
+_lit = re.search(r"#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(", BODIES18)
+check("round 18: no colour literals in the new declarations - theme tokens only",
+      _lit is None, _lit.group(0) if _lit else "clean")
+check("round 18: --danger is themed in both themes and used by the new UI",
+      bool(var("--danger")) and bool(var("--danger", "html.dark")) and "var(--danger)" in V18,
+      f"{var('--danger')} / {var('--danger', 'html.dark')}")
+check("round 18: the wrong-code shake moves transform only",
+      "animation:cw-lock-shake" in V18 and re.search(r"@keyframes cw-lock-shake\{[^}]*transform", V18) is not None,
+      "-")
+check("round 18: reduced motion drops the shake; narrow phones get smaller digit boxes",
+      "@media (prefers-reduced-motion:reduce)" in V18 and "@media (max-width:380px)" in V18, "-")
+check("round 18: the gate is above every sheet (the settings scrim ships at 2000)",
+      re.search(r"\.cw-lock\{[^}]*z-index:2147483000", V18.replace("\n", "")) is not None, "-")
+check("round 18: the gate is safe-area aware at both ends",
+      "env(safe-area-inset-top)" in LOCK and "env(safe-area-inset-bottom)" in LOCK, "-")
+check("round 18: no transition animates a filter or a layout property",
+      not re.search(r"transition:[^;}]*(backdrop-filter|filter|width|height|top|left|margin|padding)", V18), "-")
+check("round 18: no permanent will-change on the new surfaces", "will-change" not in V18, "-")
+check("round 18: the vault module ships in the bundle exactly once",
+      JS.count("window.__cwVault = {") == 1, f'{JS.count("window.__cwVault = {")} export site(s)')
+check("round 18: the settings sheet mounts the vault slot exactly once",
+      JS.count("className:`cw-vault-slot`") == 1, "-")
+check("round 18: the PIN is never persisted - salt + digest + round count only",
+      re.search(r"store\.lock = \{ s: salt, p: derive\(pin, salt\), c: ROUNDS", JS) is not None
+      and "pin:" not in JS[JS.index("function setPin"):JS.index("function clearPin")], "-")
+check("round 18: a missing WebCrypto refuses the backup instead of writing plaintext",
+      "encrypt backups" in JS or "can't encrypt" in JS, "-")
+check("round 18: backups are AES-GCM under PBKDF2-SHA256, iterations pinned",
+      "AES-GCM" in JS and "PBKDF2" in JS and "PBKDF2_ITER = 15e4" in JS, "-")
+check("round 18: a restore that busts the storage quota keeps the current deck",
+      "your current cards are unchanged" in JS, "-")
+
 print(f"\n{passed}/{total} liquid-glass checks passed")
 if worst_rows:
     print("worst-case contrast measured: " + ", ".join(f"{s}/{l}={r}:1" for s, l, r, _ in worst_rows))

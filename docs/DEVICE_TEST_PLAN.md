@@ -489,9 +489,35 @@ What only a phone can answer is whether it now *feels* fast and still looks like
 Record: device, Android + WebView version, and per-row result; file a failure with the row id (e.g. "Y2:
 captions hard to read over a photo card in light mode").
 
+## Z. Round 18 - the 4-digit lock and the `.cwbak` backup file (patch 33)  ⚠ the only way to test the lock honestly
+
+Nothing here can be cleared in jsdom: the soft keyboard, the Share sheet, Drive, a real cold start and a
+fresh install are all device-only. Work top to bottom - **Z1 must be done before anything else**, because a
+misbehaving gate is a lock-out, not a cosmetic bug.
+
+| # | Do this | Expect |
+|---|---------|--------|
+| Z1 | Settings -> Lock & backup -> turn the switch on, type a 4-digit code, re-type it. Then kill the app from Recents and reopen. | The code is asked for **before any card is visible** on the next launch; `Wallet` title and 4 digit boxes, one box focused, no blur behind the gate (it is opaque by design). The keyboard must not cover the boxes or the Confirm button on a small phone with the nav bar showing. |
+| Z2 | Type one digit, then a letter, then the rest. | Non-digits are stripped, boxes auto-advance, nothing submits before the 4th digit, and nothing is written to storage while incomplete. Paste a 4-digit code from another app: all four boxes fill at once and the step submits. |
+| Z3 | Unlock, open the pouch, then press Home and stay away ~5 s vs ~35 s. | 5 s: the wallet is exactly where you left it. 35 s: the gate is up again, deck untouched. Lock rotates the phone while backgrounded and on return - no stuck keyboard, no half-drawn sheet. |
+| Z4 | Enter 5 wrong codes. | Codes 1-4 say "Wrong code - try again" and clear the boxes; the 5th starts a **30 s** cool-down with the boxes disabled and the countdown ticking in the message. Background the app for a minute during a cool-down: it keeps counting against real time (no reset by hiding the app). |
+| Z5 | While cooled down, tap Reset app once, then again. | First tap arms it and re-labels itself "Tap again - this erases every card and setting"; second tap erases and reloads to an empty wallet. It does not arm itself before a cool-down has ended (no reset while the boxes are disabled). Back/swipe-to-dismiss must not close the gate, and while the gate is up Back never exits the app. |
+| Z6 | Settings -> Back up now. Set a password, then a second one that differs. | Mismatch is refused before a file exists. Then: the Android Share sheet opens with **cardwallet-backup-YYYY-MM-DD.cwbak** attached. Save it to Drive *and* to Files; on a WebView where sharing is unavailable the same button falls back to a download. Check the file's size for a deck of 20 photo cards - it is roughly the deck's own size (RELEASE-2). |
+| Z7 | Uninstall the app, reinstall, import that file (Restore a file), wrong password first, then right one. | Wrong password: refused, nothing touched. Right one: it states how many cards will replace how many, then the deck and the design settings come back and the lock is **off** on this install (the code never leaves the phone). Cards, pouch colour, stack/carousel settings and per-card colour all match the pre-uninstall state. |
+| Z8 | Import something that is not a backup: a renamed photo, a plain `.json` of the deck, a `.cwbak` from another app. | Each refused with a real reason ("Backups are always encrypted" for a file with no sealed block), never a partial restore and never a plaintext file written out. Fill the phone's storage (or a 20-card deck on a near-full device) and restore: if the write cannot fit, the current deck stays intact with an explicit message. |
+| Z9 | Android 6-9 / old WebView device, or any build where `crypto.subtle` is unavailable. | The lock enrols and unlocks (its digest is computed in JS by design). Back up: it refuses with "This device's browser can't encrypt - backup needs Android System WebView updates" and **stops** - no plaintext file anywhere, and the card must not claim a backup exists ("No backup yet."). |
+| Z10 | Recents, right after Z3's 35 s trip. | The task thumbnail shows the **lock gate**, not card photos. This narrows SECURITY-1's exposure; it does not close it (no `FLAG_SECURE` in this build, so a screenshot while unlocked still captures the deck). |
+| Z11 | Time a cold start with a code enrolled on the oldest phone you have, three times, next to the same app with no code. | The gate must not add a visible delay to first paint - the 600-round digest is deliberately cheap. If it does (jank while the boxes draw, or the gate appearing after the deck), that is a defect to file, not a taste call. |
+| Z12 | With the new card present: open Settings, drag every slider, flip the theme, scroll the sheet to the bottom and back. | The sheet still behaves like round 17 (one blur pass at 14px, no new lag), the Lock & backup card sits inside the same column, its switch and buttons are legible in light **and** dark, and the "Reset app"/danger copy uses the `--danger` token colour (not a grey that looks disabled). |
+
+Record per row: device, Android + WebView version, result. File a failure with the row id (e.g. "Z4:
+cool-down resets when the app is hidden"). Two rows are hard gates for handover - **Z1** and **Z7**: an app
+that can lock a user out, or a backup that cannot be restored, is worse than no feature.
+
+
 ## Sign-off
 
-The build may only be called production-ready once **A–W are green** on at least
+The build may only be called production-ready once **A–Z are green** on at least
 one physical device, and once the release-signed build has been produced and put
 through the same list (`docs/QA_HANDOVER_REPORT.md` §5 lists what cannot be
 cleared in the development environment at all — right now that includes release
@@ -499,11 +525,12 @@ signing, NFC, the soft keyboard, rotation rendering and every smoothness/judgeme
 call). Record device model, Android version and result per row, and file anything
 that fails with the section id (e.g. "F3 fails: Back exits the app with Settings
 open"). The Android UI-testable layer is complete and green: `qa_feature_suite.mjs`
-177/177 (group 33 covers the Liquid Glass material, the round-16 footer dock and the
-round-17 blur budget), `smoke_test_webview.mjs` 239/239, `liquid_glass_audit.py` 79/79 (tier rules, the cost
-model and the WCAG contrast engine),
+231/231 (group 33 covers the Liquid Glass material, the round-16 footer dock and the round-17 blur
+budget; group 34 the lock and the backup file, including a Node re-derivation of the PIN digest and an
+AES-GCM round-trip of a real `.cwbak`), `smoke_test_webview.mjs` 239/239, `liquid_glass_audit.py` 96/96
+(tier rules, the cost model, the WCAG contrast engine and the round-18 gate's opacity/token rules),
 `verify_release.py` 28/29 with the only FAIL being the deliberate debug signature, and
-`apk_content_check.py` 62/62 against the APK itself (including the four-blurred-selector budget read out of
-the shipped stylesheet). The jsdom suites need `jsdom@27` + `cssstyle@4.6.0`; on other pairings 11 checks
+`apk_content_check.py` 70/70 against the APK itself (the four-blurred-selector budget plus the round-18
+copy, store key, crypto markers and the gate's opacity - all read out of the shipped entries, not the tree). The jsdom suites need `jsdom@27` + `cssstyle@4.6.0`; on other pairings 11 checks
 fail on *any* bundle because cssstyle does not serialise `backdrop-filter` into the `style` attribute - the
 suite reads those through `inlineStyle()` (see README, round 17).

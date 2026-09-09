@@ -305,3 +305,44 @@ fixed a placement regression the user reported; it closes no open CRITICAL/MAJOR
   outside-tap dismissal after the restructure, and the Android 6-9 opaque fallback. All are device rows,
   so they are marked NOT VERIFIED and nothing in this list is claimed as PASS.
 
+## Addendum - round 18 (4-digit lock + encrypted backup file) landed after this report was written
+
+Verdict unchanged: **NOT READY FOR CLIENT HANDOVER**. Round 18 adds a feature, and a feature whose whole
+value is "don't lock the user out / don't lose the file" cannot be signed off from a desktop harness.
+
+* **What is new in the build.** `patch33_vault_lock_backup.py` appends `patches/vault_src.js` to the bundle
+  and `patches/vault.css` to the stylesheet: a 4-digit gate (`#cw-lock`, opaque, up before first paint when
+  a code is enrolled, re-armed after >30 s backgrounded, 5 wrong codes -> 30 s cool-down, two-tap
+  "Reset app"), and one Settings card ("Lock & backup") that exports the whole deck + settings as an
+  **AES-GCM 256 / PBKDF2-SHA256 150,000-round** encrypted `.cwbak` file through the share -> download chain
+  the card-share feature already used, and restores it after a password and an explicit replace-the-deck
+  confirmation.
+* **Scope, at the user's instruction.** No account, no Google Drive SDK, no automatic sync. No recovery
+  backdoor for a forgotten PIN. The PIN is a device-local gate and is deliberately *not* the encryption key
+  for stored data: the deck in `localStorage` is unencrypted, as it always was, and the Settings caption
+  states that. `allowBackup=false` is unchanged - a user-initiated file export is a different mechanism.
+* **Testable layer, all green.** Bundle replays byte-exactly through patch 33 (494,450 B). `qa_feature_suite.mjs`
+  **231/231** - new group 34 is 54 checks and, where the browser's own maths is involved, does not trust
+  the app's: the PIN digest is re-derived by an independent Node implementation of the same KDF, and the
+  exported file is decrypted in the harness with Node's webcrypto (a wrong password must reject).
+  `liquid_glass_audit.py` **96/96**, `smoke_test_webview.mjs` **239/239**, `apk_content_check.py` **70/70**
+  against `CardWallet_lock_backup.apk`, `verify_release.py` **28/29** (the single FAIL is the debug cert).
+  Negative control: replay without patch 33 -> audit **90/96**, smoke **238/239**.
+* **SECURITY-1 stays OPEN**, and is untouched by this round's design (it needs `FLAG_SECURE` in native
+  code, which a repacked APK cannot carry). One side effect worth recording: after 30 s backgrounded the
+  gate re-covers the app, so the Recents thumbnail shows the lock screen instead of card photos - a
+  narrower exposure, not a fix.
+* **RELEASE-2 / PERFORMANCE-1 gains one more data point.** A backup file is about the size of the deck
+  (20 photo cards ≈ 16 MB), and a restore writes it back into `localStorage` in one shot, so the
+  `QuotaExceededError` path is a realistic case, not a theoretical one. It is handled (current deck stays
+  intact, explicit message) and covered by a QA check, but the underlying "everything is one JSON string"
+  model is still the structural item for the next milestone.
+* **Device work added:** `docs/DEVICE_TEST_PLAN.md` section **Z** (12 rows). **Z1** (cold-start gate, keyboard
+  geometry) and **Z7** (restore after a reinstall) are handover gates; **Z9** (Android 6-9 refusing to
+  export rather than writing plaintext) and **Z10** (Recents thumbnail while locked) decide whether this
+  round's privacy claims hold on hardware.
+* **Fixed as shipped, no code change:** the two Settings rows that already used a hard-coded
+  `text-[#ff453a]` still do; round 18 added a `--danger` token and used it for the *new* UI (the audit
+  asserts the new stylesheet block contains no colour literal), leaving the older rows alone rather than
+  re-tuning copy that passed device review in round 15-17.
+

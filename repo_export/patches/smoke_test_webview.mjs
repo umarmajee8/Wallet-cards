@@ -1878,9 +1878,11 @@ check("rounds 11-12: no console errors from the compact sheet", m.errors.length 
 
   // ---- the button budget the user keeps asking for
   const btns = q2(sheet, "button");
-  check("controls: the sheet is 7 chips, 2 switches and a colour row - no per-option buttons",
-    q2(sheet, "button.cw-chip").length === 7 && q2(sheet, "button[role=switch]").length === 2 &&
-    btns.length <= 22 && /Overlap|Vertical offset|Visible cards|Card spacing|Peek amount/.test(sheet.textContent || ""),
+  check("controls: the sheet is 7 chips, 3 switches and a colour row - no per-option buttons",
+    /* round 18 adds exactly one switch (Lock the app) plus the three row buttons of the same card;
+       the budget grew by that card and by nothing else. */
+    q2(sheet, "button.cw-chip").length === 7 && q2(sheet, "button[role=switch]").length === 3 &&
+    btns.length <= 26 && /Overlap|Vertical offset|Visible cards|Card spacing|Peek amount/.test(sheet.textContent || ""),
     `${btns.length} buttons, ${q2(sheet, "button.cw-chip").length} chips, ${q2(sheet, "button[role=switch]").length} switches`);
   check("controls: the Fan chip row is gone, replaced by the Rotation and Overlap sliders it preset",
     !/Flat,Fan,Deck/.test(q2(sheet, "button.cw-chip").map((c) => (c.textContent || "").trim()).join(",")) &&

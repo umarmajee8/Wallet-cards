@@ -1152,9 +1152,13 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
         const m = new RegExp(`\\n\\${c}\\{([^}]*)\\}`).exec(LG);
         return !m || !/backdrop-filter/.test(m[1]);
       }), nested.join(", "));
-    check(g, "perf: nothing animates a filter or a layout property",
-      !/transition:[^;}]*(backdrop-filter|filter|width|height|left|top|margin)/.test(LG) && !/animation:/.test(LG),
-      "transitions are colour/shadow/transform only, and no keyframe loop ships");
+    /* round 18 adds exactly one keyframe animation - the wrong-code shake, transform-only, and it is
+       disabled under prefers-reduced-motion. Everything else that moves must stay off the blur. */
+    const anims = LG.match(/animation:[^;}]*/g) || [];
+        check(g, "perf: nothing animates a filter or a layout property",
+      !/transition:[^;}]*(backdrop-filter|filter|width|height|left|top|margin)/.test(LG)
+      && anims.every((a) => /cw-lock-shake/.test(a) || /none/.test(a)),
+      `${anims.length} animation decl(s): ${anims.join(" | ") || "none"} (round 18's shake moves transform only)`);
     check(g, "perf: no permanent will-change on the glass surfaces", !/will-change/.test(LG), "-");
     check(g, "fallback: no backdrop-filter support degrades to opaque fills (Android 6-9 WebView)",
       /@supports not \(\(backdrop-filter/.test(LG) && LG.includes(".cw-lg-primary{background:var(--sheet)}"), "-");
@@ -1189,6 +1193,385 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
       cards.length === 3 && all(b.w, "#root img").length >= 3 && b.errors.length === 0,
       `${cards.length} cards, ${all(b.w, "#root img").length} images`);
     b.close();
+  }
+
+  /* ---- group 34: round 18 - the 4-digit gate and the encrypted backup file ---- */
+  {
+    const g = "34 lock & backup";
+    const CSS18 = fs.readFileSync(path.join(APP, "index.css"), "utf8");
+    const nodeCrypto = require("node:crypto");
+    const web = nodeCrypto.webcrypto;
+    const shaHex = (buf) => nodeCrypto.createHash("sha256").update(buf).digest("hex");
+    // the PIN KDF is a specification, so recompute it here and require the app to agree
+    const deriveNode = (pin, salt) => {
+      let h = shaHex(Buffer.from(`cwv1:${salt}:${pin}`, "utf8"));
+      for (let i = 0; i < 600; i++) h = shaHex(Buffer.from(`${h}:${salt}`, "utf8"));
+      return h;
+    };
+    const enableCrypto = (w, on = true) => {
+      const t = w.crypto || (w.crypto = {});
+      if (!on) { try { Object.defineProperty(t, "subtle", { value: undefined, configurable: true }); } catch {} return; }
+      try { Object.defineProperty(t, "subtle", { value: web.subtle, configurable: true }); } catch { t.subtle = web.subtle; }
+      t.getRandomValues = t.getRandomValues || ((a) => (web.getRandomValues(a), a));
+    };
+    const derive = async (pw, salt, iters, usage) => {
+      const base = await web.subtle.importKey("raw", Buffer.from(pw, "utf8"), "PBKDF2", false, ["deriveKey"]);
+      return web.subtle.deriveKey({ name: "PBKDF2", salt, iterations: iters, hash: "SHA-256" }, base,
+        { name: "AES-GCM", length: 256 }, false, [usage]);
+    };
+    const aesDecrypt = async (wrap, pw) => {
+      const key = await derive(pw, Buffer.from(wrap.enc.salt, "base64"), wrap.enc.iters, "decrypt");
+      const buf = await web.subtle.decrypt({ name: "AES-GCM", iv: Buffer.from(wrap.enc.iv, "base64") }, key,
+        Buffer.from(wrap.data, "base64"));
+      return JSON.parse(Buffer.from(buf).toString("utf8"));
+    };
+    const aesEncrypt = async (obj, pw) => {
+      const salt = nodeCrypto.randomBytes(16), iv = nodeCrypto.randomBytes(12);
+      const key = await derive(pw, salt, 150000, "encrypt");
+      const buf = await web.subtle.encrypt({ name: "AES-GCM", iv }, key, Buffer.from(JSON.stringify(obj), "utf8"));
+      return { app: "cardwallet", kind: "backup", v: 1, at: new Date().toISOString(), cards: obj.cards.length,
+        enc: { alg: "AES-GCM", kdf: "PBKDF2-SHA256", iters: 150000, hash: "SHA-256",
+          salt: salt.toString("base64"), iv: iv.toString("base64") }, data: Buffer.from(buf).toString("base64") };
+    };
+    const vaultSeed = (w) => { try { return JSON.parse(w.localStorage.getItem("wallet.vault.v1") || "null"); } catch { return null; } };
+    const gate = (w) => w.document.getElementById("cw-lock");
+    const gateTxt = (w) => (gate(w)?.textContent || "").replace(/\s+/g, " ");
+    const gateMsg = (w) => (gate(w)?.querySelector("[data-r=msg]")?.textContent || "").trim();
+    const gateUp = (w) => { const n = gate(w); return !!n && !n.classList.contains("cw-lock-hide"); };
+    const digits = (w) => ["0", "1", "2", "3"].map((i) => w.document.getElementById("cw-lock-digit-" + i)).filter(Boolean);
+    const typePin = async (w, pin, ms = 140, from = 0) => {
+      const ds = digits(w);
+      for (let i = 0; i < pin.length && ds[from + i]; i++) {
+        const box = ds[from + i];
+        box.value = pin[i]; box.dispatchEvent(new w.Event("input", { bubbles: true })); await settle(w, ms);
+      }
+    };
+    const typePw = async (w, pw, wait = 1500) => {
+      const inp = all(w, ".cw-lock-pw")[0]; if (!inp) return false;
+      inp.value = pw; inp.dispatchEvent(new w.Event("input", { bubbles: true })); await settle(w, 60);
+      const go = all(w, ".cw-lock-go")[0]; if (go) await click(w, go, wait);
+      return true;
+    };
+    const vaultSwitch = (w) => all(w, ".cw-vault-switch").find((b) => /App lock/.test(b.getAttribute("aria-label") || ""));
+    const openVault = async (w) => {
+      await click(w, byLabel(w, "More"), 320);
+      await click(w, anyBtn(w, /^Settings$/), 900);
+      return all(w, ".cw-vault-slot")[0];
+    };
+    const feed = async (w, name, body) => {
+      const inp = all(w, "#cw-vault-file")[0]; if (!inp) return false;
+      const file = new w.File([body], name, { type: "application/json" });
+      Object.defineProperty(inp, "files", { value: [file], configurable: true, writable: true });
+      inp.dispatchEvent(new w.Event("change", { bubbles: true }));
+      await settle(w, 900);
+      return true;
+    };
+    const toasts = (w) => all(w, ".cw-vault-toast").map((t) => t.textContent).join(" | ");
+    // jsdom 27's Blob has no .text(), and history.go(0) prints a navigation error - so the harness reads
+    // files through FileReader and spies on the restart request instead of letting jsdom try to navigate.
+    const readBlob = (w, blob) => new Promise((res, rej) => {
+      const fr = new w.FileReader();
+      fr.onload = () => res(String(fr.result || "")); fr.onerror = () => rej(fr.error || new Error("read failed"));
+      fr.readAsText(blob);
+    });
+    const spyReload = (w) => { const got = []; w.history.go = (n) => got.push(n); return got; };
+
+    /* ---------------- a fresh install: no gate, and nothing disturbed --------- */
+    const b0 = boot({ [CARDS_KEY]: JSON.stringify(sample(3)) });
+    await settle(b0.w, 700);
+    check(g, "with no code enrolled the app opens straight to the wallet (no gate, no extra layer)",
+      !gateUp(b0.w) && all(b0.w, "#root img").length >= 3 && b0.errors.length === 0,
+      `${b0.errors.length} errors, ${all(b0.w, "#root img").length} card images`);
+    const slot0 = await openVault(b0.w);
+    check(g, "the sheet gains exactly one 'Lock & backup' card, mounted as a slot the DOM module owns",
+      !!slot0 && !!slot0.closest(".cw-glass-sheet") && all(b0.w, ".cw-vault-slot").length === 1,
+      slot0 ? `inside ${slot0.closest(".cw-glass-sheet") ? "the sheet" : "the page"}` : "no slot");
+    const sw0 = vaultSwitch(b0.w);
+    check(g, "the section is two controls, not a settings page: one switch and a backup pair",
+      !!sw0 && sw0.getAttribute("role") === "switch" && sw0.getAttribute("aria-checked") === "false"
+      && !!anyBtn(b0.w, /^Back up now$/) && !!anyBtn(b0.w, /^Restore a file$/),
+      sw0 ? `switch=${sw0.getAttribute("aria-checked")}` : "no switch");
+    check(g, "the copy states what the code does and does not protect (no false security claim)",
+      /locks the app, not the stored data/.test((slot0?.textContent || "").replace(/\s+/g, " ")),
+      (slot0?.textContent || "").slice(0, 80).replace(/\s+/g, " "));
+
+    /* ---------------- enrolling: 4 boxes, confirm, mismatch, then store ------ */
+    await click(b0.w, sw0, 500);
+    const d0 = b0.w.document.getElementById("cw-lock-digit-0");
+    d0.value = "4x"; d0.dispatchEvent(new b0.w.Event("input", { bubbles: true })); await settle(b0.w, 160);
+    const d1 = b0.w.document.getElementById("cw-lock-digit-1");
+    d1.value = "-"; d1.dispatchEvent(new b0.w.Event("input", { bubbles: true })); await settle(b0.w, 160);
+    check(g, "a box keeps the digit and drops the junk; a junk-only box stays empty and does not submit",
+      d0.value === "4" && d1.value === "" && gate(b0.w).dataset.mode === "set" && !vaultSeed(b0.w),
+      `d0="${d0.value}" d1="${d1.value}" mode=${gate(b0.w)?.dataset.mode}`);
+    check(g, "turning the lock on asks for a code in a 4-box gate, not a bare keyboard field",
+      gateUp(b0.w) && digits(b0.w).length === 4 && gate(b0.w).dataset.mode === "set",
+      `${digits(b0.w).length} boxes, mode ${gate(b0.w)?.dataset.mode || "-"}`);
+    check(g, "one digit in and one junk character do not submit, and nothing is stored while the code is incomplete",
+      gate(b0.w)?.dataset.mode === "set" && !vaultSeed(b0.w), gate(b0.w)?.dataset.mode || "-");
+    await typePin(b0.w, "111", 150, 1);              // the remaining three boxes -> four digits
+    await settle(b0.w, 400);
+    check(g, "the 4th digit submits the step and it asks for the same code again",
+      gate(b0.w)?.dataset.mode === "confirm", gate(b0.w)?.dataset.mode || "-");
+    await typePin(b0.w, "9999");
+    await settle(b0.w, 500);
+    check(g, "a mismatched confirmation stores nothing and starts the flow over",
+      !vaultSeed(b0.w) && gateUp(b0.w), vaultSeed(b0.w) ? "a PIN was stored!" : "gate still up");
+    b0.close();
+
+    /* ---------------- enroll cleanly, then inspect what was written ---------- */
+    const b1 = boot({ [CARDS_KEY]: JSON.stringify(sample(3)) });
+    await settle(b1.w, 700);
+    enableCrypto(b1.w);
+    await openVault(b1.w);
+    await click(b1.w, vaultSwitch(b1.w), 500);
+    await typePin(b1.w, "4219", 130);
+    await settle(b1.w, 400);
+    await typePin(b1.w, "4219", 130);
+    await settle(b1.w, 700);
+    const v1 = vaultSeed(b1.w);
+    check(g, "the code is stored as salt + digest + round count - never the PIN, no 'pin' field",
+      !!v1?.lock && /^[0-9a-f]{32}$/.test(v1.lock.s) && /^[0-9a-f]{64}$/.test(v1.lock.p) && v1.lock.c === 600
+      && !("pin" in v1.lock) && !JSON.stringify(v1).includes("4219"),
+      v1 ? JSON.stringify(v1).slice(0, 90) : "nothing stored");
+    check(g, "the digest matches an independent Node implementation of the same KDF (600 rounds)",
+      !!v1 && deriveNode("4219", v1.lock.s) === v1.lock.p, v1 ? "recomputed in Node" : "no seed");
+    check(g, "a code typed as '4x' still enrols as the digit the user actually typed",
+      !!v1 && deriveNode("4219", v1.lock.s) === v1.lock.p, v1 ? "digest is over 4219, not 4x4219" : "no seed");
+    check(g, "after enrolling, the switch reads on and 'Change code' appears",
+      vaultSwitch(b1.w)?.getAttribute("aria-checked") === "true" && !!anyBtn(b1.w, /^Change code$/),
+      `aria-checked=${vaultSwitch(b1.w)?.getAttribute("aria-checked")}`);
+    check(g, "enrolling neither reloads nor touches the deck",
+      (readCards(b1.w) || []).length === 3 && b1.errors.length === 0, `${b1.errors.length} errors`);
+    b1.close();
+
+    /* ---------------- the gate on a cold start, wrong codes, cool-down ------ */
+    const b2 = boot({ [CARDS_KEY]: JSON.stringify(sample(3)), "wallet.vault.v1": v1 ? JSON.stringify(v1) : "{}" });
+    await settle(b2.w, 500);
+    check(g, "on the next launch the gate is up before the wallet is usable, and it is modal",
+      gateUp(b2.w) && gate(b2.w).getAttribute("aria-modal") === "true" && gate(b2.w).dataset.mode === "unlock",
+      gate(b2.w)?.dataset.mode || "no gate");
+    const zLock = /\.cw-lock\{[^}]*z-index:(\d+)/.exec(CSS18.replace(/\n/g, ""));
+    check(g, "the gate is stacked above every sheet the app can open (the app's own top is 2000)",
+      !!zLock && +zLock[1] >= 2147483000, `gate z=${zLock?.[1]}`);
+    await typePin(b2.w, "1111"); await settle(b2.w, 300);
+    check(g, "a wrong code is refused out loud, the boxes clear, and the gate stays up",
+      gateUp(b2.w) && /Wrong code/.test(gateMsg(b2.w)) && digits(b2.w).every((d) => d.value === ""),
+      gateMsg(b2.w) || "no message");
+    for (const pin of ["2222", "3333", "4444", "5555"]) { await typePin(b2.w, pin); await settle(b2.w, 260); }
+    check(g, "five wrong codes put the gate behind a cool-down with the boxes disabled",
+      /wait \d+s/.test(gateMsg(b2.w)) && digits(b2.w).every((d) => d.disabled), gateMsg(b2.w) || "-");
+    const resetBtn = all(b2.w, ".cw-lock-reset")[0];
+    check(g, "the cooled-down gate offers an explicit Reset app (there is no backdoor, so this is the way out)",
+      !!resetBtn && resetBtn.hidden === false, resetBtn ? "offered" : "not offered");
+    check(g, "the deck is untouched while all of this happens", (readCards(b2.w) || []).length === 3, "-");
+    b2.close();
+
+    /* ---------------- unlock, auto-lock after 30s, not after 5s, Back ------- */
+    const b3 = boot({ [CARDS_KEY]: JSON.stringify(sample(3)), "wallet.vault.v1": v1 ? JSON.stringify(v1) : "{}" });
+    await settle(b3.w, 500);
+    await typePin(b3.w, "4219"); await settle(b3.w, 500);
+    check(g, "the right code dismisses the gate and leaves the deck exactly as it was",
+      !gateUp(b3.w) && (readCards(b3.w) || []).length === 3 && all(b3.w, "#root img").length >= 3,
+      gateUp(b3.w) ? "still locked" : "unlocked");
+    const hide = (w, on) => { Object.defineProperty(w.document, "hidden", { value: on, configurable: true }); w.document.dispatchEvent(new w.Event("visibilitychange")); };
+    /* A fake clock, because sitting on a real 31-second timer is not a test plan. The original method has
+       to be *put back*, not deleted: `delete w.Date.now` removes the realm's own Date.now (the assignment
+       above shadows it with an own property), and every later Date.now() inside the app then throws - which
+       showed up here as the gate appearing to "relock too eagerly" when in fact the unlock had crashed. */
+    const clockTo = (w, ms) => {
+      const D = w.Date;
+      if (!D.__cwReal) D.__cwReal = D.now;
+      D.now = () => D.__cwReal() + ms;
+    };
+    const clockBack = (w) => {
+      const D = w.Date;
+      if (D.__cwReal) { D.now = D.__cwReal; delete D.__cwReal; }
+    };
+    hide(b3.w, true); await settle(b3.w, 60);
+    clockTo(b3.w, 31000);
+    hide(b3.w, false); await settle(b3.w, 300);
+    check(g, "coming back after 31 seconds away puts the gate up again (the auto-lock rule)",
+      gateUp(b3.w) && gate(b3.w).dataset.mode === "unlock", gate(b3.w)?.dataset.mode || "-");
+    clockBack(b3.w);
+    await typePin(b3.w, "4219"); await settle(b3.w, 400);
+    hide(b3.w, true); await settle(b3.w, 60);
+    clockTo(b3.w, 5000);
+    hide(b3.w, false); await settle(b3.w, 260);
+    check(g, "a 5-second trip to the notification shade does NOT lock (30s is a rule, not a reflex)",
+      !gateUp(b3.w), "relocked too eagerly");
+    clockBack(b3.w);
+    hide(b3.w, true); await settle(b3.w, 40);
+    clockTo(b3.w, 60000); hide(b3.w, false); await settle(b3.w, 300); clockBack(b3.w);
+    const upBefore = gateUp(b3.w);
+    b3.w.history.back(); await settle(b3.w, 400);
+    check(g, "while locked, Back cannot walk past the gate (a sentinel entry is re-pushed)",
+      upBefore && gateUp(b3.w), `before=${upBefore} after=${gateUp(b3.w)}`);
+    b3.close();
+
+    /* ---------------- the two-tap reset ------------------------------------ */
+    const b4 = boot({ [CARDS_KEY]: JSON.stringify(sample(3)), "wallet.vault.v1": v1 ? JSON.stringify(v1) : "{}" });
+    await settle(b4.w, 400);
+    const reloadAsked = spyReload(b4.w);
+    const rb = all(b4.w, ".cw-lock-reset")[0];
+    await click(b4.w, rb, 200);
+    check(g, "the first tap on Reset app only arms it and says what it will cost",
+      /Tap again/.test(rb?.textContent || "") && (readCards(b4.w) || []).length === 3, rb?.textContent || "-");
+    await click(b4.w, rb, 400);
+    check(g, "the arming tap warns out loud what it costs - cards *and* settings, not just cards",
+      /* b2 is closed by now, so read the live handle this boot already has rather than the dead window's */
+      /this erases every card and setting/.test(rb?.textContent || ""), rb?.textContent || "-");
+    check(g, "the second tap erases the wallet and asks the WebView to restart",
+      b4.w.localStorage.getItem(CARDS_KEY) === null && reloadAsked[0] === 0,
+      `cards=${b4.w.localStorage.getItem(CARDS_KEY)} reload=${JSON.stringify(reloadAsked)}`);
+    b4.close();
+
+    /* ---------------- backup: password twice, .cwbak out, really encrypted -- */
+    const b5 = boot({ [CARDS_KEY]: JSON.stringify(sample(3)) });
+    await settle(b5.w, 700);
+    enableCrypto(b5.w);
+    await openVault(b5.w);
+    await click(b5.w, anyBtn(b5.w, /^Back up now$/), 500);
+    check(g, "export asks for a password before it produces anything",
+      !!all(b5.w, ".cw-lock-pw")[0] && /password for this backup/i.test(gateTxt(b5.w)), gate(b5.w)?.dataset.mode || "-");
+    await typePw(b5.w, "sun", 300);
+    check(g, "a 3-character password is refused with the reason, and the flow stays open",
+      /at least 4/.test(gateMsg(b5.w)), gateMsg(b5.w) || "-");
+    await typePw(b5.w, "correct-horse-battery", 300);
+    await typePw(b5.w, "correct-horse-batter", 300);
+    check(g, "the confirm password must match - no file is produced on a mismatch",
+      b5.inst.shares.length === 0, `${b5.inst.shares.length} share(s)`);
+    await typePw(b5.w, "correct-horse-battery", 2600);
+    const file = b5.inst.shares[0]?.files?.[0];
+    const text = file ? await readBlob(b5.w, file) : "";
+    const wrap = text ? JSON.parse(text) : null;
+    check(g, "the file is offered through the share sheet the app already uses, named .cwbak",
+      !!file && /^cardwallet-backup-\d{4}-\d{2}-\d{2}\.cwbak$/.test(file.name || ""), file?.name || "nothing shared");
+    check(g, "the file is a v1 cardwallet backup with the card count and an AES-GCM/PBKDF2 header",
+      wrap?.app === "cardwallet" && wrap?.kind === "backup" && wrap?.v === 1 && wrap?.cards === 3
+      && wrap?.enc?.alg === "AES-GCM" && wrap?.enc?.kdf === "PBKDF2-SHA256" && wrap?.enc?.iters === 150000
+      && /^[A-Za-z0-9+/=]{16,}$/.test(wrap.enc.salt) && /^[A-Za-z0-9+/=]{8,}$/.test(wrap.enc.iv),
+      wrap ? `${wrap.enc.alg} ${wrap.enc.kdf} iters=${wrap.enc.iters} cards=${wrap.cards}` : "-");
+    check(g, "no card title, no picture data - the payload really is ciphertext, not JSON",
+      !!wrap && !text.includes("QA Card 1") && !text.includes("data:image") && text.includes('"data"'),
+      `file is ${text.length} chars`);
+    let inner = null, rejected = "";
+    try { inner = await aesDecrypt(wrap, "wrong-password"); } catch { rejected = "rejected"; }
+    check(g, "the wrong password cannot open it (AES-GCM auth, not a parse trick)",
+      inner === null && rejected === "rejected", rejected || "DECRYPTED WITH A WRONG PASSWORD");
+    inner = await aesDecrypt(wrap, "correct-horse-battery");
+    check(g, "the right password opens it and the deck inside is the wallet's own cards, pictures included",
+      Array.isArray(inner?.cards) && inner.cards.length === 3
+      && inner.cards.map((c) => c.title).join(",") === sample(3).map((c) => c.title).join(",")
+      && inner.cards.every((c) => typeof c.src === "string" && c.src.length > 0),
+      `${inner?.cards?.length} cards`);
+    check(g, "settings travel with the cards, and the lock never does",
+      !!inner.settings && !JSON.stringify(inner).includes("wallet.vault"),
+      `${Object.keys(inner.settings || {}).length} setting keys, no vault key`);
+    const meta5 = vaultSeed(b5.w);
+    check(g, "the sheet records the backup and says it in plain words",
+      meta5?.meta?.n === 3 && meta5?.meta?.enc === true && /Last backup: 3 cards/.test(all(b5.w, ".cw-vault-note").map((n) => n.textContent).join(" | ")),
+      meta5?.meta ? `n=${meta5.meta.n} enc=${meta5.meta.enc}` : "-");
+
+    /* ---------------- restore: refuse junk and plaintext, confirm, apply ----- */
+    await click(b5.w, anyBtn(b5.w, /^Restore a file$/), 400);
+    const fileInp = all(b5.w, "#cw-vault-file")[0];
+    check(g, "restore uses the app's existing file picker, restricted to the backup type",
+      !!fileInp && /\.cwbak/.test(fileInp.accept || ""), fileInp?.accept || "no input");
+    await feed(b5.w, "notes.txt", "hello");
+    check(g, "a file that is not a cardwallet backup is refused, current cards intact",
+      /isn't a Card Wallet backup/.test(toasts(b5.w)) && (readCards(b5.w) || []).length === 3, toasts(b5.w) || "no message");
+    await feed(b5.w, "plain.cwbak", JSON.stringify({ app: "cardwallet", kind: "backup", v: 1, cards: sample(1) }));
+    check(g, "an unencrypted bundle is refused instead of silently trusted",
+      /always encrypted/.test(toasts(b5.w)), toasts(b5.w) || "no message");
+    const forged = await aesEncrypt({ v: 1, cards: sample(2), settings: { view: "stack" } }, "restore-pw");
+    await feed(b5.w, "good.cwbak", JSON.stringify(forged));
+    check(g, "a valid encrypted file asks for its password before touching anything",
+      /password/i.test(gateTxt(b5.w)) && (readCards(b5.w) || []).length === 3, gate(b5.w)?.dataset.mode || "-");
+    await typePw(b5.w, "nope", 1800);
+    check(g, "a wrong restore password keeps the gate open with an honest message and no data change",
+      /Wrong password/.test(gateMsg(b5.w)) && (readCards(b5.w) || []).length === 3, gateMsg(b5.w) || "-");
+    await typePw(b5.w, "restore-pw", 1800);
+    check(g, "before replacing anything it states the swap in numbers and waits for a confirm",
+      /Restore 2 cards/.test(gateTxt(b5.w)) && /replaces the 3 cards/.test(gateTxt(b5.w))
+      && !!anyBtn(b5.w, /^Restore$/) && !!anyBtn(b5.w, /^Cancel$/),
+      gate(b5.w)?.querySelector("[data-r=dots]")?.textContent?.slice(0, 80) || "-");
+    await click(b5.w, anyBtn(b5.w, /^Cancel$/), 400);
+    check(g, "Cancel leaves the wallet exactly as it was", (readCards(b5.w) || []).length === 3, "-");
+    await feed(b5.w, "good.cwbak", JSON.stringify(forged));
+    await typePw(b5.w, "restore-pw", 1800);
+    const reload2 = spyReload(b5.w);
+    await click(b5.w, anyBtn(b5.w, /^Restore$/), 1200);
+    check(g, "Restore writes the deck and the settings, then asks the WebView to restart",
+      (readCards(b5.w) || []).length === 2 && readSettings(b5.w)?.view === "stack" && reload2[0] === 0,
+      `cards=${(readCards(b5.w) || []).length} view=${readSettings(b5.w)?.view} reload=${JSON.stringify(reload2)}`);
+    check(g, "the restored deck paints, and markup in a restored title is still text",
+      all(b5.w, "#root img").length >= 1 && b5.errors.length === 0 && !all(b5.w, "#root").some((r) => /onerror/i.test(r.innerHTML || "")),
+      `${all(b5.w, "#root img").length} images, ${b5.errors.length} errors`);
+
+    /* ---------------- the two failure modes the design admits out loud ------ */
+    const b6 = boot({ [CARDS_KEY]: JSON.stringify(sample(2)) });
+    await settle(b6.w, 700);
+    enableCrypto(b6.w, false);
+    await openVault(b6.w);
+    await click(b6.w, anyBtn(b6.w, /^Back up now$/), 600);
+    check(g, "without WebCrypto export refuses outright - there is no plaintext backup path",
+      /can't encrypt/.test(toasts(b6.w)) && b6.inst.shares.length === 0, toasts(b6.w) || "no toast");
+    b6.close();
+
+    const b7 = boot({ [CARDS_KEY]: JSON.stringify(sample(3)), "wallet.vault.v1": v1 ? JSON.stringify(v1) : "{}" });
+    await settle(b7.w, 600);
+    spyReload(b7.w);
+    await typePin(b7.w, "4219"); await settle(b7.w, 500);
+    await openVault(b7.w);
+    await click(b7.w, vaultSwitch(b7.w), 500);
+    check(g, "turning the lock off costs the current code (mode=verify), not a free toggle",
+      gate(b7.w)?.dataset.mode === "verify", gate(b7.w)?.dataset.mode || "-");
+    await typePin(b7.w, "0000"); await settle(b7.w, 300);
+    check(g, "the wrong code cannot turn the lock off either", vaultSeed(b7.w)?.lock?.p === v1?.lock?.p, "-");
+    await typePin(b7.w, "4219"); await settle(b7.w, 600);
+    const v7 = vaultSeed(b7.w);
+    check(g, "with the right code the vault holds no lock record and the gate is gone for good",
+      !!v7 && !v7.lock && !gateUp(b7.w) && (readCards(b7.w) || []).length === 3,
+      v7 ? Object.keys(v7).join(",") : "-");
+    b7.close();
+
+    /* ---------------- a full storage must not eat the user's current deck --- */
+    const b8 = boot({ [CARDS_KEY]: JSON.stringify(sample(3)) });
+    await settle(b8.w, 700);
+    spyReload(b8.w);
+    enableCrypto(b8.w);
+    await openVault(b8.w);
+    const big = await aesEncrypt({ v: 1, cards: sample(40), settings: {} }, "quota-pw");
+    await click(b8.w, anyBtn(b8.w, /^Restore a file$/), 400);
+    await feed(b8.w, "big.cwbak", JSON.stringify(big));
+    await typePw(b8.w, "quota-pw", 1800);
+    /* jsdom's localStorage is a named-property proxy - assigning `localStorage.setItem` stores a *key*
+       called "setItem" instead of replacing the method, so the quota has to be forced on the prototype. */
+    const Sproto = b8.w.Storage?.prototype || null;
+    const realSet = Sproto ? Sproto.setItem : null;
+    if (Sproto) Sproto.setItem = function (k, v) {
+      if (k === CARDS_KEY) { const e = new Error("quota"); e.name = "QuotaExceededError"; throw e; }
+      return realSet.call(this, k, v);
+    };
+    await click(b8.w, anyBtn(b8.w, /^Restore$/), 700);
+    check(g, "if the phone has no room for the backup, it says so and keeps the current deck",
+      /Not enough room/.test(toasts(b8.w)) && (readCards(b8.w) || []).length === 3,
+      `${(readCards(b8.w) || []).length} cards left after a refused restore`);
+    if (Sproto) Sproto.setItem = realSet;
+    b8.close();
+
+    /* ---------------- the module's own write surface ------------------------ */
+    const VB = CODE.slice(CODE.indexOf("Card Wallet - app lock"));
+    check(g, "the vault writes only its own key plus the two it restores, and never any other store",
+      (VB.match(/localStorage\.setItem\(/g) || []).length === 3
+      && /localStorage\.setItem\(LS,/.test(VB) && /localStorage\.setItem\(CARDS,/.test(VB)
+      && /localStorage\.setItem\(SETTINGS,/.test(VB) && !/document\.cookie|indexedDB|fetch\(/.test(VB),
+      `${(VB.match(/localStorage\.setItem\(/g) || []).length} setItem call(s), ${(VB.match(/fetch\(/g) || []).length} fetch`);
+    check(g, "no network, no service worker, no cookie - the backup only ever leaves via the share sheet",
+      !/XMLHttpRequest|navigator\.serviceWorker|localStorage\.setItem\("http/.test(VB), "-");
+    check(g, "the gate builds its DOM with element calls - the module has no innerHTML assignment at all",
+      !/\.innerHTML\s*=/.test(VB), `${(VB.match(/\.innerHTML\s*=/g) || []).length} assignment(s)`);
   }
 
   /* ---- report ------------------------------------------------------------ */

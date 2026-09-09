@@ -1180,3 +1180,63 @@ andar ka create disc apna `backdrop-filter` haar
  right-aligned menu ki positioning; Android 6-9 fallback untouched). Handover verdict round 14 jaisa hi —
  round 17 ne koi open item close nahi kiya, maghi koi naya bhi nahi khola.
 
+## 22. Round 18 - 4-digit lock + encrypted backup file (patch 33), 2026-09-09
+
+**Kya manga gaya:** "code add kro like 4 digit unlock code" aur "Cloud Backup & Restore: agar user phone
+change kare ya app delete ho jaye to cards zaya na hon". Teen scoping sawalon par user ne chuna: **file-only
+backup** (na account, na Drive SDK), **cold start + 30 second background** par code (koi timer control
+nahi, Settings me sirf ek switch), aur **5 galat koshishon par 30 second ka cool-down + "Reset app"** -
+backdoor nahi chahiye tha, saaf likha hua.
+
+**Kya bana (sab kuch ek reviewed source me):** `repo_export/patches/vault_src.js` bundle me append hota ha
+(`patch33_vault_lock_backup.py` se, byte-for-byte; `replay_chain.py` ab patch 33 tak **IDENTICAL**, 494,450
+B) aur `vault.css` `app/index.css` me (+5,225 B). Settings sheet me sirf **ek naya card** - "Lock & backup" -
+ek switch aur teen row buttons, taake "minimum controls" ka rule na tute. Module ka apna store
+`wallet.vault.v1` hai (settings ke saath mix nahi hota), us me salt + digest + rounds hain, **PIN kabhi
+store nahi hota**.
+
+**The gate.** `#cw-lock` `documentElement` par lagta ha, `display:none` se pehle - agar code enrolled ha to
+pehli paint se pehle lock. Opaque rakha gaya ha (koi `backdrop-filter` nahi): wo usi data ko chupata ha,
+blur uska kaam nahi. 4 digit boxes auto-advance, paste, backspace; galat code par `transform`-only shake
+(`prefers-reduced-motion` me khatam). 30 second se zyada background par wapas aate hi dobara lock;
+notification-shade jhalak (5 s) par kuch nahi hota. 5 galat codes -> 30 s countdown, boxes disabled.
+Reset app = do tap, phir `localStorage.clear()` + reload. Back/gesture gate ke upar app ko bahar nahi
+nikalta (history sentinel).
+
+**The file.** Export: poora deck + settings ek JSON bundle ban kar **AES-GCM 256** se seal hota ha,
+password se **PBKDF2-SHA256 150,000 rounds**, file `cardwallet-backup-YYYY-MM-DD.cwbak`. Jo chain pehle
+se card-share me thi wahi chali: `navigator.canShare({files})` -> `navigator.share` -> `<a download>`.
+APK repack hota ha, gradle build nahi, is liye koi naya native plugin possible nahi tha - yeh deliberately
+"cloud" nahi, "file" ha: user Drive/Files/WhatsApp me khud rakhta ha. Import: file chuno -> password ->
+confirm ("Restore N cards? replaces the M cards on this phone... cannot be undone") -> reload. Do guard:
+jis file me `enc` block nahi us par **inkar** ("Backups are always encrypted"), aur `crypto.subtle` na ho
+to export/import **refuse** hote hain - plaintext fallback kabhi nahi. `QuotaExceededError` (20 photo cards
+≈ 16 MB, RELEASE-2 ka hi silsila) par mojooda deck salamat rehta ha aur message saaf aata ha.
+
+**Imandari se likhi hui had:** PIN device-local gate ha, data ka encryption nahi - `localStorage` me cards
+pehle jese hi rehte hain (Settings ka caption yehi kehta ha), aur PIN ka KDF jaan boojh kar sasta ha
+(600 rounds, pure JS) taake low-end WebView par unlock pehle frame se pehle atke nahi. Phone badal kar
+restore karne par lock **off** rehta ha - file me PIN nahi jata, aur naya phone = naya salt.
+
+**Gates:** audit **96/96** (79 -> 96), QA **231/231** (group 34 = 54 checks: PIN digest Node me dobara
+nikala gaya, asli `.cwbak` file Node ke webcrypto se round-trip, galat password reject, settings-in/lock-out,
+junk file aur plaintext ka inkar, quota, reset, restore->reload spy), smoke **239/239** (control budget
+2 -> 3 switches, button cap 22 -> 26 - card ke teen buttons hi hain), `apk_content_check.py` **70/70**
+APK ke andar se (62 -> 70), `verify_release.py` **28/29**. Negative control: patch 33 ke bagair
+audit **90/96** + smoke **238/239**, `--restore` par md5 `f987513e46c6` wapas.
+
+**Teen findings jo agli baar ka waqt bacha lenge:** (1) `visibilitychange` **document** par fire hota ha,
+window par listener use karne se auto-lock chup chaar mar jata (jsdom me proven) - ab dono par registered
+ha. (2) Is repo me CSS `index.html` me **inline nahi** hota: `build_debug_apk.py` `assets/public/assets/`
+ke andar JS aur CSS alag entries swap karta ha, `app/index.html` 1,185 B ka shell hi rehta ha - "re-sync
+the inlined style" likhna ek aisi file edit karna hota jo hai hi nahi. (3) jsdom me `delete w.Date.now`
+us realm ka asli `Date.now` hata deta ha (reassignment usko shadow karta ha), phir app ki har
+`Date.now()` call throw karti ha - ek waqt yehi "auto-lock over-eager" ban kar nikla; ab fake clock save
+kar ke restore karta ha. Aur ek purani galt jo notes me thi: `innerHTML` gate me allowed nahi (APK gate
+puri app code me mana karta ha), is liye gate ka markup ab element calls se banta ha - 0 assignments.
+
+**Handover:** verdict **wahi - NOT READY FOR CLIENT HANDOVER**. SECURITY-1 (FLAG_SECURE) is round ka maqsad
+nahi tha aur **OPEN** ha; haan, 30 s background ke baad Recents ka thumbnail ab lock screen dikhata ha,
+deck nahi - mitigation, fix nahi. Naya device section **Z** (12 rows) verify karna zaroori ha: cold-start
+timing, keyboard ka digit boxes ke sath bartao, Share sheet/Drive par file, fresh install par restore,
+Android 6-9 par subtle-crypto ka inkar, aur cool-down jab app background me ho.
