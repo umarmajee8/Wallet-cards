@@ -469,6 +469,26 @@ applies to every glass surface; these rows are the dock specifically.
 Record: device, Android version, WebView version, and result per row. Anything that fails is filed with
 the row id (e.g. "X4: menu clipped above the pill on 4.7-inch").
 
+---
+
+## Y. Round 17 - Settings sheet's lighter blur + the dock on the header's old x (patch 32)  ⚠ the feel half
+
+Everything measurable here is measured: the audit pins 14px on the sheet, the no-blur scrim, the 4-selector
+budget and the mirrored row string (79/79), and QA counts at most 2 blurred surfaces with Settings open.
+What only a phone can answer is whether it now *feels* fast and still looks like glass.
+
+| # | Check | Expected |
+|---|-------|----------|
+| Y1 | Open and close Settings ten times in a row, and drag a slider while it is open | No hitch on the slide-in spring and no stutter while dragging (this is the round-17 ask: it used to feel laggy). Compare against `CardWallet_footer_dock.apk` on the same device if in doubt. |
+| Y2 | Read the sheet over a bright photo card and over a black card, in both themes | At 14px the deck shows through a little more of its structure - the text and read-outs must still be comfortably legible (measured through the tint: 9.41:1 body / 5.21:1 captions light, 9.67 / 6.29 dark) and the sheet must not look "open" or noisy. |
+| Y3 | Watch the scrim area (the wallet behind the sheet) | Pure dim, no smearing. If the un-blurred deck behind the sheet reads as distracting on a small screen, that is a design call to file, not a bug - the blur was removed for a measured cost. |
+| Y4 | Place a thumb at the bottom of the screen | Create / Search / More sit where they used to be under the header in x (right edge of the 520px column, 8px inset), so the reach is the same trio, mirrored. On a tablet/foldable the pill must still hug the *right edge of the centred column*, not the screen edge. |
+| Y5 | Tap More, then tap outside | The menu opens upward from the pill's right edge, both rows visible, and outside-tap dismissal still works after the restructure (the `ref:d` container is unchanged). |
+| Y6 | Regression: scroll a long deck under the pill, eject a card so it passes under it, then flip the theme | The pill keeps floating and re-colours correctly (no rgba baked in); on Android 6-9 WebViews the sheet falls back to the opaque `--sheet` and the scrim to a plain dim - both must stay visible. |
+
+Record: device, Android + WebView version, and per-row result; file a failure with the row id (e.g. "Y2:
+captions hard to read over a photo card in light mode").
+
 ## Sign-off
 
 The build may only be called production-ready once **A–W are green** on at least
@@ -479,8 +499,11 @@ signing, NFC, the soft keyboard, rotation rendering and every smoothness/judgeme
 call). Record device model, Android version and result per row, and file anything
 that fails with the section id (e.g. "F3 fails: Back exits the app with Settings
 open"). The Android UI-testable layer is complete and green: `qa_feature_suite.mjs`
-175/175 (group 33 covers the Liquid Glass material and the round-16 footer dock),
-`smoke_test_webview.mjs` 237/237, `liquid_glass_audit.py` 72/72 (tier rules + the WCAG contrast engine),
+177/177 (group 33 covers the Liquid Glass material, the round-16 footer dock and the
+round-17 blur budget), `smoke_test_webview.mjs` 239/239, `liquid_glass_audit.py` 79/79 (tier rules, the cost
+model and the WCAG contrast engine),
 `verify_release.py` 28/29 with the only FAIL being the deliberate debug signature, and
-`apk_content_check.py` 60/60 against the APK itself (including the five-blurred-selector budget read out
-of the shipped stylesheet).
+`apk_content_check.py` 62/62 against the APK itself (including the four-blurred-selector budget read out of
+the shipped stylesheet). The jsdom suites need `jsdom@27` + `cssstyle@4.6.0`; on other pairings 11 checks
+fail on *any* bundle because cssstyle does not serialise `backdrop-filter` into the `style` attribute - the
+suite reads those through `inlineStyle()` (see README, round 17).

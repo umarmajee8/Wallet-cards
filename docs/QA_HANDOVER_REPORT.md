@@ -267,3 +267,41 @@ RELEASE-1/2/3/4 + SECURITY-1 stay open.
   open and while a card ejects under the dock, and the opaque fallback + caption contrast on light and
   dark artwork). Everything that can be measured here is measured; nothing in this list is marked PASS.
 
+---
+
+## Addendum - round 17 (Settings blur + dock placement) landed after this report was written
+
+Verdict unchanged: **NOT READY FOR CLIENT HANDOVER**. Round 17 removed a measured performance cost and
+fixed a placement regression the user reported; it closes no open CRITICAL/MAJOR and opens none.
+
+- **What changed, technically.** (1) The Settings sheet is no longer two stacked full-viewport
+  `backdrop-filter`s: the scrim dropped its 20px blur entirely (it dims only), and the panel's radius went
+  30px -> 14px (`--glass-blur` 34 -> 14 so the overridden declaration agrees with the effective one). Cost
+  model in the code comment: area x radius. (2) The footer dock mirrors the header's geometry instead of
+  centring - the row carries the header row's exact class string and the glass moved onto a
+  `cw-dock` child wrapping the three buttons; the option menu right-aligns and grows from the More button.
+- **Gates now:** QA feature suite **177/177** (group 33 = 30), smoke **239/239**,
+  `liquid_glass_audit.py` **79/79**, `apk_content_check.py` **62/62**, `replay_chain.py` **IDENTICAL**
+  through patch 32 (bundle 465,658 B md5 `53063b355aa2feb78b1257b43151c957`, stylesheet 31,375 B),
+  `verify_release.py` **28/29** (sole FAIL = the deliberate debug cert), `animation_audit.py` unchanged.
+  Negative controls: JS half out -> smoke 237/239 (exactly the two new placement checks); CSS half out ->
+  audit 74/79 (exactly the five round-17 cost checks).
+- **One QA finding worth recording (harness, not app).** In a freshly created sandbox the jsdom suites
+  started failing **11** checks - cover flap, pouch row, preview fit - that had been green. Reproduced on
+  the untouched round-16 bundle, ruled out as animation timing (re-ran with 3-4x longer settles), and
+  root-caused: cssstyle accepts `style.backdropFilter` but does not serialise it into the `style`
+  attribute, so `getAttribute("style")`-based regexes lose the declaration. The suite now reads those
+  properties through an `inlineStyle()` helper that consults the CSSOM too, and one preview check accepts
+  `min-height: 0` or `0px` (React writes unitless numbers). **No check was relaxed to make it pass** -
+  the same declarations are required, from a source that cannot silently drop them. Documented in the
+  README's test section, with the `jsdom@27` + `cssstyle@4.6.0` pairing to install.
+- **Artifact:** `CardWallet_footer_tuned.apk` (11,657,123 B, sha256
+  `e36a0f73d2c1138f99f447e3f97ff39a7da4c68e2994532554088dcdb453ec9e`) supersedes
+  `CardWallet_footer_dock.apk`; the payload inside the APK is byte-identical to the tree.
+- **New NOT-VERIFIED rows:** plan section **Y1-Y6** - whether Settings actually feels fast now on a real
+  device (the user's complaint cannot be measured from here: this sandbox has no GPU, no compositor, and
+  jsdom reports no frame timings), whether 14px still reads as glass over bright and dark artwork, the
+  un-blurred deck under the scrim, the pill's reach/position under a thumb including on a tablet,
+  outside-tap dismissal after the restructure, and the Android 6-9 opaque fallback. All are device rows,
+  so they are marked NOT VERIFIED and nothing in this list is claimed as PASS.
+

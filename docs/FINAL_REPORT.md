@@ -1125,3 +1125,58 @@ andar ka create disc apna `backdrop-filter` haar
  caption contrast. Handover verdict round 14 jaisa hi **NOT READY** ha; round 16 ne us me koi open item
  close nahi kiya.
 
+---
+
+## 21. Round 17 - dock header wali jagah, sheet ka blur kam (patch 32), 2026-09-07
+
+**Kya manga gaya:** do baatein. (1) "Setting me blur kam karo, lag feel ho raha ha." (2) "Create, search,
+ setting ko bottom par le ayo - *usi jagah* jahan oper thin." Round 16 ne teeno controls ko bottom me ek
+ *centred* pill me daal diya tha; user ko woh nahi chahiye - unhe neeche chahiye, magar unhi x-positions
+ par jo header me the.
+
+**Alignment (patch 32, JS).** Dock ki row ko header row ka apna class string de diya
+ (`pointer-events-auto mx-auto flex w-full max-w-[520px] items-center justify-end gap-1 px-2`) aur glass
+ ek naye bachay par le aaya (`cw-dock pointer-events-auto flex items-center`) jisme teeno buttons hain.
+ Is se *column* har viewport width par upar wali bar jaisa hi ha, magar blur sirf ~140x48 pill ke liye
+ dena parta hai - poori width ke bar ke liye nahi. Option menu bhi right-align ho gaya
+ (`ml-auto mb-1 w-[248px]`) aur woh More button se phoot'ta ha (`transformOrigin: right bottom`), center
+ se nahi. Chaaranchored string swaps, har ek "exactly once" assert ke sath, `node --check` gate ✓ aur
+ `replay_chain` patch 32 tak **IDENTICAL** (465,581 -> 465,658 B).
+
+**Lag ka asli sabab (stylesheet se parha hua).** Settings panel ka element
+ `cw-glass-sheet cw-lg-primary` leke chalta ha - yaani tier-1 ka 30px blur - **aur** woh scrim ke *andar*
+ ha, jo apne thaha 20px blur karta tha. Filtered ancestor panel ka *backdrop root* ban jata ha: compositor
+ ko poora screen do baar read back + filter karni parni ha, aur sheet ke slide-in spring ke har frame par.
+ Yehi jhatak tha. To: (a) scrim ab blur karta hi nahi - 24%/34% dim ke neeche 20px ka blur dikhta hi nahi,
+ (b) `--lg-blur` 30px -> **14px**, (c) `--glass-blur` 34px -> **14px** taake dono declarations sehmat hon
+ (jis ka bhi rule jeetey, radius wohi). Aur pill ka 22px jaan-boojh kar barqarar ha: cost = **area x
+ radius**, is liye bari surface ko chota blur chahiye aur choti floating surface zyada afford kar sakti
+ ha - round 15 ka "har surface ka apna blur/opacity" rule abhi bhi laagu ha. Settings khule waqt blurred
+ surfaces **3 -> 2**, rest par 1. Material ke baqi hissay (tint tokens, sheen, rim, koi animated filter,
+ koi `will-change`) jaise ke waisay ✓ wallet cards ka path sparsh nahi.
+
+**Gates:** `liquid_glass_audit` **79/79** (72 -> 79: cost/radius ke 6 naye rules, purana "dock radius
+ sheet aur control ke beech" rule naye model se replace; +2 JS rules ke dock row *asal mein* header row ka
+ class string ha aur glass pill par ha, column par nahi), QA **177/177** (group 33 = 30: blurred-DOM
+ count `<= 2` aur scrim usme shamil nahi; koi `.cw-scrim` backdrop-filter ya `--scrim-blur` bacha ha ya
+ nahi - woh bhi check), smoke **239/239**, `apk_content_check` **62/62** on `CardWallet_footer_tuned.apk`
+ (blur-selector budget 5 -> 4), `verify_release` **28/29** (sirf debug cert), glass ke through contrast
+ round 16 se **barqarar** (legibility alpha se aati ha, radius se nahi: light 9.41/5.21/11.52/14.15/10.20,
+ dark 9.67/6.29/8.66/8.78/13.00). Negative controls: patch 32 ka JS nikaal do -> smoke **237/239** (theek
+ 2 naye checks fail), stylesheet round-16 par wapas -> audit **74/79** (theek 5 round-17 rules fail) -
+ yaani dono aadhe load-bearing hain.
+
+**Harness ki theeki (taake agli baar koi app ka bug na samjhe):** naye jsdom me
+ `element.style.backdropFilter = ...` accept hota ha magar `style` attribute me likha hi nahi jata, jis se
+ `getAttribute("style")` par regex chalane wale **11 checks kisi bhi bundle par** fail hone lagay (round-16
+ commit par bhi, byte-identical). `smoke_test_webview.mjs` ab un properties ko ek `inlineStyle()` helper se
+ parhta ha jo CSSOM bhi dekh'ta ha, aur ek preview check `min-height: 0` ya `0px` dono qabool karta ha
+ (React number ko unit ke baghair likhta ha) - koi assertion "pass ho jaye" is liye dheela nahi kiya gaya,
+ sirh source badla ha jo chup kar value gira nahi sakta.
+
+**Device par dekhna ha:** section **Y** (lag gaya ya nahi: Settings baar baar kholo/band karo, sheet khule
+ waqt sliders drag karo, deck ko dock ke neeche se scroll karo; 14px blur par sheet parhne mein theek lagti
+ ha ya zyada "khuli" lag rahi ha; pill ungli ke neeche theek usi jagah aata ha jahan header ke buttons the;
+ right-aligned menu ki positioning; Android 6-9 fallback untouched). Handover verdict round 14 jaisa hi —
+ round 17 ne koi open item close nahi kiya, maghi koi naya bhi nahi khola.
+

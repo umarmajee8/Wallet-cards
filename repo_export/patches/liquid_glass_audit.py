@@ -199,9 +199,24 @@ check("every fallback covers the dock too (reduced transparency / no support / r
       ".cw-dock{backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--raised)}" in BLOCK
       and ".cw-dock{background:var(--sheet)}" in SUP16 and ".cw-dock{transition:none}" in BLOCK,
       "COMPAT-1 + a11y")
-check("the dock's blur radius sits between the sheet and the control tier",
-      int(re.sub(r"\D", "", var("--lg-blur"))) > 22 > int(re.sub(r"\D", "", var("--lg-blur-ctl"))),
-      f"{var('--lg-blur')} sheet > 22px dock > {var('--lg-blur-ctl')} control")
+SHEET_R = int(re.sub(r"\D", "", var("--lg-blur")))
+CTL_R = int(re.sub(r"\D", "", var("--lg-blur-ctl")))
+CSS_BLURS = len(re.findall(r"[^{}]+\{[^{}]*backdrop-filter:\s*blur", CSS))
+check("round 17: the sheet's blur radius is capped (a full-height surface pays for area x radius)",
+      0 < SHEET_R <= 16, f"--lg-blur={var('--lg-blur')}")
+check("round 17: the legacy and tier-1 sheet tokens agree (14px whichever rule wins on the panel)",
+      re.sub(r"\D", "", var("--glass-blur") or "") == str(SHEET_R),
+      f"--glass-blur={var('--glass-blur')} vs --lg-blur={var('--lg-blur')}")
+check("round 17: the full-screen scrim dims without blurring - no backdrop root above the sheet",
+      "backdrop-filter" not in rule(r"\.cw-scrim\{") and "--scrim-blur" not in CSS,
+      rule(r"\.cw-scrim\{") or "no .cw-scrim rule found")
+check("round 17: radius is chosen per surface, not as a hierarchy - the small pill affords more",
+      22 > SHEET_R > CTL_R, f"22px dock > {SHEET_R}px sheet > {CTL_R}px control")
+check("round 17: at most 4 selectors in the whole stylesheet declare a blur",
+      CSS_BLURS <= 4, f"{CSS_BLURS} blurred selectors in index.css (was 5 before the scrim fix)")
+check("round 17: the sheet keeps the glass, it just spends less on it (blur + saturate + sheen intact)",
+      "backdrop-filter:blur(var(--lg-blur)) saturate(var(--lg-sat)) brightness(1.03)" in decl
+      and "background:var(--lg-sheen),var(--lg-tint)" in decl, "radius down, material unchanged")
 for name in ["--lg-tint-2"]:
     check(f"dock fill token {name} is themed", DARK.get(name) is not None)
 
@@ -242,8 +257,15 @@ check("reduced motion drops the transitions and the press scale",
 # the wallet's own cards must not be covered by glass
 for cls, where in [("cw-dock", "the footer dock holds the three controls"),]:
     check(f"wired: {cls} is applied in the bundle ({where})", JS.count(cls) >= 1, f"{JS.count(cls)} use(s)")
-check("the option menu was re-anchored to open upward from the dock",
-      "transformOrigin:`center bottom`" in JS and "mb-1 w-[248px]" in JS, "-")
+check("the option menu opens upward from the dock's right edge (round 17)",
+      "transformOrigin:`right bottom`" in JS and "ml-auto mb-1 w-[248px]" in JS
+      and "mx-auto mb-1 w-[248px]" not in JS, "-")
+TOP_ROW_CLASS = "pointer-events-auto mx-auto flex w-full max-w-[520px] items-center justify-end gap-1 px-2"
+check("the dock row is literally the header row's geometry, so the controls land on the same x",
+      JS.count(TOP_ROW_CLASS) == 2, f"{JS.count(TOP_ROW_CLASS)} rows carry the header row's class string")
+check("the glass sits on the pill, not on the row (a full-column bar would blur 4x the pixels)",
+      "cw-dock pointer-events-auto flex items-center" in JS
+      and re.search(r"className:`cw-dock[^`]*max-w-\[520px\]", JS) is None, "-")
 check("the deck reserves the dock's height, safe area included",
       "paddingBottom:`calc(env(safe-area-inset-bottom) + 62px)`" in JS, "-")
 check("the wallet bar keeps the wordmark alone (nothing but the deck sits at the top now)",
@@ -394,8 +416,10 @@ if MAKE_SVG:
                  f'font-size="12" font-weight="600" fill="{col("--ink", scope)}">Stack</text>')
         # round 16: the create disc no longer sits in a top bar - Create / Search / More live in one
         # glass pill at the bottom, so the preview draws that pill (and the wordmark up top).
+        # round 17: the pill sits on the right of the wallet column - the same x the controls had
+        # in the header, mirrored to the bottom edge - not centred.
         dw, dh = 3 * 36 + 2 * 10 + 20, 48
-        dx, dy = (w - dw) / 2, h - dh - 10
+        dx, dy = w - dw - 12, h - dh - 10
         i.append(f'<text x="14" y="26" font-family="-apple-system,Helvetica,Arial" font-size="26" '
                  f'font-weight="800" letter-spacing="-.6" fill="{col("--ink", scope)}">Wallet</text>')
         i.append(f'<rect x="{dx}" y="{dy}" width="{dw}" height="{dh}" rx="24" fill="{col("--lg-tint-2", scope)}" '
@@ -440,7 +464,8 @@ if MAKE_SVG:
              'tokens (not a screenshot)</text>',
              '<text x="24" y="54" font-family="-apple-system,Helvetica,Arial" font-size="11" fill="#8e8e93">'
              'round 16: Create / Search / More sit in one glass dock at the bottom, the wordmark keeps the '
-             'top-left, and the disc inside the dock does not blur again</text>']
+             'top-left, and the disc inside the dock does not blur again. The sheet blurs at 14px and the '
+             'scrim not at all - that is the round-17 lag fix</text>']
     parts.append(svg_panel("light", "#ffffff", ["#1f2a44", "#c9a227", "#e6e6ea"], 24, 84, 400, 200, "LIGHT theme - sheet over bright artwork"))
     parts.append(svg_panel("light", "#101014", ["#0b1220", "#5b3df5", "#1f1f22"], 24, 320, 400, 200, "LIGHT theme - sheet over dark artwork"))
     parts.append(svg_panel("dark", "#000000", ["#1c1c1e", "#2f2f34", "#6b4df6"], 476, 84, 400, 200, "DARK theme - sheet over dark artwork"))

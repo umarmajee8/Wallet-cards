@@ -1076,7 +1076,7 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
     // at rest the home screen keeps ONE blurred surface (the create disc) - the deck itself is flat
     const home = boot({ [CARDS_KEY]: JSON.stringify(sample(4)) });
     await settle(home.w, 700);
-    const blurredAtRest = all(home.w, "#root *").filter((e) => /cw-lg-(primary|fab)|cw-scrim/.test(e.className || "")).length;
+    const blurredAtRest = all(home.w, "#root *").filter((e) => /cw-lg-primary|cw-dock/.test(e.className || "")).length;
     check(g, "perf: the wallet screen at rest has exactly one blurred surface (the footer dock)",
       blurredAtRest === 1, `blurred elements: ${blurredAtRest}`);
     const dock = all(home.w, "#root .cw-dock").find(Boolean);
@@ -1133,8 +1133,14 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
       `${sliders.length} range inputs`);
     // counted by what *actually* blurs: the disc carries cw-lg-fab, but .cw-dock .cw-lg-fab switches
     // its backdrop-filter off, so it is deliberately not in this set (the rule is checked below).
-    const blurred = all(b.w, "#root *").filter((e) => /cw-lg-primary|cw-scrim|cw-dock/.test(e.className || "")).length;
-    check(g, "perf: at most 3 blurred surfaces exist at once (dock + scrim + sheet)", blurred <= 3, `${blurred} found`);
+    const blurred = all(b.w, "#root *").filter((e) => /cw-lg-primary|cw-dock/.test(e.className || "")).length;
+    check(g, "perf: at most 2 blurred surfaces exist at once (dock + sheet), and the scrim is not one",
+      blurred <= 2, `${blurred} found`);
+    check(g, "round 17: the scrim declares no backdrop-filter (the nested full-screen readback is gone)",
+      !/\.cw-scrim\{[^}]*backdrop-filter/.test(CSS) && !/--scrim-blur/.test(CSS),
+      (CSS.match(/\.cw-scrim\{[^}]{0,60}/) || ["-"])[0]);
+    check(g, "round 17: the Settings sheet blurs at 14px, not the 30px that caused the lag",
+      /--lg-blur:14px/.test(CSS) && /--glass-blur:14px/.test(CSS), "-");
 
     // the source-level half of the perf and taste contract - jsdom applies no cascade, so read the CSS
     const blurSels = [...LG.matchAll(/([^{}]+)\{[^{}]*backdrop-filter:\s*blur/g)].map((m) => m[1].trim().split("\n").pop().trim());

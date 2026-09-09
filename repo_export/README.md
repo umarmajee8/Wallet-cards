@@ -422,6 +422,53 @@ This repo contains the patched source for the CardWallet app.
     regenerated from the tokens, so the picture of the dock cannot drift from the code.
 
 
+21. **Round 17 - the dock takes the header's own geometry; the Settings sheet stops blurring twice**
+    (patch 32 + stylesheet), 2026-09-07.
+  - **Two asks.** "Setting me blur kam karo, lag feel ho raha ha" and "create, search, setting ko bottom
+    pr le ayo - *same jaga pr jis jaga oper ha*". Round 16 had centred the three controls in a pill; they
+    now sit where they always sat, mirrored to the bottom edge.
+  - **The placement.** `patch32_dock_align_and_blur.py` gives the dock row the header row's class string
+    verbatim (`pointer-events-auto mx-auto flex w-full max-w-[520px] items-center justify-end gap-1 px-2`)
+    and moves the glass onto a new child (`cw-dock pointer-events-auto flex items-center`) that wraps the
+    three buttons. So the *column* is identical to the top bar's at every viewport width, while the blur
+    is only paid for by a ~140x48 pill instead of a full-width bar. The option menu right-aligns too
+    (`ml-auto mb-1 w-[248px]`) and grows from the More button (`transformOrigin: right bottom`) instead of
+    from the middle. Both edits are anchored string swaps, each asserted to match exactly once, gated by
+    `node --check`; `replay_chain.py` reproduces the shipped bundle byte-exactly through patch 32.
+  - **The lag, root-caused.** Reading the shipped stylesheet, the Settings panel was *two stacked
+    full-viewport backdrop filters*: the panel element carries `cw-glass-sheet cw-lg-primary` (so a 30px
+    blur from the tier-1 rule) and it is a **child of the scrim**, which blurred at 20px of its own. A
+    filtered ancestor becomes the panel's backdrop root - the compositor reads back and filters the whole
+    screen twice, on every frame of the sheet's slide-in spring. So: the scrim no longer blurs at all (a
+    20px blur under a 24%/34% dim is not visible), `--lg-blur` drops 30px -> 14px, and `--glass-blur`
+    (the declaration the tier-1 rule overrides on that element) drops 34px -> 14px so both agree whichever
+    wins. The pill deliberately keeps 22px: cost is *area x radius*, so the big surface gets the short
+    blur and the small floating one affords more - which is also why round 15's "different blur per
+    surface" requirement still holds. Blurred surfaces while Settings is open: **3 -> 2**. The material is
+    unchanged otherwise (same tint tokens, same sheen, same rim, no new `will-change`, no animated filter).
+  - **Gates.** `liquid_glass_audit.py` **79/79** (72 -> 79: +6 cost/radius rules and a rewrite of the old
+    "dock radius sits between sheet and control" rule, which the new per-surface model supersedes; +2 JS
+    rules that the dock row *is* the header row's class string and that the glass sits on the pill, not on
+    the column), QA feature suite **177/177** (group 33 = 30: the blurred-DOM count is now `<= 2` and
+    excludes the scrim, plus a check that no `.cw-scrim` backdrop-filter or `--scrim-blur` survives), web
+    smoke **239/239**, `apk_content_check.py` **62/62** against `CardWallet_footer_tuned.apk` (the
+    blur-selector budget tightened 5 -> 4), `verify_release.py` **28/29** (only the deliberate debug cert),
+    contrast through the glass re-measured and identical to round 16 (alpha carries legibility, not
+    radius: 9.41 / 5.21 / 11.52 / 14.15 / 10.20 light, 9.67 / 6.29 / 8.66 / 8.78 / 13.00 dark).
+    Negative controls: bundle replayed without patch 32 -> smoke **237/239**, failing exactly the two new
+    `header/foot` checks; stylesheet back at round 16 -> audit **74/79**, failing exactly the five round-17
+    rules. `docs/liquid-glass-preview.svg` is regenerated from the tokens, so it now draws the pill on the
+    right and smears at 14px.
+  - **A harness fix, recorded so nobody chases it as an app bug.** In a freshly installed jsdom (27.4.0 /
+    cssstyle), `element.style.backdropFilter = ...` is accepted but **not serialised into the `style`
+    attribute**, so every check that regexed `getAttribute("style")` for `backdrop-filter`, `perspective`
+    or `touch-action` began failing on *any* bundle - 11 of them, reproduced identically on the round-16
+    commit. `smoke_test_webview.mjs` now reads those declarations through one `inlineStyle(el)` helper that
+    consults the CSSOM as well as the attribute (and one preview check accepts `min-height: 0` or `0px`,
+    since React writes numbers without a unit). No assertion was relaxed to pass: the same properties are
+    required, read from a source that cannot silently drop them.
+
+
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.
@@ -507,6 +554,14 @@ Verification gates:
   A `matchMedia` stub that answers "dark" is what makes the light-by-default and
   appearance-migration checks mean something
 - `python3 patches/animation_audit.py` - static jank audit
+
+**jsdom suites (`smoke_test_webview.mjs`, `qa_feature_suite.mjs`)** are run with
+`NODE_PATH=~/.cache/smoke/node_modules node patches/<suite>.mjs` after
+`npm i --prefix ~/.cache/smoke jsdom@27 cssstyle@4.6.0`. That pairing is deliberate: cssstyle accepts
+`style.backdropFilter` (and `perspective`, `touch-action`, ...) but does **not** write them back into the
+`style` attribute, so a suite that regexes `getAttribute("style")` loses them - jsdom 24/26 fail 11
+checks that way, jsdom 27 + cssstyle 4.6.0 only fail the ones `smoke_test_webview.mjs` now reads through
+its `inlineStyle()` helper (round 17), which consults the CSSOM as well as the attribute.
 
 `verify_release.py` shells out to `apksigtool` for the v2/v3 checks
 (`pip install --user apksigtool`); without it those 3 checks cannot run.

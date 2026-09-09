@@ -33,6 +33,27 @@ if (!JSDOM) {
   process.exit(2);
 }
 
+
+// jsdom's cssstyle accepts `style.backdropFilter` but does not serialise it into the style attribute (no
+// `backdrop-filter` in its property list), so any regex over getAttribute("style") silently misses it -
+// which is how the cover/flap blocks of this suite started reading "no flap element" on a jsdom upgrade.
+// Harness gap, not an app bug: real WebViews serialise it. Read the CSSOM accessor as well, so every
+// check below sees the same declarations the compositor would.
+const inlineStyle = (el) => {
+  if (!el) return "";
+  let out = el.getAttribute("style") || "";
+  const JSDOM_DROPPED = [
+    ["backdropFilter", "backdrop-filter"], ["webkitBackdropFilter", "-webkit-backdrop-filter"],
+    ["perspective", "perspective"], ["perspectiveOrigin", "perspective-origin"],
+    ["touchAction", "touch-action"], ["overscrollBehavior", "overscroll-behavior"],
+  ];
+  for (const [prop, name] of JSDOM_DROPPED) {
+    const v = el.style?.[prop];
+    if (v && !out.includes(name)) out += `;${name}: ${v}`;
+  }
+  return out;
+};
+
 const results = [];
 const check = (name, ok, detail = "") => {
   results.push({ ok: !!ok, name, detail });
@@ -331,15 +352,20 @@ const HEX = (v) => (["#000", "#000000"].includes(v) ? "#000" : ["#fff", "#ffffff
   check("header/foot: the top row holds only the Wallet wordmark",
     !!topRow && topRow.querySelectorAll("button").length === 0 && /^Wallet$/.test((topRow.textContent || "").trim()),
     `${topRow ? topRow.querySelectorAll("button").length : "?"} buttons in the row, text \u201c${(topRow?.textContent || "").trim()}\u201d`);
-  check("header/foot: the dock is a bottom-anchored, centred pill with a safe-area gap",
-    !!dockEl && !!botBar && /fixed inset-x-0 bottom-0/.test(botBar.className) && /justify-center/.test(dockEl.className)
-    && /padding-bottom/i.test(dockEl.parentElement.getAttribute("style") || "")
-    && /env\(safe-area-inset-bottom\)/.test(dockEl.parentElement.getAttribute("style") || ""),
-    dockEl ? (dockEl.parentElement.getAttribute("style") || "-") : "-");
-  check("header/foot: the option menu opens upward from the dock",
-    CSS_SRC.match(/\.cw-dock/) && BUNDLE_SRC.includes("mb-1 w-[248px]") && !BUNDLE_SRC.includes("mt-1 w-[248px]")
-    && BUNDLE_SRC.includes("transformOrigin:`center bottom`"),
-    "the 248px menu is bottom-anchored to the bar instead of hanging off the header");
+  check("header/foot: the dock is a bottom-anchored pill on the right of the wallet column (round 17)",
+    !!dockEl && !!botBar && !!topRow && /fixed inset-x-0 bottom-0/.test(botBar.className)
+    && dockEl.parentElement.className === topRow.className          // the row IS the header row's geometry
+    && /cw-dock/.test(dockEl.className) && /justify-end/.test(topRow.className)
+    && dockEl.querySelectorAll("button").length === 3
+    && /padding-bottom/i.test(botBar.getAttribute("style") || "")
+    && /env\(safe-area-inset-bottom\)/.test(botBar.getAttribute("style") || ""),
+    `${topRow ? topRow.className.slice(0, 54) : "-"} || ${dockEl ? dockEl.className : "-"} || `
+    + `${botBar ? (botBar.getAttribute("style") || "-").slice(0, 46) : "-"}`);
+  check("header/foot: the option menu opens upward from the dock's right edge",
+    CSS_SRC.match(/\.cw-dock/) && BUNDLE_SRC.includes("ml-auto mb-1 w-[248px]")
+    && !BUNDLE_SRC.includes("mt-1 w-[248px]") && !BUNDLE_SRC.includes("mx-auto mb-1 w-[248px]")
+    && BUNDLE_SRC.includes("transformOrigin:`right bottom`"),
+    "the 248px menu must hang upward from the pill's right edge, mirroring the header's placement");
   check("header/foot: the deck reserves the dock's height, safe area included",
     // jsdom normalises the calc() operand order, so accept either
     /padding-bottom: calc\((env\(safe-area-inset-bottom\) \+ 62px|62px \+ env\(safe-area-inset-bottom\))\)/
@@ -528,12 +554,12 @@ const sleeveCount = (d) =>
   [...d.querySelectorAll("#root img[aria-hidden]")].length +
   [...d.querySelectorAll("#root div")].filter((e) => /pointer-events-none absolute left-0 w-full/.test(e.className || "")).length;
 const glassCount = (d) =>
-  [...d.querySelectorAll("#root div")].filter((e) => /backdrop-filter/i.test(e.getAttribute("style") || "")).length;
+  [...d.querySelectorAll("#root div")].filter((e) => /backdrop-filter/i.test(inlineStyle(e))).length;
 const titleStyle = (d) => {
   const el = [...d.querySelectorAll("#root div")].find(
     (e) => /text-align:\s*center/i.test(e.getAttribute("style") || "") && /font-size:\s*13px/i.test(e.getAttribute("style") || "")
   );
-  const st = el?.getAttribute("style") || "";
+  const st = inlineStyle(el);   // was el.getAttribute("style"): jsdom drops perspective/... there
   return {
     color: st.match(/color:\s*([^;]*)/)?.[1] || "",
     shadow: st.match(/text-shadow:\s*([^;]*)/)?.[1] || "",
@@ -712,7 +738,7 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
   };
   const open = () => /WhatsApp/.test(Ds.getElementById("root").textContent || "");
   const cards = () => [...Ds.querySelectorAll("#root div.absolute.no-select")];
-  const styleOf = (el) => el?.getAttribute("style") || "";
+  const styleOf = (el) => inlineStyle(el);
   const num = (re, el) => parseFloat(styleOf(el).match(re)?.[1] ?? "0");
   const ty = (el) => num(/translateY\((-?[\d.]+)px\)/, el);
   const tx = (el) => num(/translateX\((-?[\d.]+)px\)/, el);
@@ -845,7 +871,7 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
     Object.defineProperty(e, "pointerId", { value: 1 });
     return e;
   };
-  const styleOf = (el) => el?.getAttribute("style") || "";
+  const styleOf = (el) => inlineStyle(el);
   const tx = (el) => parseFloat(styleOf(el).match(/translateX\((-?[\d.]+)px\)/)?.[1] ?? "0");
   const zOf = (el) => parseInt(styleOf(el).match(/z-index:\s*(\d+)/)?.[1] ?? "0", 10);
   const cardEls = () => [...Dc.querySelectorAll("#root div.absolute.top-0")];
@@ -930,7 +956,7 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
     Object.defineProperty(e, "pointerId", { value: 1 });
     return e;
   };
-  const styleOf = (el) => el?.getAttribute("style") || "";
+  const styleOf = (el) => inlineStyle(el);
   const tx = (el) => parseFloat(styleOf(el).match(/translateX\((-?[\d.]+)px\)/)?.[1] ?? "0");
   const zOf = (el) => parseInt(styleOf(el).match(/z-index:\s*(\d+)/)?.[1] ?? "0", 10);
   const cardEls = () => [...Dg.querySelectorAll("#root div.absolute.top-0")];
@@ -1016,7 +1042,7 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
     custom: { color: "#2d4a3e", design: "slate", grain: 0.2, grade: 1 },
     slateColor: "#2d4a3e",
   };
-  const styleOf = (el) => el?.getAttribute("style") || "";
+  const styleOf = (el) => inlineStyle(el);
   const gradOf = (el) => (styleOf(el).match(/background:[^;]*/) || ["-"])[0];
   const mount = async (colors, settings) => {
     const st = makeDom({ [CARDS_KEY]: CARDS_COL(colors), [SETTINGS_KEY]: JSON.stringify(settings) }, { withLayout: true });
@@ -1127,7 +1153,7 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
 // wearing the wallet colour (patch17)
 // ---------------------------------------------------------------------------
 {
-  const styleOf = (el) => el?.getAttribute("style") || "";
+  const styleOf = (el) => inlineStyle(el);
   const rgb = (r, g, b) => new RegExp(`rgb\\(\\s*${r},\\s*${g},\\s*${b}\\s*\\)`);
   const wantsDark = (win) => {
     win.matchMedia = (q) => ({
@@ -1287,7 +1313,7 @@ check("header: the wordmark owns the top row, the controls own the dock (round 1
 // every pouch control actually reaching the wallet (patches 18, 19, 20)
 // ---------------------------------------------------------------------------
 {
-  const st = (el) => (el && el.getAttribute("style")) || "";
+  const st = (el) => inlineStyle(el);   // jsdom gap, see inlineStyle
   const rgbRe = (r, g, b) => new RegExp(`rgb\\(\\s*${r},\\s*${g},\\s*${b}\\s*\\)`);
   const CARDS19 = JSON.stringify([
     { id: "p1", src: "cards/one.jpg", title: "Alpha", subtitle: "1", fields: [] },
@@ -1323,13 +1349,22 @@ check("header: the wordmark owns the top row, the controls own the dock (round 1
   check("type: copy carries a hair of negative tracking",
     /line-height:1\.5;letter-spacing:-\.011em/.test(CSS_SRC), "on html,:host");
   check("glass: sheet, card and control tokens are themed, not hardcoded",
-    /:root\{--glass:/.test(CSS_SRC) && /html\.dark\{--glass:/.test(CSS_SRC) && /--glass-blur:34px/.test(CSS_SRC),
+    /:root\{--glass:/.test(CSS_SRC) && /html\.dark\{--glass:/.test(CSS_SRC) && /--glass-blur:14px/.test(CSS_SRC),
     "light + dark values for --glass/--glass-blur");
   check("glass: the panel blurs what is behind it (was an opaque sheet-bg)",
     /\.cw-glass-sheet\{[^}]*backdrop-filter:blur\(var\(--glass-blur\)\) saturate\(1\.7\)/.test(CSS_SRC),
     (CSS_SRC.match(/\.cw-glass-sheet\{[^}]{0,90}/) || ["-"])[0]);
-  check("glass: the scrim blurs the wallet too",
-    /\.cw-scrim\{[^}]*backdrop-filter:blur\(var\(--scrim-blur\)\)/.test(CSS_SRC), "-20px behind the sheet");
+  // Round 17 rewrote this check rather than deleting it: the scrim used to blur at 20px, and because
+  // the sheet is its child, that made the sheet's own blur a *nested* full-screen readback - the lag.
+  check("glass: the scrim dims only - no backdrop-filter, no scrim-blur token left",
+    /\.cw-scrim\{background:var\(--scrim\)\}/.test(CSS_SRC) && !/\.cw-scrim\{[^}]*backdrop-filter/.test(CSS_SRC)
+    && !/--scrim-blur/.test(CSS_SRC),
+    (CSS_SRC.match(/\.cw-scrim\{[^}]{0,60}/) || ["-"])[0]);
+  check("glass: the sheet's blur is capped at 14px and both sheet tokens agree (the lag fix)",
+    /--lg-blur:1[0-6]px/.test(CSS_SRC)
+    && (CSS_SRC.match(/--lg-blur:(\d+)px/) || [])[1] === (CSS_SRC.match(/--glass-blur:(\d+)px/) || [])[1],
+    `--lg-blur ${(CSS_SRC.match(/--lg-blur:(\d+)px/) || ["-", "-"])[1]}px, --glass-blur `
+    + `${(CSS_SRC.match(/--glass-blur:(\d+)px/) || ["-", "-"])[1]}px`);
   check("glass: reduced transparency falls back to solid fills",
     /@media \(prefers-reduced-transparency:reduce\)\{[^@]*\.cw-glass-sheet\{background:var\(--sheet\)\}/.test(CSS_SRC),
     "backdrop-filter:none + var(--sheet/--raised)");
@@ -1344,9 +1379,14 @@ check("header: the wordmark owns the top row, the controls own the dock (round 1
     check("settings: the sheet is the glass panel, not sheet-bg",
       !!sheet && /cw-glass-sheet/.test(sheet?.className) && !/sheet-bg/.test(sheet?.className),
       sheet ? sheet?.className.slice(0, 60) : "no glass panel found");
+    check("settings: the sheet still asks for a real backdrop blur (cheaper radius, not no glass)",
+      !!sheet && /cw-lg-primary/.test(sheet.className)
+      && /\.cw-lg-primary\{[^}]*backdrop-filter:blur\(var\(--lg-blur\)\)/.test(CSS_SRC),
+      sheet ? sheet.className.slice(0, 56) : "no panel");
     const scrim = [...doc.querySelectorAll("#root div")].find((d) => /cw-scrim/.test(d.className || ""));
-    check("settings: the scrim carries the blur, with no opaque inline background",
-      !!scrim && !/background/.test(st(scrim)), st(scrim).slice(0, 60) || "-");
+    check("settings: the scrim is a plain dim layer over the deck (no inline background, nothing to blur)",
+      !!scrim && !/background/.test(st(scrim)) && !/backdrop-filter/.test(st(scrim)),
+      st(scrim).slice(0, 60) || "-");
     check("settings: the title is a heading (.cw-title), not an uppercase label",
       [...doc.querySelectorAll("#root .cw-title")].some((e) => (e.textContent || "").trim() === "Settings"),
       [...doc.querySelectorAll("#root .cw-title")].map((e) => e.textContent).join(",") || "-");
@@ -1409,7 +1449,9 @@ check("settings: the carousel view offers 7 chip buttons and 12 sliders, no pill
       "Card overlap,Vertical offset,Scale,Rotation,Visible cards,Spacing",
       `${chipsNow.length} chips / ${q(sheet, "input[type=range]").slice(7).map((i) => i.getAttribute("aria-label")).join(",")}`);
     check("preview: the stack is really mounted, sized from the stage box (patch21's fit)",
-      !!stage && /perspective-origin/.test(st(stage)) && /min-height: 0px/.test(st(stage)) &&
+      // `min-height: 0` vs `0px` is a cssstyle serialisation detail (React writes the number 0 without a
+      // unit); the contract under test is that the stage box is told to shrink, so accept either.
+      !!stage && /perspective-origin/.test(st(stage)) && /min-height:\s*0(px)?\b/.test(st(stage)) &&
       widest() > 120 && widest() < 400,
       `widest ${widest().toFixed(0)}px, stage ${st(prevIn()).match(/width:[^;]+/)?.[0] || "-"}`);
     check("settings: switching the view in the sheet moves the wallet too, cards untouched",
@@ -1521,7 +1563,7 @@ check("pouch: the view's own Scale sizes the real pouch, not just the preview", 
 // sliders that stay smooth (patches 21 + 22)
 // ---------------------------------------------------------------------------
 {
-  const st = (el) => (el && el.getAttribute("style")) || "";
+  const st = (el) => inlineStyle(el);   // jsdom gap, see inlineStyle
   const L19 = JSON.stringify([{ id: "l1", src: "cards/one.jpg", title: "One", subtitle: "", fields: [] }]);
   const mount = async (settings) => {
     const m = makeDom({ [CARDS_KEY]: L19, [SETTINGS_KEY]: JSON.stringify(settings) }, { withLayout: true });
@@ -1652,7 +1694,7 @@ check("rounds 11-12: no console errors from the compact sheet", m.errors.length 
 // (patches 23 + 24)
 // ---------------------------------------------------------------------------
 {
-  const stl = (el) => (el && el.getAttribute("style")) || "";
+  const stl = (el) => inlineStyle(el);
   const has = (...fs) => fs.every((f) => BUNDLE_SRC.includes(f));
   const detail = (s) => (BUNDLE_SRC.match(new RegExp(s)) || ["-"])[0].slice(0, 96);
 
