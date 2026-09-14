@@ -304,3 +304,12 @@ opacity:1;transition:opacity .2s var(--lg-ease)
 .cw-vault-toast.cw-vault-bad{color:var(--danger)}
 @media (prefers-reduced-motion:reduce){.cw-lock-shake .cw-lock-card{animation:none}.cw-vault-toast{transition:none}}
 @media (max-width:380px){.cw-lock-digit{width:48px;height:58px;font-size:23px}.cw-vault-acts{width:100%}}
+/* =====================================================================================
+   Round 19 - the customization gate. One rule does the locking; the switch row reuses
+   the vault card's rows, so no new colour, no new blur and no new shadow appear here.
+   The gate is scoped to the block inside the Custom Pouch card, which means the deck and
+   every other surface are untouched while it is closed.
+   ===================================================================================== */
+html[data-cw-custom="off"] .cw-cust-body{display:none}
+.cw-cust-slot{display:block}
+@media (prefers-reduced-motion:reduce){.cw-cust-slot *{transition:none}}
