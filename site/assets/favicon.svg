@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Card Wallet">
+  <style>
+    .bg { fill: #fff } .ink { fill: #111113 } .onink { fill: #fff } .cut { fill: #ff453a }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0b0b0d } .ink { fill: #f2f2f5 } .onink { fill: #0b0b0d } .cut { fill: #ff6961 }
+    }
+  </style>
+  <rect class="bg" width="64" height="64" rx="15"/>
+  <rect class="ink" x="15" y="14" width="34" height="13" rx="4" opacity=".38"/>
+  <rect class="ink" x="11" y="22" width="42" height="24" rx="6"/>
+  <rect class="cut" x="17" y="28" width="9" height="5" rx="2.5"/>
+  <rect class="onink" x="17" y="37" width="20" height="3.4" rx="1.7" opacity=".75"/>
+</svg>
