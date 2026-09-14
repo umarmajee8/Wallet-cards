@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy — Card Wallet</title>
+<meta name="description" content="What Card Wallet collects: nothing. How your cards are stored: on your phone. What this website does: sets no cookies and loads nothing from a third party.">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0b0d" media="(prefers-color-scheme: dark)">
+<link rel="canonical" href="https://umarmajee8.github.io/Wallet-cards/privacy.html">
+<link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./assets/site.css">
+<script>try{var m=localStorage.getItem("cw-site-theme");if(m==="dark"||(!m&&matchMedia("(prefers-color-scheme: dark)").matches))document.documentElement.classList.add("dark")}catch(e){}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="bar">
+  <div class="wrap bar-in">
+    <a class="wordmark" href="./" style="text-decoration:none">Card Wallet</a>
+    <button class="theme" id="themeBtn" type="button" aria-pressed="false"><span class="t-lab">Dark</span></button>
+  </div>
+</header>
+
+<main id="main">
+  <section class="wrap">
+    <h1>Privacy</h1>
+    <p class="lede">Short version: there is no account, no server and no analytics, so there is barely a privacy
+      policy to read. The long version, in the order people ask.</p>
+
+    <h2>What the app collects</h2>
+    <p>Nothing. Card Wallet has no sign-up, asks for no email or phone number, and ships no analytics or crash
+      reporting SDK. It makes no network request of its own &mdash; the card data, the photos and the settings
+      never leave the device unless you send them yourself.</p>
+
+    <h2>Where your cards are stored</h2>
+    <p>In the app&rsquo;s private storage on your phone: the card photos you took, the fields you typed, and the
+      design settings. Android&rsquo;s own &ldquo;back up my data&rdquo; mechanism is deliberately switched off for
+      this app (<code>allowBackup=false</code>), so nothing is copied into a Google account behind your back.</p>
+
+    <h2>The 4-digit code</h2>
+    <p>The code is checked on the device and never stored as digits &mdash; only as a random salt and a digest of
+      the code. It is not sent anywhere, and it is not included in your backup file. It locks the app; it is not
+      the key that encrypts the stored data.</p>
+
+    <h2>The backup file</h2>
+    <p><em>Back up now</em> encrypts your cards and settings with AES-GCM&nbsp;256 using a key derived from a
+      password you choose (PBKDF2-SHA256, 150,000 rounds) and hands you one <code>.cwbak</code> file. Where that
+      file then lives &mdash; Google Drive, the Files app, a chat thread, a pen drive &mdash; is your decision and
+      governed by that service&rsquo;s own terms. We cannot read the file and cannot restore it for you: lose the
+      password and the backup is gone. If a device cannot encrypt securely, the app refuses to export rather than
+      writing an unencrypted file.</p>
+
+    <h2>Permissions</h2>
+    <p>Storage for the files you import and export, and the camera or gallery only when you tap to take a picture
+      or pick one. Contacts, location and microphone are never requested. NFC is not enabled in this build.</p>
+
+    <h2>This website</h2>
+    <p>It is static files. It sets no cookies, uses no local storage except the theme switch you click, loads no
+      fonts, scripts or images from any third party, and measures nothing. The links out to GitHub take you to
+      GitHub, where GitHub&rsquo;s own policy applies.</p>
+
+    <h2>Talking to us</h2>
+    <p>Questions go to the project&rsquo;s issue tracker:
+      <a href="https://github.com/umarmajee8/Wallet-cards/issues">github.com/umarmajee8/Wallet-cards/issues</a>.
+      Because there is no server, we cannot look anything up for you &mdash; but we can answer how it works.</p>
+
+    <p class="note">Last reviewed against the round-18 build (app lock and encrypted backup file). If a future
+      release adds sync or an account, this page changes before the app does.</p>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <p><strong>Card Wallet</strong> &mdash; built in Lahore, Pakistan. This site sets no cookies, loads nothing
+      from a third party, and measures nothing about you.</p>
+    <nav aria-label="Site">
+      <a href="./">Home</a>
+      <a href="./terms.html">Terms</a>
+      <a href="https://github.com/umarmajee8/Wallet-cards">Source &amp; issues</a>
+    </nav>
+  </div>
+</footer>
+<script src="./assets/site.js" defer></script>
+</body>
+</html>

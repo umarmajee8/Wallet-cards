@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://umarmajee8.github.io/Wallet-cards/sitemap.xml

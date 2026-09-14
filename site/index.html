@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Card Wallet — your cards on your phone, nobody else's</title>
+<meta name="description" content="An offline Android wallet for your CNIC, licence and bank cards. A 4-digit app lock, encrypted backup files you keep yourself, no account and no cloud sync.">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0b0d" media="(prefers-color-scheme: dark)">
+<link rel="canonical" href="https://umarmajee8.github.io/Wallet-cards/">
+<link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./assets/site.css">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Card Wallet">
+<meta property="og:title" content="Card Wallet — your cards on your phone, nobody else's">
+<meta property="og:description" content="Offline card and ID wallet for Android. 4-digit lock, encrypted backup file you keep yourself. No account, no cloud, no trackers.">
+<meta property="og:url" content="https://umarmajee8.github.io/Wallet-cards/">
+<meta property="og:image" content="https://umarmajee8.github.io/Wallet-cards/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<script>try{var m=localStorage.getItem("cw-site-theme");if(m==="dark"||(!m&&matchMedia("(prefers-color-scheme: dark)").matches))document.documentElement.classList.add("dark")}catch(e){}</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Card Wallet",
+  "applicationCategory": "FinanceApplication",
+  "operatingSystem": "Android",
+  "description": "An offline Android wallet for identity and bank cards, with a 4-digit app lock and user-held encrypted backup files. No account, no cloud sync, no analytics.",
+  "url": "https://umarmajee8.github.io/Wallet-cards/",
+  "downloadUrl": "https://github.com/umarmajee8/Wallet-cards/raw/arena/01a071d5-wallet-cards/CardWallet_lock_backup.apk",
+  "fileSize": "11667507",
+  "isAccessibleForFree": true,
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "PKR" }
+}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="bar">
+  <div class="wrap bar-in">
+    <span class="wordmark">Card Wallet</span>
+    <nav aria-label="Sections">
+      <a href="#how">Data</a>
+      <a href="#security">Security</a>
+      <a href="#screens">Screens</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <button class="theme" id="themeBtn" type="button" aria-pressed="false">
+      <span class="t-lab">Dark</span>
+    </button>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero">
+    <div class="wrap">
+      <h1>Your cards on your phone.<br>Nobody else&rsquo;s.</h1>
+      <p class="lede">Card Wallet keeps your CNIC, driving licence and bank cards as photos and fields on
+        the device in your hand. It opens behind a 4-digit code, and if you switch phones you move your data
+        as one encrypted file &mdash; through Google Drive, Files or WhatsApp, wherever <em>you</em> choose.</p>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/umarmajee8/Wallet-cards/raw/arena/01a071d5-wallet-cards/CardWallet_lock_backup.apk">Download the APK</a>
+        <a class="btn" href="#how">See how it works</a>
+      </div>
+      <ul class="assur">
+        <li>No account, no sign-in</li>
+        <li>No cloud sync, no server</li>
+        <li>No analytics, no cookies</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="wrap trio" id="features">
+    <article class="card">
+      <h2>Locked by four digits</h2>
+      <p>The code is asked for when the app opens cold and again whenever it has been out of view for more
+        than 30&nbsp;seconds. Five wrong codes put a 30-second wait on the gate.</p>
+    </article>
+    <article class="card">
+      <h2>Backup is a file, not an account</h2>
+      <p><em>Back up now</em> writes one <code>.cwbak</code> file containing your cards and settings, sealed
+        with AES-GCM&nbsp;256 under a key stretched from your password. You keep the file.</p>
+    </article>
+    <article class="card">
+      <h2>Works with no internet at all</h2>
+      <p>Aeroplane mode changes nothing: there is no first-party network request in the app, so nothing can
+        leave the phone by itself.</p>
+    </article>
+  </section>
+
+  <section class="wrap flow" id="how">
+    <h2>Where your data actually lives</h2>
+    <ol class="steps-flow">
+      <li><span class="n">1</span><strong>Your cards</strong><p>Photos you took, plus the fields you typed.
+        Saved in the app&rsquo;s own storage on the phone.</p></li>
+      <li><span class="n">2</span><strong>The lock</strong><p>A gate over the app. Your 4-digit code never
+        leaves the device and is stored only as a salted digest.</p></li>
+      <li><span class="n">3</span><strong>The backup file</strong><p>Encrypted with your password before it is
+        written, then handed to the share sheet or your Downloads folder.</p></li>
+      <li><span class="n">4</span><strong>Your choice</strong><p>Drive, Files, WhatsApp, a pen drive &mdash;
+        wherever you put it. We never see it and cannot restore it for you.</p></li>
+    </ol>
+    <p class="note">Two things we would rather say plainly than bury: the 4-digit code locks <em>the app</em>,
+      it is not the key that encrypts your stored cards; and a screenshot, a shoulder-surfer or a rooted phone
+      is outside what any app can control.</p>
+  </section>
+
+  <section class="wrap screens" id="screens" aria-labelledby="screens-h">
+    <h2 id="screens-h">Inside the app</h2>
+    <div class="shots">
+      <figure class="shot"><span class="ph" role="img" aria-label="Screenshot placeholder: the card pouch with three cards stacked">Settings</span><figcaption>Stack or carousel, per-card colour, one global wallet colour.</figcaption></figure>
+      <figure class="shot"><span class="ph" role="img" aria-label="Screenshot placeholder: the 4-digit lock gate">The lock gate</span><figcaption>Opaque by design &mdash; it covers the data it protects.</figcaption></figure>
+      <figure class="shot"><span class="ph" role="img" aria-label="Screenshot placeholder: the Lock and backup card in Settings">Lock &amp; backup</span><figcaption>One card in Settings: the switch, change code, back up, restore.</figcaption></figure>
+      <figure class="shot"><span class="ph" role="img" aria-label="Screenshot placeholder: the restore confirmation dialog">Before it overwrites</span><figcaption>&ldquo;Restore 6 cards? replaces the 4 cards on this phone. This cannot be undone.&rdquo;</figcaption></figure>
+    </div>
+    <p class="note">Screens are the real app; drop your own screenshots into
+      <code>site/assets/screens/</code> to replace these frames (see the README).</p>
+  </section>
+
+  <section class="wrap sec" id="security">
+    <h2>Security, in detail</h2>
+    <details>
+      <summary>The backup file: what is done to it</summary>
+      <p>Cards and settings are serialised, then encrypted with <strong>AES-GCM, 256-bit key</strong>. The key
+        comes from your password through <strong>PBKDF2-SHA256, 150,000 rounds</strong> with a random salt; the
+        salt, IV, algorithm and round count travel inside the file so any future version can open it. The
+        password itself is never stored, so a lost backup password cannot be recovered &mdash; by us or by
+        anyone else.</p>
+    </details>
+    <details>
+      <summary>No plaintext path, ever</summary>
+      <p>If a device cannot provide secure encryption, the app <strong>refuses to export</strong> and tells you
+        why (its WebView needs updating). It will not quietly downgrade to an unencrypted file. A file without an
+        encrypted block is refused on the way back in, for the same reason.</p>
+    </details>
+    <details>
+      <summary>The 4-digit code</summary>
+      <p>Stored on the device as a random salt plus a 600-round SHA-256 digest &mdash; never as the digits, and
+        never in the backup file. That is why restoring on a new phone leaves the lock off: a new phone has to
+        choose its own code. The digest is deliberately cheap so the gate does not delay the first frame on a
+        slow phone; treat the code as a lock on the app, not as encryption of the stored data.</p>
+    </details>
+    <details>
+      <summary>Forgotten code: what &ldquo;Reset app&rdquo; does</summary>
+      <p>After five wrong codes the gate offers <em>Reset app</em>. It asks twice, says what it will erase, and
+        then clears every card and setting on the phone. There is no backdoor and no support override by design
+        &mdash; a hidden way in would be a hole for everybody else too. Your cards come back only if you have a
+        backup file.</p>
+    </details>
+    <details>
+      <summary>What the app never collects</summary>
+      <p>No name, phone number, email, address book, location, analytics identifier or crash reporter. Card data
+        is not uploaded. CVV and PIN are not asked for and not stored &mdash; the field is deliberately absent
+        from the editor.</p>
+    </details>
+  </section>
+
+  <section class="wrap feats">
+    <h2>Everything else it does</h2>
+    <ul>
+      <li>Front and back photo per card, plus typed fields with the digits you choose to keep</li>
+      <li>A colour for each card and one colour for the whole wallet</li>
+      <li>Stack or carousel presentation, each with its own size, gap and peek settings</li>
+      <li>Search across cards, and a pouch view you can rearrange</li>
+      <li>Share one card as an image, or the whole wallet as an encrypted backup file</li>
+      <li>Light, dark or system theme, with the card cover legible in both</li>
+      <li>No account, no permissions beyond storage &mdash; NFC stays off in this build</li>
+      <li>APK of about 11.7&nbsp;MB</li>
+    </ul>
+  </section>
+
+  <section class="wrap swap">
+    <h2>Switching phones in four steps</h2>
+    <ol class="steps">
+      <li><strong>Back up.</strong> Settings &rarr; Lock &amp; backup &rarr; <em>Back up now</em>, choose a
+        password, then save the <code>.cwbak</code> file to Drive or Files.</li>
+      <li><strong>Install Card Wallet</strong> on the new phone.</li>
+      <li><strong>Restore.</strong> Same card in Settings &rarr; <em>Restore a file</em>, pick the file, type the
+        password.</li>
+      <li><strong>Set a new 4-digit code</strong> on that phone &mdash; the code belongs to a device, so it is not
+        part of the file.</li>
+    </ol>
+    <p class="note">If the deck is large (20 photo cards is roughly 16&nbsp;MB) and the phone&rsquo;s storage is
+      full, the restore stops with a message and leaves the cards already on the phone untouched.</p>
+  </section>
+
+  <section class="wrap faq" id="faq">
+    <h2>Questions people ask</h2>
+    <details>
+      <summary>Can you see my cards, or look them up if I lose my phone?</summary>
+      <p>No. There is no server behind the app, so there is nothing for us to look in.</p>
+    </details>
+    <details>
+      <summary>Can you reset my 4-digit code?</summary>
+      <p>No, and that is not us being unhelpful &mdash; the code is checked against a value on your phone only, so
+        any way in for support would also be a way in for an attacker. You can turn the lock off in Settings as
+        long as you can get in.</p>
+    </details>
+    <details>
+      <summary>Is it safe to leave the backup file in Google Drive?</summary>
+      <p>The file is encrypted with your password before it is written, so the copy in Drive is unreadable
+        without that password. Treat the password as part of the backup: lose it and the file is useless.</p>
+    </details>
+    <details>
+      <summary>Why no cloud sync or app login?</summary>
+      <p>Sync means somebody&rsquo;s server holds your ID photos and an account to break into. A file you keep
+        yourself is smaller trouble: nothing leaves the phone unless you send it, and you can delete or move it
+        whenever you like.</p>
+    </details>
+    <details>
+      <summary>Which Android versions, and is it on the Play Store?</summary>
+      <p>Right now it is a directly installed APK of about 11.7&nbsp;MB; the store listing has not happened yet.
+        The minimum Android version is set by <code>minSdkVersion</code> in the Android project and will be stated
+        on the store page.</p>
+    </details>
+    <details>
+      <summary>iPhone?</summary>
+      <p>Not today. The app is built as an Android package.</p>
+    </details>
+    <details>
+      <summary>What happens to my data if I uninstall the app?</summary>
+      <p>It is removed with the app&rsquo;s storage, which is exactly why the backup file exists. Take the backup
+        before you uninstall &mdash; system backup (<code>allowBackup</code>) is switched off in the manifest so
+        card data is not copied to Google&rsquo;s storage behind your back.</p>
+    </details>
+  </section>
+
+  <section class="wrap get" id="download">
+    <div class="glass get-in">
+      <h2>Get the test build</h2>
+      <p>This is a <strong>debug-signed test build</strong> for review and on-device QA. Not for resale, and not
+        yet the Play Store release. If Card Wallet is already installed, uninstall it first &mdash; a debug build
+        cannot update over a differently signed one.</p>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/umarmajee8/Wallet-cards/raw/arena/01a071d5-wallet-cards/CardWallet_lock_backup.apk">Download APK &mdash; 11,667,507 bytes</a>
+      </div>
+      <p class="hash">Verify the file after it downloads:<br>
+        <code>sha256: 19ede22d53d5d7da63c823d3c0d275a58fd54a9581484767a5281f9dbb5c5937</code></p>
+      <ol class="install">
+        <li>Open the file, allow &ldquo;install unknown apps&rdquo; for your browser once.</li>
+        <li>Or with a cable: <code>adb install CardWallet_lock_backup.apk</code></li>
+        <li>Set a 4-digit code, then take a backup before you need it.</li>
+      </ol>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <p><strong>Card Wallet</strong> &mdash; built in Lahore, Pakistan. This site sets no cookies, loads nothing
+      from a third party, and measures nothing about you.</p>
+    <nav aria-label="Site">
+      <a href="./privacy.html">Privacy</a>
+      <a href="./terms.html">Terms</a>
+      <a href="https://github.com/umarmajee8/Wallet-cards">Source &amp; issues</a>
+    </nav>
+  </div>
+</footer>
+<script src="./assets/site.js" defer></script>
+</body>
+</html>
