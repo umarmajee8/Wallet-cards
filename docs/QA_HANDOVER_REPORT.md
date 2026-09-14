@@ -346,3 +346,56 @@ value is "don't lock the user out / don't lose the file" cannot be signed off fr
   asserts the new stylesheet block contains no colour literal), leaving the older rows alone rather than
   re-tuning copy that passed device review in round 15-17.
 
+---
+
+## Addendum (2026-09-14) - rounds 19 site work and the customization gate; verdict unchanged
+
+**Verdict: ❌ NOT READY FOR CLIENT HANDOVER.** Still 0 CRITICAL open, **6 MAJOR device-unverified**, and
+RELEASE-1/2/3/4 + SECURITY-1 open. This addendum records what moved, what the numbers are now, and what
+round 19 does *not* claim.
+
+* **Build under test is now `CardWallet_custom_gate.apk`** - 11,668,844 bytes, SHA-256
+  `4566eaa23743ffd187004623389997ff0bbea2e8145d004c9740618167a49eaf`. Payload inside it is byte-identical to
+  the reviewed tree (`repo_export/app/index.js` 498,509 bytes, `index.css` 37,259 bytes - asserted by
+  `apk_content_check.py`, not assumed). Still **debug-signed with a throwaway local key**: `adb uninstall
+  com.arena.cardwallet` before installing, and never distribute it.
+* **Gate counts, current tree** (each run end-to-end after the change, not carried over):
+
+  | Layer | Tool | Now | Before |
+  |---|---|---|---|
+  | Behaviour | `qa_feature_suite.mjs` | **259/259** (group "35 customization" = 28) | 231/231 |
+  | Regression | `smoke_test_webview.mjs` | **241/241** | 239/239 |
+  | Material / perf | `liquid_glass_audit.py` | **105/105** | 96/96 |
+  | Payload | `apk_content_check.py` | **78/78** | 70/70 |
+  | Package | `verify_release.py` | 28/29 (akeela FAIL = deliberate debug cert) | 28/29 |
+  | Reproducibility | `replay_chain.py` | IDENTICAL **through patch 34** | through patch 33 |
+  | Static style | `animation_audit.py` | 5 PASS / 0 FAIL (it prints no total) | 5 PASS / 0 FAIL |
+
+* **What round 19 is.** A switch at the top of Custom Pouch. Off by default; while off, one CSS rule
+  (`html[data-cw-custom="off"] .cw-cust-body{display:none}`) removes the colour / cover / stack-and-carousel
+  controls; it closes itself when the sheet unmounts (a 400 ms `slot.isConnected` poll that runs only while
+  open), on `visibilitychange` and on `pagehide`. Nothing is persisted. Values already set keep applying -
+  the gate hides controls, it never reverts a look.
+* **What it is not.** Not a security boundary and not described as one: card data in `localStorage` is in the
+  same shape it has always been (SECURITY-1 untouched). No new permission, no native code, no new blurred
+  surface, no colour literal, no `innerHTML`, no storage key, no analytics, no network call - the audit
+  checks each of those absences against the shipped files.
+* **New risk this round introduces, stated plainly.** It is the first control in this app that *hides UI*, so
+  the failure mode is no longer "a button does nothing" but "the user cannot reach the controls at all" (or
+  reaches them while the switch says off). jsdom cannot settle that: `display:none`, touch targets, TalkBack
+  and frame pacing are device facts. **`docs/DEVICE_TEST_PLAN.md` section AA (10 rows) is therefore part of
+  this round's handover**, with **AA1** and **AA3** as the two blocking rows.
+* **Test-suite lesson recorded.** The first version of the new QA group *crashed* on a tree without the
+  feature (`getComputedStyle(null)`) instead of reporting failures, and four source-level checks could pass
+  vacuously because `String.prototype.indexOf` returning `-1` made their slice empty. Both fixed - null-safe
+  lookups, and every source-level check now asserts the block exists (`HAS19`) before reading it. A test that
+  cannot fail is not evidence; this is the rule being applied to the harness itself.
+* **Negative control for this round.** `replay_chain.py --upto 33 --swap` -> audit **103/105**, smoke
+  **239/241**, QA group 35 **7/28 - 18 explicit failures, no crash**. (`--swap` writes `index.js` only, so the three stylesheet-side
+  rules legitimately still pass on that tree.)
+* **Site round (same branch, already merged).** The marketing site at `site/` is static HTML/CSS/JS with a
+  zero-third-party-request rule enforced by `site/tools/check_site.py` (structural) and
+  `site/tools/contrast.py` (measured through the glass, worst 6.60:1). GitHub Pages is still **not enabled** -
+  the sandbox token cannot write Pages settings - so `https://umarmajee8.github.io/Wallet-cards/` is a
+  pending manual step (Settings → Pages → Deploy from a branch → `main` / `/site`). Nothing in the app
+  depends on it.

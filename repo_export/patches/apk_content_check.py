@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 # Default is the newest artifact this repo ships; pass a path to check another one. Pointing this at a
 # stale APK is how round 17's markers "failed" while the tree was fine, so the file in use is printed below.
-APK = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "CardWallet_lock_backup.apk")
+APK = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "CardWallet_custom_gate.apk")
 JS_ENTRY = "assets/public/assets/index-DfWhHAzK.js"
 CSS_ENTRY = "assets/public/assets/index-BLmxUz06.css"
 
@@ -74,6 +74,11 @@ MUST = [
     ("round 18  a backup file is encrypted with AES-GCM under PBKDF2-SHA256", '"PBKDF2-SHA256"'),
     ("round 18  the export/import file carries its own .cwbak extension", ".cwbak"),
     ("round 18  an unencrypted backup is refused, never written", "Backups are always encrypted"),
+    ("round 19  the Custom Pouch card grows a mount point for the gate", "cw-cust-slot"),
+    ("round 19  the look controls are wrapped in one block the gate can hide", "cw-cust-body"),
+    ("round 19  the gate module is exported on window exactly once", "window.__cwCust = {"),
+    ("round 19  the gate state is never written to storage (a stale 'on' cannot survive a launch)",
+     'var ATTR = "data-cw-custom";'),
     ("carry    NFC and auto-detect stay pinned off at load", "n.autoDetect=!1,n.nfc=!1"),
     ("carry    the Wallet wordmark is the header's own label", "children:`Wallet`"),
 ]
@@ -133,6 +138,13 @@ def main() -> int:
         (lock_rule.group(1)[:70] if lock_rule else "no .cw-lock rule"))
     chk("round 18  the danger colour is a token, not a literal, in the shipped CSS",
         "--danger:#ff453a" in css and "#ff453a" not in css.split("Round 18 - the lock gate")[-1])
+    g19 = css[css.index("Round 19 - the customization gate"):] if "Round 19 - the customization gate" in css else ""
+    chk("round 19  the shipped stylesheet carries the customization-gate block", bool(g19), f"{len(g19)} chars")
+    chk("round 19  the gate hides one block only while <html> says off (fail-open if the module is missing)",
+        'html[data-cw-custom="off"] .cw-cust-body{display:none}' in g19 and g19.count("display:none") == 1, "-")
+    chk("round 19  the gate adds no blurred surface and no colour literal to the app",
+        bool(g19) and "backdrop-filter" not in g19 and not re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(", g19), "-")
+    chk("round 19  the gate's DOM module never builds markup from strings", ".innerHTML" not in js[js.index("window.__cwCust"):] if "window.__cwCust" in js else False, "-")
     for cls in (".cw-range", ".cw-chip", ".cw-dot", ".cw-card", ".cw-lg-preview", ".cw-lg-pouch"):
         m = re.search(r"\n\." + cls[1:] + r"\{([^}]*)\}", css)
         chk(f"perf budget: {cls} re-blurs nothing inside the sheet", not m or "backdrop-filter" not in m.group(1))

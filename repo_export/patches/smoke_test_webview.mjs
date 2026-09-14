@@ -1878,12 +1878,28 @@ check("rounds 11-12: no console errors from the compact sheet", m.errors.length 
 
   // ---- the button budget the user keeps asking for
   const btns = q2(sheet, "button");
-  check("controls: the sheet is 7 chips, 3 switches and a colour row - no per-option buttons",
+  check("controls: the sheet is 7 chips, 4 switches and a colour row - no per-option buttons",
     /* round 18 adds exactly one switch (Lock the app) plus the three row buttons of the same card;
-       the budget grew by that card and by nothing else. */
-    q2(sheet, "button.cw-chip").length === 7 && q2(sheet, "button[role=switch]").length === 3 &&
-    btns.length <= 26 && /Overlap|Vertical offset|Visible cards|Card spacing|Peek amount/.test(sheet.textContent || ""),
+       round 19 adds one more switch (Customize cards) and nothing else. The budget grew by those two
+       rows and by nothing else - see the count assertions in qa_feature_suite.mjs group 34. */
+    q2(sheet, "button.cw-chip").length === 7 && q2(sheet, "button[role=switch]").length === 4 &&
+    btns.length <= 27 && /Overlap|Vertical offset|Visible cards|Card spacing|Peek amount/.test(sheet.textContent || ""),
     `${btns.length} buttons, ${q2(sheet, "button.cw-chip").length} chips, ${q2(sheet, "button[role=switch]").length} switches`);
+  const BT = String.fromCharCode(96);   // the bundle quotes class names with backticks
+  check("round 19: the customization block is wrapped, mounted once and gated by one rule",
+    /* read as plain substrings, not regexes: the bundle is minified and the exact punctuation is the
+       thing under test, so a pattern that silently stops matching would hide a real regression. */
+    BUNDLE_SRC.includes(BT + "cw-cust-slot" + BT + ",ref:e=>{window.__cwCust&&window.__cwCust.mount(e)}")
+    && BUNDLE_SRC.includes("prevBox,(0,U.jsx)(`div`,{className:" + BT + "cw-cust-body" + BT
+      + ",children:(0,U.jsxs)(U.Fragment,{children:[design,layout]})})")
+    && BUNDLE_SRC.split("className:" + BT + "cw-cust-slot" + BT).length - 1 === 1
+    && BUNDLE_SRC.split("className:" + BT + "cw-cust-body" + BT).length - 1 === 1
+    && CSS_SRC.includes('html[data-cw-custom="off"] .cw-cust-body{display:none}')
+    && BUNDLE_SRC.includes('var ATTR = "data-cw-custom";'),
+    `slot=${BUNDLE_SRC.split("cw-cust-slot").length - 1}, body=${BUNDLE_SRC.split("cw-cust-body").length - 1}, rule=${CSS_SRC.includes(".cw-cust-body{display:none}")}`);
+  check("round 19: the gate never persists, so a stale \"on\" cannot survive into the next visit",
+    !/wallet\.cwcustom/.test(BUNDLE_SRC) && !/localStorage[\s\S]{0,400}data-cw-custom/.test(BUNDLE_SRC.slice(BUNDLE_SRC.indexOf("Round 19 - the customization gate"))),
+    "no storage key for the gate");
   check("controls: the Fan chip row is gone, replaced by the Rotation and Overlap sliders it preset",
     !/Flat,Fan,Deck/.test(q2(sheet, "button.cw-chip").map((c) => (c.textContent || "").trim()).join(",")) &&
     BUNDLE_SRC.includes("rt=pc2.rot") && BUNDLE_SRC.includes("ov=pc2.overlap"),

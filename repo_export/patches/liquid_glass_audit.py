@@ -398,6 +398,36 @@ check("round 18: backups are AES-GCM under PBKDF2-SHA256, iterations pinned",
 check("round 18: a restore that busts the storage quota keeps the current deck",
       "your current cards are unchanged" in JS, "-")
 
+V19 = CSS[CSS.index("Round 19 - the customization gate"):] if "Round 19 - the customization gate" in CSS else ""
+BODIES19 = "".join(m.group(2) for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", V19))
+JS19 = JS[JS.index("Round 19 - the customization gate"):] if "Round 19 - the customization gate" in JS else ""
+check("round 19: the customization-gate block is in the shipped CSS and stays small",
+      bool(V19) and len(V19) < 1200, f"{len(V19)} chars")
+check("round 19: the gate adds no blurred surface (the material keeps its three)",
+      "backdrop-filter" not in BODIES19 and CSS.count("backdrop-filter:") == CSS[:CSS.index("Round 19")].count("backdrop-filter:"),
+      f"{CSS.count('backdrop-filter:')} blur decl(s) in the stylesheet, {(V19.count('backdrop-filter'))} of them new")
+check("round 19: no colour literal and no shadow in the gate's declarations - tokens only",
+      re.search(r"#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(", BODIES19) is None and "box-shadow" not in BODIES19, "clean")
+_hide19 = [sel.strip() for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", V19)
+           if "display:none" in body and sel.strip().endswith(".cw-cust-body")]
+check("round 19: the gate hides exactly one block, and only while <html> says off (fail-open)",
+      V19.count("display:none") == 1 and len(_hide19) == 1 and 'html[data-cw-custom="off"]' in _hide19[0],
+      _hide19[0] if _hide19 else "no display:none rule on .cw-cust-body")
+check("round 19: the gate animates nothing of its own (a transition:none under reduced motion is all)",
+      "@keyframes" not in V19 and all("none" in t for t in re.findall(r"transition:[^};]*", V19))
+      and "prefers-reduced-motion" in V19, "-")
+check("round 19: the gate module ships once and mounts once",
+      JS.count("window.__cwCust = {") == 1 and JS.count("className:`cw-cust-slot`") == 1
+      and JS.count("className:`cw-cust-body`") == 1,
+      f"{JS.count('className:`cw-cust-slot`')} slot(s)")
+check("round 19: the wrapped block is exactly the pouch's design + layout, nothing else",
+      "prevBox,(0,U.jsx)(`div`,{className:`cw-cust-body`,children:(0,U.jsxs)(U.Fragment,{children:[design,layout]})" in JS,
+      "-")
+check("round 19: the gate is stateless - no storage, no cookie, no network, no deck write",
+      not re.search(r"localStorage|sessionStorage|document\.cookie|indexedDB|fetch\(|setItem", JS19), "-")
+check("round 19: the gate never builds markup from strings (element calls only)",
+      ".innerHTML" not in JS19 and not re.search(r"insertAdjacentHTML|document\.write", JS19), "-")
+
 print(f"\n{passed}/{total} liquid-glass checks passed")
 if worst_rows:
     print("worst-case contrast measured: " + ", ".join(f"{s}/{l}={r}:1" for s, l, r, _ in worst_rows))

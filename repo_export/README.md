@@ -514,6 +514,60 @@ This repo contains the patched source for the CardWallet app.
     restores it (`qa_feature_suite.mjs`), after that bug made a working auto-lock look over-eager.
 
 
+23. **Round 19 - card customization only while a switch says so** (patch 34 + stylesheet), 2026-09-14.
+  - **The ask, verbatim:** "aik option add kro customization wo on krain tab hi customization kray skain
+    card ki wrna nhi or auto band ho wo". No scope answer came back, so the three open questions are
+    answered in the open (default **off**, it gates the **Custom Pouch** colour / cover / stack-and-carousel
+    sliders, it **auto-closes** when Settings shuts or the app is backgrounded) rather than buried in code.
+  - **Two files, one rule.** `patches/customize_src.js` is appended verbatim into `app/index.js` and
+    `patches/customize.css` into `app/index.css` by `patch34_customization_gate.py`. The patch grows a
+    mount point inside the pouch card - a plain `cw-cust-slot` div whose ref callback calls `window.__cwCust.mount(e)`
+    - and wraps the `design` + `layout` variables in one `cw-cust-body` block. That block is the entire
+    mechanism: `html[data-cw-custom="off"] .cw-cust-body{display:none}`, and the module's only job is to
+    write `on`/`off` on `<html>`. Bundle 494,450 → **498,509 bytes**, stylesheet 36,600 → **37,259 bytes**,
+    `replay_chain.py` reproduces both **through patch 34**.
+  - **Why a class and not React state.** The settings object belongs to the app's own components; a second
+    writer would fight it and would also have to survive the sheet's re-renders. With a CSS-level gate the
+    sliders keep working through every re-render, existing values keep applying while the block is hidden
+    (the gate hides *controls*, never the user's look), and a module that fails to run leaves everything
+    visible - **fail-open is the safe direction for a UX guard**, and the QA group asserts that no
+    unqualified `display:none` on `.cw-cust-body` exists in the stylesheet.
+  - **Auto-off, and the ref trap it had to dodge.** Closing the sheet is detected by polling
+    `slot.isConnected` every 400 ms *only while the gate is open* (a `MutationObserver` on the document
+    would fire on every deck animation), plus `visibilitychange` on `document` and `pagehide`. React calls
+    an inline ref with `null` and then the node on **every** re-render, so a null ref must not be read as a
+    close - otherwise the first slider drag would shut the gate. One check exists specifically for that:
+    after three drags the gate is still on and the slot still holds exactly one row.
+  - **Nothing is persisted - deliberately.** No key, no cookie, no `indexedDB`: the switch lives as long as
+    the screen does. "Remembered on" is the same bug as "off that you forgot about", and it also keeps
+    `wallet.settings.v1` and the `.cwbak` backup out of reach of a second writer. The audit and the QA group
+    both read the module's source to prove the absence, and the gate adds **no** blurred surface, colour
+    literal, keyframe, shadow or `innerHTML`.
+  - **Control budget.** The Settings sheet gains exactly one switch (3 → 4) and one button (25 → 26 inside
+    the 27 cap); both smoke and the QA budget check pin the numbers so a future round cannot quietly add
+    a second control to this card.
+  - **Gates.** `liquid_glass_audit.py` **105/105** (96 → 105: block exists and is small, no new blur, no
+    colour literal, one qualified hide rule, no animation of its own, module and slot mounted once, the
+    wrap is exactly design+layout, and the gate touches no storage), QA feature suite **259/259**
+    (231 → 259: new group "35 customization", 28 checks - including `getComputedStyle` proving the block
+    computes to `display:none` while closed and is laid out when open, zero writes for a toggle, an edit
+    made while open being stored and *kept* after the gate closes, auto-off on Done / background / pagehide,
+    no interval left behind, the switch staying reachable in both states, and that layout mode, theme and
+    the lock card are not gated), web smoke **241/241**, `apk_content_check.py` **78/78** against
+    `CardWallet_custom_gate.apk` (70 → 78: the slot, the wrapped block, the export, the statelessness and
+    the shipped CSS rule are read out of the APK, not out of the tree), `verify_release.py` **28/29**
+    (only the deliberate debug cert).
+  - **Negative control.** `replay_chain.py --upto 33 --swap` (bundle without patch 34; `--swap` writes
+    `index.js` only, so the stylesheet-side rules legitimately still hold) -> audit **103/105**, smoke
+    **239/241**, QA group 35 **7/28 (the 7 that still pass are the stylesheet-side and absence rules - `--swap` writes `index.js` only)**. Writing that group surfaced a harness bug worth keeping as a
+    rule: every lookup in a feature group must be null-safe and every source-level check must first assert
+    the block it reads exists, or "feature missing" reports as a crash instead of a failure.
+  - **Device work.** `docs/DEVICE_TEST_PLAN.md` section **AA** (10 rows) - reveal-without-reload, no jank
+    on the toggle, auto-off on close and on backgrounding, rotation mid-edit, TalkBack, hit targets, and
+    old-WebView behaviour (the gate involves no `backdrop-filter`, so it must look identical on Android
+    6-9). **AA1** and **AA3** are handover gates: a customization switch that does not actually reveal the
+    controls, or that lets edits through while off, is worse than no switch.
+
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.
