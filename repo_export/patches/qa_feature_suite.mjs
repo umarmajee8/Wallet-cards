@@ -1583,6 +1583,7 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
     const R19 = CSSR.slice(CSSR.indexOf("Round 19 - the customization gate"));
     const MOD = CODE.slice(CODE.indexOf("Round 19 - the customization gate"));
     const HIDE_RULE = /html\[data-cw-custom="off"\] \.cw-cust-body\{display:none\}/;
+    const HAS19 = CODE.includes("Round 19 - the customization gate") && CSSR.includes("Round 19 - the customization gate");
     const attrOf = (w) => w.document.documentElement.getAttribute("data-cw-custom");
     const gateSwitch = (w) => all(w, ".cw-cust-slot button[role=switch]").find((b) => /Customize cards/.test(b.getAttribute("aria-label") || ""));
     const gated = (w) => all(w, "#root .cw-cust-body")[0] || null;
@@ -1602,9 +1603,10 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
     const b = boot({ [CARDS_KEY]: JSON.stringify(sample(3)), [SETTINGS_KEY]: JSON.stringify({ view: "stack" }) });
     await settle(b.w, 800);
     const slot = await openCust(b.w);
+    /* every lookup below is null-safe: a tree without patch 34 must report FAILs, not blow up the harness */
     const sheet = all(b.w, "#root div").find((d) => /cw-glass-sheet/.test(d.className || ""));
     check(g, "the Custom Pouch card grows exactly one mount point, inside the sheet and inside that card",
-      !!slot && all(b.w, ".cw-cust-slot").length === 1 && !!slot.closest(".cw-lg-pouch") && !!slot.closest(".cw-glass-sheet"),
+      !!slot && all(b.w, ".cw-cust-slot").length === 1 && !!slot.closest?.(".cw-lg-pouch") && !!slot.closest?.(".cw-glass-sheet"),
       slot ? `in pouch:${!!slot.closest(".cw-lg-pouch")} in sheet:${!!slot.closest(".cw-glass-sheet")}` : "no slot");
     check(g, "customization is closed by default: the attribute says off before anyone touches it",
       attrOf(b.w) === "off", `html[data-cw-custom]=${attrOf(b.w)}`);
@@ -1612,7 +1614,7 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
     check(g, "the gate is one real switch with a plain-language note about what it does",
       !!sw && sw.getAttribute("role") === "switch" && sw.getAttribute("aria-checked") === "false"
       && sw.getAttribute("aria-label") === "Customize cards"
-      && /switches off by itself when you close Settings/i.test(slot.textContent || ""),
+      && /switches off by itself when you close Settings/i.test(slot?.textContent || ""),
       sw ? `aria-checked=${sw.getAttribute("aria-checked")}` : "no switch");
     const body = gated(b.w);
     check(g, "every look control is wrapped in one block: colours, cover and all of the sliders",
@@ -1626,13 +1628,14 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
     check(g, "the rule that does the hiding exists verbatim in the shipped stylesheet",
       HIDE_RULE.test(CSSR) && injectRule(b.w), HIDE_RULE.test(CSSR) ? "injected into the document" : "missing");
     check(g, "closed means gone from the screen: the block computes to display:none, not dimmed or disabled",
-      b.w.getComputedStyle(body).display === "none", `display=${b.w.getComputedStyle(body).display}`);
+      !!body && b.w.getComputedStyle(body).display === "none",
+      body ? `display=${b.w.getComputedStyle(body).display}` : "no wrapped block to hide");
     const wBefore = b.inst.writes.length;
     await click(b.w, sw, 400);
     check(g, "one tap opens the gate: the attribute flips and the block is laid out again",
-      attrOf(b.w) === "on" && b.w.getComputedStyle(body).display !== "none"
-      && gateSwitch(b.w).getAttribute("aria-checked") === "true",
-      `attr=${attrOf(b.w)} display=${b.w.getComputedStyle(body).display}`);
+      !!body && attrOf(b.w) === "on" && b.w.getComputedStyle(body).display !== "none"
+      && gateSwitch(b.w)?.getAttribute("aria-checked") === "true",
+      `attr=${attrOf(b.w)} display=${body ? b.w.getComputedStyle(body).display : "-"}`);
     check(g, "opening and closing the gate writes nothing at all - no settings, no storage key",
       b.inst.writes.length === wBefore && Object.keys(b.w.localStorage).sort().join(",") === [CARDS_KEY, SETTINGS_KEY].sort().join(","),
       `${b.inst.writes.length - wBefore} write(s); keys ${Object.keys(b.w.localStorage).join(",")}`);
@@ -1647,8 +1650,8 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
       check(g, "an edit made while the gate is open is stored like any other edit",
         st?.custom?.stack?.size === v, `stored size=${st?.custom?.stack?.size} wanted ${v}`);
       check(g, "React re-rendering the sheet mid-drag does not close the gate (a null ref is not a close)",
-        b.w.__cwCust.isOn() === true && all(slot, ".cw-vault-row").length === 1,
-        `on=${b.w.__cwCust.isOn()} rows=${all(slot, ".cw-vault-row").length}`);
+        b.w.__cwCust?.isOn() === true && all(slot, ".cw-vault-row").length === 1,
+        `on=${b.w.__cwCust?.isOn()} rows=${all(slot, ".cw-vault-row").length}`);
     }
 
     /* auto-off: closing Settings */
@@ -1659,8 +1662,8 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
     await click(b.w, anyBtn(b.w, /^Done$/), 900);
     await settle(b.w, 700);
     check(g, "closing Settings closes the gate by itself - nobody has to remember to",
-      attrOf(b.w) === "off" && b.w.__cwCust.isOn() === false,
-      `attr=${attrOf(b.w)} isOn=${b.w.__cwCust.isOn()}`);
+      attrOf(b.w) === "off" && b.w.__cwCust?.isOn() === false,
+      `attr=${attrOf(b.w)} isOn=${b.w.__cwCust?.isOn()}`);
     check(g, "and the watch is stopped with it (no interval left polling after the sheet is gone)",
       b.inst.intervals.size === 0, `${b.inst.intervals.size} interval(s) left`);
     const stAfter = readSettings(b.w);
@@ -1695,20 +1698,20 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
     /* source-level contract: fail-open, stateless, cheap */
     const hides = [...CSSR.matchAll(/([^{}\n]*)\.cw-cust-body\{([^}]*)\}/g)].filter((m) => /display:\s*none/.test(m[2]));
     check(g, "fail-open: nothing is hidden unless the app explicitly wrote off, so a dead module cannot lock the user out",
-      hides.length === 1 && /html\[data-cw-custom="off"\]\s*$/.test(hides[0][1]) && HIDE_RULE.test(CSSR),
+      HAS19 && hides.length === 1 && /html\[data-cw-custom="off"\]\s*$/.test(hides[0][1]) && HIDE_RULE.test(CSSR),
       `${hides.length} hide rule(s): ${(hides[0] ? hides[0][1].trim() : "none")} | ${(hides[0] ? hides[0][2] : "").slice(0, 40)}`);
     check(g, "the gate holds no state anywhere an old value could survive: no storage, no cookie, no indexedDB",
-      !/localStorage|sessionStorage|document\.cookie|indexedDB/.test(MOD),
+      HAS19 && !/localStorage|sessionStorage|document\.cookie|indexedDB/.test(MOD),
       (MOD.match(/localStorage|indexedDB|document\.cookie/g) || []).join(",") || "none");
     check(g, "double-inclusion is inert and the module builds its DOM without innerHTML",
-      /if \(window\.__cwCust\) return;/.test(MOD) && !/\.innerHTML\s*=/.test(MOD), "-");
+      HAS19 && /if \(window\.__cwCust\) return;/.test(MOD) && !/\.innerHTML\s*=/.test(MOD), "-");
     check(g, "it costs the frame budget nothing: no blur, no keyframes, no transition except a reduced-motion off-switch",
-      !/backdrop-filter|@keyframes/.test(R19) && (R19.match(/transition:[^}]*/g) || []).every((t) => /none/.test(t))
+      HAS19 && !/backdrop-filter|@keyframes/.test(R19) && (R19.match(/transition:[^}]*/g) || []).every((t) => /none/.test(t))
       && /prefers-reduced-motion/.test(R19), R19.replace(/\s+/g, " ").slice(0, 90));
     check(g, "the slot is mounted by a ref on a plain div - React keeps ownership of nothing the gate touches",
       CODE.includes(SLOT_REF) && (CODE.split(SLOT_REF).length - 1) === 1, `${CODE.split(SLOT_REF).length - 1} mount site(s)`);
     check(g, "the gate's row reuses the vault row's classes - no new colour, no new surface in the app",
-      /"cw-vault-row"/.test(MOD) && /"cw-vault-switch"/.test(MOD) && /"cw-vault-on"/.test(MOD)
+      HAS19 && /"cw-vault-row"/.test(MOD) && /"cw-vault-switch"/.test(MOD) && /"cw-vault-on"/.test(MOD)
       && !/#|rgba?\(|hsla?\(/.test(R19), "reuses .cw-vault-* only");
     b.close();
 
@@ -1716,7 +1719,7 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
     const b2 = boot({ [CARDS_KEY]: JSON.stringify(sample(3)) });
     await settle(b2.w, 700);
     check(g, "a fresh launch is a closed gate: the last visit's choice is not remembered",
-      attrOf(b2.w) === "off" && b2.w.__cwCust.isOn() === false && b2.errors.length === 0,
+      attrOf(b2.w) === "off" && b2.w.__cwCust?.isOn() === false && b2.errors.length === 0,
       `attr=${attrOf(b2.w)} errs=${b2.errors.length}`);
     check(g, "with the gate closed the wallet itself is untouched: the deck paints and no stray block is mounted on it",
       all(b2.w, "#root img").length >= 3 && !all(b2.w, "#root .cw-cust-body").length,
