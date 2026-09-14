@@ -1240,3 +1240,81 @@ nahi tha aur **OPEN** ha; haan, 30 s background ke baad Recents ka thumbnail ab 
 deck nahi - mitigation, fix nahi. Naya device section **Z** (12 rows) verify karna zaroori ha: cold-start
 timing, keyboard ka digit boxes ke sath bartao, Share sheet/Drive par file, fresh install par restore,
 Android 6-9 par subtle-crypto ka inkar, aur cool-down jab app background me ho.
+
+## 23. Round 19 - customization gate: switch on ho tab hi card ki look badle (patch 34 + stylesheet), 2026-09-14
+
+**Kya manga gaya:** "aik option add kro customization wo on krain tab hi customization kray skain card ki
+wrna nhi or auto band ho wo". Teen scoping sawal (kya gate kiska kaam kare, kab band ho, default) chhordie
+gae, is liye assumption likh kar banaya gaya - **default OFF**, gate **Settings → Custom Pouch** ke colour /
+cover / stack-carousel controls ko band karta ha, aur **sheet band hone par (aur app background me jane par)
+khud band** ho jata ha. Yeh choice neeche har jagah "assumption" ke tor par namood ha, chhupaya nahi gaya.
+
+**Kya bana.** `repo_export/patches/customize_src.js` (3,875 B) bundle me append hota ha
+`patch34_customization_gate.py` se, aur `customize.css` (659 B) `app/index.css` me. Custom Pouch card ke
+`children` me do badlaw: `cw-cust-slot` (jaha module apna switch bana leta ha, `ref: e =>
+window.__cwCust && window.__cwCust.mount(e)` - koi React state share nahi hoti) aur `cw-cust-body`, jisme
+`design` + `layout` wrap ho jate han. Bundle 494,450 → **498,509 B**, stylesheet 36,600 → **37,259 B**,
+`replay_chain.py` ab **patch 34 tak IDENTICAL** ha.
+
+**Ek rule, poora kaam.** `html[data-cw-custom="off"] .cw-cust-body{display:none}` - module ka sirf kaam ha
+ke `<html>` par `on`/`off` likhe. Is se teen cheezen khud-ba-khud theek ho jatin han: (a) **values apply
+rehti han** - jo look user ne pehle set ki, gate band karne par wo qaim rehti ha, kyunke sirf controls
+chup'te han; (b) **React ke sath koi jhagra nahi** - settings ka object uska apna ha, gate usme likhta hi
+nahi; (c) **fail-open** - agar module kabhi na chale to attribute unset ha aur controls gayab nahi hote
+(gate khona, customization khone se behtar ha). QA me teeno ka apna apna check ha.
+
+**Auto-off kaise.** Do raste: (1) slot document se hat jaye - module 400 ms par `slot.isConnected` dekhta
+ha, sirf tab jab gate **on** ha (band hone par `clearInterval`, koi document-wide `MutationObserver` nahi,
+warna deck ki har animation par callback); (2) `visibilitychange` (document par, kyunke jsdom me
+window tak visibilitychange propagate nahi hota) aur `pagehide`. `ref(null)` ko close nahi samjha jata -
+har re-render par React purana ref null karta ha aur naya node deta ha, is liye drag ke dauran gate nahi
+band hota (QA me yeh specifically test ha: 3 slider drags ke baad bhi `isOn() === true` aur slot me
+**ek** row).
+
+**Kuch bhi persist nahi hota.** Na `wallet.cwcustom.v1`, na koi key - state sirf page ke zindagi bhar
+rehti ha. Yeh jaan boojh kar: "yaad rakha hua on" ka matlab ha "bhool gaya that auto-band wala rule".
+Isi liye `localStorage`/`sessionStorage`/`document.cookie`/`indexedDB` module me ek bar bhi nahi aate
+(audit + QA donon check karte han), aur backup/restore bhi gate ke baare me kuch nahi lete.
+
+**Scope me nahi jo cheezen.** NFC, theme (System/Light/Dark chips), Lock & backup ka card aur pouch ka
+live preview **gate ke bahar** han - unka taluq card ki look ke customization se nahi. Gate UI ka
+control-budget sirf **ek switch** barha: sheet me 4 switches, 25 buttons, 7 chips (smoke + QA me count
+pinned). Naya CSS sirf tokens reuse karta ha: **0 `backdrop-filter`, 0 colour literal, 0 `@keyframes`,
+0 `box-shadow`** - vault card ki `.cw-vault-row/.cw-vault-switch/.cw-vault-on` classes use hoti han.
+`innerHTML` bhi nahi (QA: 0 assignments).
+
+**Gates (sab isi tree par, APK ke andar ka payload byte-identical):**
+
+| Gate | Pehle | Ab |
+|---|---|---|
+| `liquid_glass_audit.py` | 96/96 | **105/105** (9 round-19 rules) |
+| `smoke_test_webview.mjs` | 239/239 | **241/241** (2 new; switch budget 3→4) |
+| `qa_feature_suite.mjs` | 231/231 | **259/259** (group "35 customization" = 28) |
+| `apk_content_check.py` | 70/70 | **78/78** |
+| `verify_release.py` | 28/29 | 28/29 (akeela FAIL jaan boojh kar: debug cert) |
+| `replay_chain.py` | patch 33 tak | **patch 34 tak IDENTICAL** (498,509 B) |
+
+**Negative control.** `replay_chain.py --upto 33 --swap` (bundle me patch 34 ke baghair; `--swap` sirf
+`index.js` badalta ha, stylesheet chhoota rehta ha - is liye CSS-side rules legitimately pass hain):
+audit **103/105**, smoke **239/241**, QA group 35 **7/28**. Pehli bar group 35 crash kar gaya tha
+(`getComputedStyle(null)`) - theek kiya ke har lookup null-safe ha aur source-level checks pehle
+`HAS19` maangte han, warna "feature nahi ha" ka natija test-fail ki jagah harness-crash ban jata ha.
+
+**jsdom ki had.** `display:none` visibility checks jsdom ke cascade par chalte han (us version me attribute
+selector + `getComputedStyle` kaam karta ha - pehle alag se prove kiya gaya), lekin **asli rendering, touch
+target, TalkBack aur frame pacing is environment me test nahi ho sakte** - `docs/DEVICE_TEST_PLAN.md`
+section **AA** (10 rows) isi liye ha. AA1 (on karte hi controls aeen, koi reload nahi) aur AA3 (band hone par
+controls gayab, aur dubara kholne par gate band) handover gates han.
+
+**Artifact:** `CardWallet_custom_gate.apk` - **11,668,844 B**, sha256
+`4566eaa23743ffd187004623389997ff0bbea2e8145d004c9740618167a49eaf`, `repo_export/app/index.js`
+498,509 B (md5 `10fcb590b62a75332a1aa2c5155ffcb1`) aur `index.css` 37,259 B, APK ke andar tree se byte-identical. Debug-signed
+(throwaway key), `allowBackup=false`, release sign ki koshish **nahi** ki gayi. Install se pehle
+`adb uninstall com.arena.cardwallet`.
+
+**Handover:** verdict **wahi - NOT READY FOR CLIENT HANDOVER** (6 MAJOR device-unverified, RELEASE-1/2/3/4
+aur SECURITY-1 OPEN). Round 19 naya risk add nahi karta - na permission, na native code, na storage key,
+na blurred surface - lekin yeh pehla control ha jo **UI ko chupata ha**, is liye AA ki 10 rows zaroori han:
+agar kisi device par switch on hone par bhi controls na aayen, ya off par kaam karte rahen, to gate khuli
+hawa ha. Yeh **UX guard ha, security control nahi** - card data `localStorage` me waisa hi ha asha ta
+pehle tha, aur copy me kabhi "protected" nahi likha gaya.

@@ -515,6 +515,31 @@ cool-down resets when the app is hidden"). Two rows are hard gates for handover 
 that can lock a user out, or a backup that cannot be restored, is worse than no feature.
 
 
+## AA. Round 19 - the customization gate (patch 34 + stylesheet)  ⚠ this is the first control that *hides* UI - prove it reveals again
+
+The gate's logic is fully covered in jsdom (28 QA checks: default off, one tap on, `display:none` while off,
+auto-off on close/background, zero writes, values kept). What jsdom cannot show is whether a real phone
+*renders and receives touch* the way the mechanism assumes: `display:none` on a wrapper, a 400 ms containment
+poll, and a switch inside a sheet that framer-motion is animating. Work top to bottom - **AA1 and AA3 are
+handover gates**.
+
+| # | Do this | Expect |
+|---|---------|--------|
+| AA1 | Fresh install (or `adb install -r` after uninstalling). Settings → Custom Pouch. | The switch row "Customize cards" sits at the top of the pouch card, and **no** colour row, cover control or slider is visible below it. Toggle it on: the controls appear **immediately, with no reload, no flicker of the deck, and no sheet re-open**. Toggle off: they are gone again. Nothing about the wallet behind the sheet changes in either state. |
+| AA2 | While the gate is on, drag every slider (Stack: overlap / offset / scale / rotation / visible / spacing; Carousel: spacing / scale / side / peek / position) and tap every colour and cover control. | Every control behaves exactly as it did before round 19 - live value on the finger, the deck and the preview both moving, the glide landing on the value. The values are written the moment you release, and the sheet's scroll must not swallow the drag near the switch row. |
+| AA3 | With the gate on, close Settings (Done, swipe down, or Android Back). Reopen Settings. | On close the gate **shuts by itself**: reopening shows the switch off and the controls hidden again. There is no state in which Settings opens with the controls available without the switch being on - and no visible delay or jump when the block is removed. |
+| AA4 | Gate on, then: press Home, pull the notification shade down and leave it, open the camera switch, switch to another app for 5 s and for 60 s, each time returning with Settings still open. | Returning from a quick shade peek leaves the gate as it was **only if the app never went to the background**; a real background trip closes it. No crash, no blank sheet, and the sliders you had dragged keep their values. |
+| AA5 | Rotate the phone (or fold/unfold, or resize on a tablet) with the gate open mid-drag; then rotate after closing. | The process of recreating the activity resets the gate to off (by design - nothing is persisted), the deck keeps every value, and the switch row is drawn once, never twice, after the rotate. |
+| AA6 | Kill the app from Recents while the gate is on, relaunch. Then do it again with a code enrolled in round 18's lock. | After relaunch the gate is off (no stale "on"). With the lock enrolled: the 4-digit gate first, then the wallet, and Settings still opens with customization closed. The two features must not stack controls or fight over the sheet. |
+| AA7 | Turn the gate on and off with TalkBack (and with a Bluetooth keyboard if available: Tab to the switch, Space). | The row is announced as "Customize cards, switch, on/off" - one control, not a group of buttons; the hidden block is absent from the accessibility tree while off (a slider must not be reachable by swipe-and-double-tap behind a closed gate), and focus does not get stranded when the block disappears under the focus. |
+| AA8 | Frame pacing: on the oldest/lowest-spec phone you have, open Settings and toggle the switch 10 times fast; then open with the gate off and scroll. | Toggling costs one style recalculation - no blur readback (the gate adds no `backdrop-filter` anywhere), no sheet jank, no 100 ms freeze on the first reveal. Compare with round 17's rule: the sheet still blurs once at 14px. If a toggle feels slower than the theme switch, that is a defect to file. |
+| AA9 | Android 6-9 / a WebView without `backdrop-filter` support, and a device in each theme (light and dark) at 320-430 px width. | The switch row is legible and correctly sized in both themes (it reuses the vault row's tokens, so it must match the "Lock & backup" card exactly) and the row does not clip or wrap the caption into the toggle at the narrowest width. |
+| AA10 | Read the copy out loud and compare it to what the build does. | "Turn on to change card colours, the cover and how the deck is arranged. It switches off by itself when you close Settings." must be literally true - if a future change persists the switch, or gates more than the pouch's look, the copy is wrong and both need updating. This feature is a **guard on editing, not protection of data**: nothing in this round changes what is stored or how. |
+
+Record per row: device, Android + WebView version, result. Two failures are product-blocking: **AA1**
+(the switch does not actually gate the controls on a real screen) and **AA3** (the gate stays open after
+Settings closes, or opens already-on, which is the exact behaviour that was asked to be impossible).
+
 ## Sign-off
 
 The build may only be called production-ready once **A–Z are green** on at least
