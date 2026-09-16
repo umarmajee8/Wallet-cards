@@ -439,3 +439,44 @@ the defect, not to the implementation.
 cancellation, a glide under a resting thumb), frame pacing during rapid flicks, TalkBack, and the
 lowest-spec device. `docs/DEVICE_TEST_PLAN.md` section **AB** (8 rows; **AB1** and **AB2** are handover
 gates) is the device half of this round. Verdict: **NOT READY FOR CLIENT HANDOVER** - unchanged.
+
+## Addendum (2026-09-16) - round 21: the header's "Wallet" label is removed
+
+**Ask:** the client asked for the top-left "Wallet" text to go, keeping the rest of the header intact -
+*"just remove that text element, don't leave empty spacing or misalign the remaining icons after
+removal."* This reverses the round-9 ask that put the wordmark there (`docs/FINAL_REPORT.md` §13), and the
+override is recorded in the tooling (patch 17 carries a `SUPERSEDED` entry, so a replay of the chain still
+recognises its own wordmark edit after patch 36 removed the span).
+
+**Scope:** one span. The bundle was measured first: after round 16 the header row's only child *was* the
+label (Add / Search / More live in the bottom dock), the container that owns `ref:d` is what dismisses the
+option menu on an outside tap, and the deck's top reserve (`safe-area + 58 px`) belongs to the layout, not
+to the label. The patch touches the span and nothing else - the container, dock, menu, row classes and
+both reserves are byte-identical. The empty row is zero-height and `pointer-events:none`, so there is no
+strip and no new hit area; keeping it preserves round 17's "dock row == header row" geometry rule.
+`/*cardwallet:header*/` survives (it is the app-code start marker the content check scopes with and
+`verify_release.py` asserts); `/*cardwallet:no-wordmark*/` marks the removal.
+
+**Evidence:** web smoke **262/262** (was 261 - the wordmark checks became absence checks, plus three new
+ones: the dock keeps its three controls, the reserves are untouched, `ref:d` is still the container's),
+QA feature suite **281/281**, `apk_content_check.py` **79/79** (new positive marker row + a `MUST_NOT` on
+the removed label) against `CardWallet_no_title.apk` (11,669,121 B, sha256
+`75f86c0024ab7b1010e50a292694fbf7979190ae0c66cec4f08b52ab58f15ad4`), `liquid_glass_audit.py` 105/105 (its
+preview no longer draws a wordmark), `animation_audit.py` 10/1 unchanged (no new motion),
+`verify_release.py` 28/29 (only the deliberate debug cert).
+
+**Negative control:** the previous bundle fails 4 smoke checks, 4 content-check rows and 1 QA check
+(group 33, 29/30). One draft check was caught proving nothing - `!/\bWallet\b/.test(text)` passed against
+the *pre-fix* bundle because `textContent` concatenates the label straight into the first card's title
+("WalletPlatinum Debit Card..."); it now counts the element, which does bite.
+
+**Not verified here:** the pixel questions - is the corner actually empty under a notch, did the deck stay
+put against the previous build, is the corner dead space on a real touch screen, does the menu still close
+on an outside tap. `docs/DEVICE_TEST_PLAN.md` section **AC** (5 rows) is the device half; **AC2** and
+**AC3** are the rows this patch could plausibly get wrong. Verdict: **NOT READY FOR CLIENT HANDOVER** -
+unchanged (round 20's **AB1**/**AB2** remain the two handover gates).
+
+**Note for the reviewer:** this round sits on the same branch as round 20, so the pull request carries
+both rounds and the site/download pointers now name `CardWallet_no_title.apk`; until the PR is merged the
+GitHub raw link on `download/index.html` resolves only against `main` (the branch-raw URL the client was
+given works meanwhile).

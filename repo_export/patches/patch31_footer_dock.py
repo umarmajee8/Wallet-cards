@@ -74,15 +74,16 @@ def rewrap(code: str) -> str:
 
 def main() -> int:
     code = CODE
-    try:
-        moved = rewrap(code)
-    except ValueError as e:
-        print(f"  FAIL  the header row is not the shape this patch expects ({e})")
-        return 1
     if "cw-dock" not in code:
-        code = moved
+        try:
+            code = rewrap(code)
+        except ValueError as e:
+            print(f"  FAIL  the header row is not the shape this patch expects ({e})")
+            return 1
         print("  ok    the three controls + their menu moved into a bottom dock")
     else:
+        # Round 21 (patch 36) empties the wordmark row, so the re-wrap's own anchor (`,children:`Wallet`})`)
+        # is legitimately gone on a patched tree - the dock being present is what says the work is done.
         print("  DONE  dock already present, skipping the re-wrap")
     edits = [("option menu opens upward from the dock", MENU_OLD_CLASS, MENU_NEW_CLASS),
              ("dropdown origin is now the dock's top edge", MENU_OLD_ORIGIN, MENU_NEW_ORIGIN),

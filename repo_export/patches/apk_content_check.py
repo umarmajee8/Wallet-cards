@@ -68,7 +68,8 @@ MUST = [
     ("round 16  the dock bar is anchored to the bottom edge", "fixed inset-x-0 bottom-0 z-40"),
     ("round 16/17  the option menu opens upward from the dock", "transformOrigin:`right bottom`"),
     ("round 16  the deck reserves the dock's height", "paddingBottom:`calc(env(safe-area-inset-bottom) + 62px)`"),
-    ("round 16  the wordmark is the only thing left in the top bar", "children:`Wallet`})]}),"),
+    ("round 21  the top-left wordmark is gone, and the marker says why the row is empty",
+     "/*cardwallet:no-wordmark*/"),
     ("round 18  the app ships a 4-digit gate with its own digit boxes", "cw-lock-digit"),
     ("round 18  the lock state lives in its own store, apart from settings", "wallet.vault.v1"),
     ("round 18  a backup file is encrypted with AES-GCM under PBKDF2-SHA256", '"PBKDF2-SHA256"'),
@@ -80,12 +81,14 @@ MUST = [
     ("round 19  the gate state is never written to storage (a stale 'on' cannot survive a launch)",
      'var ATTR = "data-cw-custom";'),
     ("carry    NFC and auto-detect stay pinned off at load", "n.autoDetect=!1,n.nfc=!1"),
-    ("carry    the Wallet wordmark is the header's own label", "children:`Wallet`"),
+    ("carry    the header row is empty but still there (the dock's geometry twin, round 17)",
+     "children:[/*cardwallet:header*//*cardwallet:no-wordmark*/]"),
 ]
 MUST_NOT = [
     ("removed feature 'Auto-detect details' must stay out", "Auto-detect details"),
     ("removed feature 'Fill in from picture' must stay out", "Fill in from picture"),
     ("removed feature 'Make your own pouch' must stay out", "Make your own pouch"),
+    ("round 21  the removed 'Wallet' header label must stay out", "children:`Wallet`"),
     ("no CVV/CVC field may be offered or stored (patch29)", "`CVV`"),
     ("no eval in the shipped bundle", "eval("),
 ]

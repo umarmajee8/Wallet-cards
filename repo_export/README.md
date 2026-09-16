@@ -631,10 +631,59 @@ This repo contains the patched source for the CardWallet app.
     cards that drift sideways during a normal scroll, or a deck that stops answering after one weird swipe,
     are exactly the report this round closes.
 
+25. **Round 21 - the header's "Wallet" label is removed** (patch 36), 2026-09-16.
+  - **The ask, verbatim:** *"Remove the \"Wallet\" text label shown at the top-left of the screen (the app
+    title/header text). Keep the rest of the header layout (search icon, menu icon, add button etc.)
+    intact - just remove that text element, don't leave empty spacing or misalign the remaining icons
+    after removal."* The wordmark was round 9's mandate (patch 17: *"header pr top left corner pr bara
+    bold Wallet likho, font ios wala ho"*), so this round deliberately overrides a previous ask.
+  - **What was actually there.** Measured from the shipped bundle: the header row's only child was the
+    label. Round 16 (patch 31) had already moved Add / Search / More into the bottom dock, so the three
+    controls the ask names were never siblings of the label and could not be misaligned by deleting it.
+    The fixed container that holds the row is the one with `ref:d` - it is what closes the option menu
+    on an outside tap, and the dock is its child on purpose - so the container, the dock bar, the dock
+    row, the menu and both reserves stayed byte-identical. **The patch touches exactly one span.**
+  - **Why the row is left in place.** An empty flex row is zero-height (no text, no buttons, no padding
+    of its own) and the container is `pointer-events:none`, so there is no visible or tappable strip -
+    but keeping the row keeps two invariants: patch 17's rule that the dock row is literally the header
+    row's class string (the glass audit counts `TOP_ROW_CLASS` **2** times, and section **33** of the QA
+    suite asserts `dock.parentElement.className === headerRow.className`). Removing the row would have
+    broken both, for nothing.
+  - **Why the reserves were not trimmed.** The main column reserves `safe-area + 58 px` at the top and
+    `safe-area + 62 px` at the bottom (rounds 16/17). The deck is centred between them, so trimming the
+    top reserve by the label's height would have moved every card - the ask was to remove a label, not to
+    re-lay-out the wallet. Nothing moved; if the top band should be tightened later, that is a deliberate
+    change with its own before/after (it would move the deck by half the delta).
+  - **The marker convention.** `/*cardwallet:header*/` stays: it is patch 8's marker, and it is the
+    app-code start marker `apk_content_check.py` scopes its injection checks with, plus a literal
+    `verify_release.py` asserts. The span is replaced by `/*cardwallet:no-wordmark*/` - the positive
+    proof that the removal ran (used by the smoke checks, the content check, the glass audit and
+    `patch17`'s new `SUPERSEDED` entry, which is how a re-run of the chain still recognises its own
+    wordmark edit after a later patch removed the span. That entry also repairs a pre-existing
+    `--check` regression: patch 17's wordmark edit had read as **STALE** ever since round 16 moved the
+    buttons out of the row it anchors to, and it reads as applied again now).
+  - **Gates.** web smoke **261 -> 262/262** (the three wordmark checks became absence checks; new checks
+    for "the dock still holds the three controls", "the reserves are untouched", "the header row is still
+    the dock row's geometry twin" and "the container still owns `ref:d`"), QA suite **281/281** (group 1's
+    header check and group 33's dock check now assert the label is gone), `apk_content_check.py`
+    **78 -> 79/79** (positive row for the new marker + a `MUST_NOT` so the label cannot creep back),
+    `liquid_glass_audit.py` **105/105** (its preview SVG no longer draws a wordmark), `animation_audit.py`
+    10 checks / 1 warning (unchanged - the patch adds no motion), `verify_release.py` **28/29**.
+  - **Negative control.** The previous bundle (`CardWallet_gesture_fixed.apk`'s bytes) fails **4 smoke
+    checks** (row not empty, 1 wordmark span found, marker missing, `ref:d` row still populated) and
+    **4 content-check rows**, plus 1 QA check in group 33 (30 -> 29). One more trap found while
+    doing this: QA group 1's first draft asserted `!/\bWallet\b/.test(text)` and passed against the
+    *pre-fix* bundle, because `textContent` concatenates without separators - the root reads
+    `"WalletPlatinum Debit Card..."`, so the word boundary never matches. It now asserts the **element**
+    count, which does bite (the group-1 family drops to 53/54 without patch 36).
+  - **Device work.** `docs/DEVICE_TEST_PLAN.md` section **AC** (5 rows): the corner is empty in both
+    themes and with a notch, the deck has not moved against the previous build, the empty corner is dead
+    space (tap / long-press / drag / outside-tap dismissal), and the dock's three controls are untouched.
+
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.
-- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch30), plus
+- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch36), plus
   the readable sources of the settings sheet - `patch19_settings.src.js`,
   `patch22_settings.src.js` and `patch24_settings.src.js`, each minified by its own script (one
   flat node per line, no comments; the newest one owns the span and the older two report it as
@@ -645,7 +694,8 @@ This repo contains the patched source for the CardWallet app.
   `build_debug_apk.py` (same bundle, throwaway debug key - for hands-on testing),
   `apkbuilder.py` (aligned zip, v1/v2/v3 signing, PKCS#12 keystore),
   `axml.py` (binary manifest reader/patcher), `verify_release.py`,
-  `smoke_test_webview.mjs` and `animation_audit.py`.
+  `smoke_test_webview.mjs`, `qa_feature_suite.mjs`, `animation_audit.py` and
+  `liquid_glass_audit.py`.
 - `header_options.json` - the header's option list (top-bar buttons + the two
   dropdowns they open). Consumed by `patches/patch8_header_options.py`.
 

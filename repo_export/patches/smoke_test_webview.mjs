@@ -347,10 +347,12 @@ const HEX = (v) => (["#000", "#000000"].includes(v) ? "#000" : ["#fff", "#ffffff
     (dockEl ? all(".cw-dock button[aria-label]").map((b) => b.getAttribute("aria-label")).join(", ") : "no .cw-dock"));
   // the dock is a *child* of the top bar's container on purpose: `ref:d` there is what closes the
   // menu on an outside tap, so moving the dock out of it would break dismissal. The check therefore
-  // looks at the top row (the container's first child), which must hold the wordmark and nothing else.
+  // looks at the top row (the container's first child) - which held the wordmark until round 21 and
+  // is now an empty, zero-height row (the client asked for the label to go).
   const topRow = topBar?.firstElementChild;
-  check("header/foot: the top row holds only the Wallet wordmark",
-    !!topRow && topRow.querySelectorAll("button").length === 0 && /^Wallet$/.test((topRow.textContent || "").trim()),
+  check("header/foot: the top row is empty - the Wallet wordmark is gone (round 21)",
+    !!topRow && topRow.querySelectorAll("button").length === 0
+    && (topRow.textContent || "").trim() === "" && /no-wordmark/.test(BUNDLE_SRC),
     `${topRow ? topRow.querySelectorAll("button").length : "?"} buttons in the row, text \u201c${(topRow?.textContent || "").trim()}\u201d`);
   check("header/foot: the dock is a bottom-anchored pill on the right of the wallet column (round 17)",
     !!dockEl && !!botBar && !!topRow && /fixed inset-x-0 bottom-0/.test(botBar.className)
@@ -1371,29 +1373,39 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
       activeSegment(D7, /^(System|Light|Dark)$/) === "Light", `segment=${activeSegment(D7, /^(System|Light|Dark)$/)}`);
   }
 
-  // -- the wordmark --
-  const wm = [...D7.querySelectorAll("#root span")].find(
-    (el) => (el.textContent || "").trim() === "Wallet" && /font-size:\s*28px/.test(styleOf(el)),
-  );
-  check("header: Wallet wordmark is rendered top-left, big and bold",
-    !!wm && /font-weight:\s*800/.test(styleOf(wm)) && /margin-right:\s*auto/.test(styleOf(wm)),
-    wm ? [(styleOf(wm).match(/font-size:[^;]*/) || ["-"])[0], (styleOf(wm).match(/font-weight:[^;]*/) || ["-"])[0]].join(" ") : "no wordmark");
-  check("header: the wordmark uses the Apple-first font stack",
-    /-apple-system,\s*BlinkMacSystemFont,\s*SF Pro Display/.test(styleOf(wm).replace(/"/g, "")),
-    (styleOf(wm).match(/font-family:[^;]*/) || ["-"])[0].slice(0, 64));
-  check("header: the wordmark colour is the themed ink, so it survives dark mode",
-    /color:\s*var\(--ink\)/.test(styleOf(wm)), (styleOf(wm).match(/color:[^;]*/) || ["-"])[0]);
+  // -- the wordmark is gone (round 21): the client asked for the top-left label to go, and the
+  //    checks below are what "gone" means - nothing moved to compensate, nothing left behind.
+  const rowEl = all("#root div").find((d) => /inset-x-0 top-0 z-40/.test(d.className || ""))?.firstElementChild;
+  const wm = [...D7.querySelectorAll("#root span")].filter(
+    (el) => (el.textContent || "").trim() === "Wallet" && /font-size:\s*28px/.test(styleOf(el)));
+  check("header: the 'Wallet' wordmark is gone from the top-left (round 21)",
+    wm.length === 0 && (rowEl?.textContent || "").trim() === "" && !/children:`Wallet`/.test(BUNDLE_SRC),
+    `${wm.length} wordmark span(s), row text \u201c${(rowEl?.textContent || "").trim()}\u201d`);
+  check("header: the empty row keeps the header row's geometry, so the dock still lands on its x",
+    (() => {
+      const dockRow = all("#root .cw-dock")[0]?.parentElement;
+      return !!rowEl && !!dockRow && rowEl.className === dockRow.className
+        && rowEl.querySelectorAll("button").length === 0;
+    })(),
+    "dock row == header row, and no control was dragged up into it");
+  check("header: nothing was moved to compensate - the dock still holds the three controls",
+    all("#root .cw-dock button[aria-label]").map((b) => b.getAttribute("aria-label")).join() ===
+      "Add card,Search cards,More",
+    all("#root .cw-dock button[aria-label]").map((b) => b.getAttribute("aria-label")).join());
+  check("header: the reserves are untouched, so removing the label did not shift the deck",
+    BUNDLE_SRC.includes("paddingTop:`calc(env(safe-area-inset-top) + 58px)`")
+    && BUNDLE_SRC.includes("paddingBottom:`calc(env(safe-area-inset-bottom) + 62px)`")
+    && BUNDLE_SRC.includes("/*cardwallet:no-wordmark*/"),
+    "58px / 62px reserves + the round-21 marker");
   {
-    const kids = wm && wm.parentElement ? [...wm.parentElement.children] : [];
-    const labels = kids.filter((k) => k.tagName === "BUTTON").map((k) => k.getAttribute("aria-label"));
+    const kids = rowEl ? [...rowEl.children] : [];
     const dock0 = all("#root .cw-dock")[0];
-check("header: the wordmark owns the top row, the controls own the dock (round 16 moved them)",
+check("header: the label left, the dock stayed - the option menu still opens inside ref:d",
   (() => {
-    const row = all("#root div").find((d) => /inset-x-0 top-0 z-40/.test(d.className || ""))?.firstElementChild;
     const dockRow = all("#root .cw-dock")[0];
     const kids = (e) => [...(e?.children || [])].map((c) => c.tagName.toLowerCase() + (c.getAttribute("aria-label") ? ":" + c.getAttribute("aria-label") : ""));
-    return /^Wallet$/.test((row?.textContent || "").trim()) && kids(row).join() === "span"
-      && kids(dockRow).join() === "button:Add card,button:Search cards,button:More";
+    return kids(rowEl).length === 0 && kids(dockRow).join() === "button:Add card,button:Search cards,button:More"
+      && /ref:d,className:`pointer-events-none fixed inset-x-0 top-0 z-40 px-2`/.test(BUNDLE_SRC);
   })(),
   `row=${[...(all("#root div").find((d) => /inset-x-0 top-0 z-40/.test(d.className || ""))?.firstElementChild?.children || [])].length} dock=${[...(dock0?.children || [])].length}`);
 

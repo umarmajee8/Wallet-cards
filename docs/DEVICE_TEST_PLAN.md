@@ -10,10 +10,11 @@ SHA-256: `63dbd8b1929fdbcb673a19ebab585c0c723ae41518188ff437e84da0c2233e9a`
 Signer cert SHA-256: `86383a7f13662e8b55885cb5331341f8db964ad065da074cc360082a3e436726`
 
 **Currently on device:** the rounds since §M ship as debug-signed builds because no release
-keystore is available here - the newest is `CardWallet_cover_colour.apk` (2026-09-05, rounds
-§N-§Q: stack eject, carousel settle, inert bands + per-card pouch colour, cover colour +
-NFC/appearance defaults + header wordmark). Same debug key throughout, so `adb install -r`
-keeps the app's data; §Q's rows are the ones that matter for this build.
+keystore is available here - the newest is `CardWallet_no_title.apk` (2026-09-16, rounds
+§N-§AC: stack eject, carousel settle, inert bands + per-card pouch colour, cover colour +
+NFC/appearance defaults + header wordmark, and - round 21 - **no header wordmark**). Same debug
+key throughout, so `adb install -r` keeps the app's data; §AC's row is the one that matters for
+this build.
 
 ## 0. Install
 
@@ -306,8 +307,8 @@ NFC had to stay off, the app had to open light, and the header had to say **Wall
 | Q4 | Settings -> Pouch -> **Wallet & cover** off, then on again, and open a card | Off: the photo is visible with no panel. On: the coloured panel folds back. No flicker, and the fold animation should feel no heavier than before (it is now cheaper: no blur to composite) |
 | Q5 | Kill the app, set the **phone** to dark mode, reopen | The app opens **light** (default is Light now, not System). Settings -> Appearance shows **Light** selected. Tap System -> it follows the phone (dark at night); tap Dark -> always dark; kill and reopen: your choice is kept, it is not forced back to Light |
 | Q6 | Open the **+ menu**, then Settings | No "Tap a bank card" entry anywhere, and no "Read cards over NFC" row in Settings - even on this existing install that used to have NFC on. If you want NFC back later, that is a new patch, not a toggle |
-| Q7 | Look at the top-left of the header (light and dark theme, and with the notch/status bar) | "Wallet" is large and bold in the iOS-style system font, black in light theme, near-white in dark theme, never overlapping the +/search/menu icons or the status bar |
-| Q8 | Scroll/drag near the header while the wordmark is there | The wordmark is not a touch target - dragging that starts over it behaves exactly like dragging in dead space (patch 15's rule still holds) |
+| Q7 | ~~Look at the top-left of the header~~ **Round 21 supersedes this row: the wordmark is removed on request.** Instead check the same corner for leftovers (light and dark, with the notch/status bar) | The top-left is **empty** - no clipped text, no thin strip, no shadow, nothing tappable. The status bar and the SafeArea are untouched, and the +/search/menu controls are where round 16 put them (the bottom dock, unchanged) |
+| Q8 | Scroll/drag starting in the empty top-left corner the wordmark used to occupy | Nothing happens and nothing is opened - the corner is dead space exactly as before, and the drag does not move the dock (patch 15's rule still holds; the label was `pointer-events:none`, and its row is now empty) |
 
 If Q5 comes back showing dark-on-reopen, the migrated value was overwritten by a stored
 choice - say so and include whether Appearance was ever touched on that device.
@@ -426,7 +427,7 @@ maps to a finding in `docs/QA_HANDOVER_REPORT.md`.
 | V9 | Rotate portrait ↔ landscape with a card editor open and a photo mid-crop | The activity is not recreated (`configChanges` covers orientation), the edit is still there, and the landscape layout uses its own geometry | QA §20 |
 | V10 | Tap into the Card number / Notes field with the keyboard up | The focused field stays visible above the keyboard, the sheet scrolls, and Save is still reachable. If the keyboard covers it, that is RELEASE-4 (no `windowSoftInputMode`) | QA §18 - needs the manifest attribute added in the native project |
 | V11 | Drag every slider full-range for ~30 s, then leave the wallet on Screen | No jank, no catch-up burst after release, no battery/thermal drama; `adb shell dumpsys meminfo com.arena.cardwallet` before/after a 20-card session should be flat | QA §21/§16 - PERFORMANCE-1/2 measured the JS side only |
-| V12 | Blur and type check: Settings sheet over the wallet, `Wallet` wordmark, headings | Glass reads as glass (not a flat panel), no banding, headings visibly bolder than body, no text touching a card edge | QA §14 - judgement calls excluded by rule here |
+| V12 | Blur and type check: Settings sheet over the wallet, headings, dock labels | Glass reads as glass (not a flat panel), no banding, headings visibly bolder than body, no text touching a card edge | QA §14 - judgement calls excluded by rule here. (The `Wallet` wordmark left this list in round 21 - it is not on screen any more) |
 | V13 | Delete a **middle** card and the **last** card by swiping the deck, and long-press vs tap on a blurred cover | Exactly one card goes, the deck re-centres, remaining ids untouched | QA §6 - synthetic drags through the spring physics are not honest in jsdom |
 | V14 | TalkBack on: focus the create button, a slider, a card | Each announces its label and value; sliders are adjustable with volume keys or the TalkBack gesture | QA §14, MINOR-4 (zoom lock) |
 
@@ -565,6 +566,25 @@ Record per row: device, Android + WebView version, result. Two failures are prod
 swipe leaving the row off-centre, which is the exact state patch 14 was written for and round 20 replaced
 with a signal-driven recovery).
 
+## AC. Round 21 - the header wordmark is gone (patch 36)  ⚠ the removal itself
+
+The client asked for the top-left "Wallet" label to be removed: *"just remove that text element, don't
+leave empty spacing or misalign the remaining icons after removal."* The label was the only child of the
+header row, so the interesting question on a phone is what is left **behind** it - a stale strip, a
+tappable dead zone, or a shifted deck. jsdom cannot answer any of that (it has no layout, no SafeArea, no
+compositor); smoke pins the DOM and the byte-level gates pin the bundle, so this section is the third leg.
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| AC1 | Fresh install, wallet with 3+ cards. Look at the top-left corner where "Wallet" used to be, in **light and dark** theme, with and without a notch cutout. | The corner is **completely empty**. No clipped glyph, no ghost, no hairline. Nothing has taken the label's place. |
+| AC2 | Same screen: compare the deck's position against the previous build (`CardWallet_gesture_fixed.apk`), or against the screenshots in `docs/`. | The deck sits **exactly** where it did - the round-16/17 reserves (safe-area + 58 px top, safe-area + 62 px bottom) are untouched, so removing the label moved nothing. If the cards appear ~29 px lower/higher, the patch was applied twice or the reserve was edited - file it. |
+| AC3 | Tap, long-press, and drag **starting in that empty corner**; also open the option menu and tap the corner to dismiss it. | Nothing happens and no card opens (the corner was already `pointer-events:none`, and its row is empty), and the menu still closes on an outside tap - the container that owns `ref:d` is unchanged. |
+| AC4 | With the menu open, check the dock: Create / Search / More. | All three controls are exactly where they were (bottom dock, right-aligned on the wallet column's x), same labels, same order, same spacing. Nothing was dragged up into the header to fill the gap. |
+| AC5 | Put a card away and reopen the app; open Create / Search / the option menu; switch Carousel <-> Stack. | Nothing in the app regressed: no console errors, no empty view, no stray "Wallet" text anywhere on the wallet screen (the empty state still says "Wallet is empty" - that is a different string and must stay). |
+
+Record per row: device, Android + WebView version, result. None of AC1-AC5 is a handover gate on its own
+(round 20's AB1/AB2 still are), but AC2 and AC3 are the two the patch could plausibly get wrong.
+
 ## Sign-off
 
 The build may only be called production-ready once **A–Z are green** on at least
@@ -578,10 +598,10 @@ open"). The Android UI-testable layer is complete and green: `qa_feature_suite.m
 281/281 (group 33 covers the Liquid Glass material, the round-16 footer dock and the round-17 blur
 budget; group 34 the lock and the backup file, including a Node re-derivation of the PIN digest and an
 AES-GCM round-trip of a real `.cwbak`; group 36 the round-20 gesture recovery on both views),
-`smoke_test_webview.mjs` 261/261, `liquid_glass_audit.py` 105/105
+`smoke_test_webview.mjs` 262/262, `liquid_glass_audit.py` 105/105
 (tier rules, the cost model, the WCAG contrast engine and the round-18 gate's opacity/token rules),
 `verify_release.py` 28/29 with the only FAIL being the deliberate debug signature, and
-`apk_content_check.py` 78/78 against `CardWallet_gesture_fixed.apk` (the four-blurred-selector budget plus the round-18
+`apk_content_check.py` 79/79 against `CardWallet_no_title.apk` (the four-blurred-selector budget plus the round-18
 copy, store key, crypto markers and the gate's opacity - all read out of the shipped entries, not the tree). The jsdom suites need `jsdom@27` + `cssstyle@4.6.0`; on other pairings 11 checks
 fail on *any* bundle because cssstyle does not serialise `backdrop-filter` into the `style` attribute - the
 suite reads those through `inlineStyle()` (see README, round 17).

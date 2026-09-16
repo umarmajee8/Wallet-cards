@@ -268,8 +268,12 @@ check("the glass sits on the pill, not on the row (a full-column bar would blur 
       and re.search(r"className:`cw-dock[^`]*max-w-\[520px\]", JS) is None, "-")
 check("the deck reserves the dock's height, safe area included",
       "paddingBottom:`calc(env(safe-area-inset-bottom) + 62px)`" in JS, "-")
-check("the wallet bar keeps the wordmark alone (nothing but the deck sits at the top now)",
-      JS.count("children:`Wallet`") == 1 and "inset-x-0 bottom-0 z-40" in JS, "-")
+# round 21: the client asked for the top-left "Wallet" label to go. The row it lived in stays (it is
+# the dock row's geometry twin, and `ref:d` on its container is what closes the menu on an outside
+# tap); what must be true now is that no label text renders and the marker says so.
+check("the wallet bar carries no label: the wordmark is gone, the dock is the only floating chrome",
+      JS.count("children:`Wallet`") == 0 and "/*cardwallet:no-wordmark*/" in JS
+      and "inset-x-0 bottom-0 z-40" in JS, "-")
 
 check("the deck is untouched: no lg class on the card path",
       not re.search(r"cw-lg-(primary|fab|pouch|preview|ctl)[^`]*`(?:[^`]*\bcw-card\b)", JS)
@@ -299,7 +303,7 @@ SUITES = [
     ("light", "--lg-tint", "--lg-ink", "sheet body text"),
     ("light", "--lg-tint", "--lg-sub", "sheet read-outs / captions"),
     ("light", "--lg-tint-2", "--lg-ink", "pouch tray body text"),
-    ("light", "--lg-tint-2", "--lg-ink", "dock control label (wordmark row is ink)"),
+    ("light", "--lg-tint-2", "--lg-ink", "dock control label (the header row is ink)"),
     ("light", "--lg-tint-3", "--lg-ink", "chip label on glass (nested)", True),
     ("light", "--lg-solid-glass", "--on-solid", "glyph on the create disc (in the dock)"),
     ("dark", "--lg-tint", "--lg-ink", "sheet body text"),
@@ -488,13 +492,13 @@ if MAKE_SVG:
         i.append(f'<text x="55" y="{ty+50}" text-anchor="middle" font-family="-apple-system,Helvetica,Arial" '
                  f'font-size="12" font-weight="600" fill="{col("--ink", scope)}">Stack</text>')
         # round 16: the create disc no longer sits in a top bar - Create / Search / More live in one
-        # glass pill at the bottom, so the preview draws that pill (and the wordmark up top).
+        # glass pill at the bottom, so the preview draws that pill.
         # round 17: the pill sits on the right of the wallet column - the same x the controls had
         # in the header, mirrored to the bottom edge - not centred.
+        # round 21: the "Wallet" wordmark that used to sit top-left is gone, so the preview does not
+        # draw one either (the top of the frame is empty - that is the shipped state).
         dw, dh = 3 * 36 + 2 * 10 + 20, 48
         dx, dy = w - dw - 12, h - dh - 10
-        i.append(f'<text x="14" y="26" font-family="-apple-system,Helvetica,Arial" font-size="26" '
-                 f'font-weight="800" letter-spacing="-.6" fill="{col("--ink", scope)}">Wallet</text>')
         i.append(f'<rect x="{dx}" y="{dy}" width="{dw}" height="{dh}" rx="24" fill="{col("--lg-tint-2", scope)}" '
                  f'fill-opacity="{alpha("--lg-tint-2", scope)}" stroke="{rim}" stroke-opacity="{ra}"/>')
         i.append(f'<rect x="{dx}" y="{dy}" width="{dw}" height="{dh/2:.0f}" rx="24" fill="url(#sheen{scope})"/>')
@@ -536,9 +540,9 @@ if MAKE_SVG:
              'font-weight="700" fill="#111113">Liquid Glass - simulated composite from the real '
              'tokens (not a screenshot)</text>',
              '<text x="24" y="54" font-family="-apple-system,Helvetica,Arial" font-size="11" fill="#8e8e93">'
-             'round 16: Create / Search / More sit in one glass dock at the bottom, the wordmark keeps the '
-             'top-left, and the disc inside the dock does not blur again. The sheet blurs at 14px and the '
-             'scrim not at all - that is the round-17 lag fix</text>']
+             'round 16: Create / Search / More sit in one glass dock at the bottom (round 21 removed the '
+             'top-left wordmark, so the top of the frame is empty), and the disc inside the dock does not '
+             'blur again. The sheet blurs at 14px and the scrim not at all - that is the round-17 lag fix</text>']
     parts.append(svg_panel("light", "#ffffff", ["#1f2a44", "#c9a227", "#e6e6ea"], 24, 84, 400, 200, "LIGHT theme - sheet over bright artwork"))
     parts.append(svg_panel("light", "#101014", ["#0b1220", "#5b3df5", "#1f1f22"], 24, 320, 400, 200, "LIGHT theme - sheet over dark artwork"))
     parts.append(svg_panel("dark", "#000000", ["#1c1c1e", "#2f2f34", "#6b4df6"], 476, 84, 400, 200, "DARK theme - sheet over dark artwork"))

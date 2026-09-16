@@ -1400,3 +1400,67 @@ ki koshish **nahi** ki gayi (`release-key.p12` is environment me mojood nahi). I
 khule han). Is round ka apna device work `docs/DEVICE_TEST_PLAN.md` section **AB** (8 rows) ha - us me se
 **AB1** (normal scroll me cards side me na jayen) aur **AB2** (ajeeb swipe ke baad deck jawab deta rahe)
 handover gates han.
+
+## 25. Round 21 - header ke "Wallet" label hata diya gaya (patch 36), 2026-09-16
+
+**Ask, verbatim:** *"Remove the \"Wallet\" text label shown at the top-left of the screen (the app
+title/header text). Keep the rest of the header layout (search icon, menu icon, add button etc.) intact -
+just remove that text element, don't leave empty spacing or misalign the remaining icons after removal."*
+Ye label round 9 ka mandate tha (patch 17: *"header pr top left corner pr bara bold Wallet likho, font ios
+wala ho"*) - yani is round me client ne apna hi purana ask override kiya, aur wo override documented ha
+(patch 17 me `SUPERSEDED` entry, taake chain ka `--check` apni hi edit ko pehchane).
+
+**Jo asal me screen par tha (bundle se naapa gaya, farz nahi kiya):** top-left "Wallet" ek `span` tha
+(28 px / 800, `var(--ink)`), aur round 16 (patch 31) ke baad woh **header row ka wahi ek child** tha -
+Add / Search / More pehle hi footer dock me ja chuke the. Yani ask me jo controls likhe han (search,
+menu, add) woh label ke bhai-behen kabhi the hi nahi, is liye unka misalign hona is change se mumkin nahi.
+Jo container `ref:d` rakhta ha (bahar tap par option menu band karta ha, aur dock us ka child ha) woh,
+dock bar, dock row, menu, aur dono reserves - sab byte-identical rahe. **Patch sirf ek span ko chhoota ha.**
+
+**Row kyun rakhi gayi:** khali flex row zero-height hoti ha (na text, na button, na apni padding) aur
+container `pointer-events:none` ha - is liye na koi patli strip dikhti ha na koi tappable dead zone banti
+ha. Do invariants bach jate han: patch 17 ka rule ke dock row literally header row ki class string ha
+(glass audit `TOP_ROW_CLASS` ko **2** baar ginta ha, aur QA group 33 `dock.parentElement.className ===
+headerRow.className` assert karta ha). Row hataane se dono tootte - bila faide.
+
+**Reserves kyun nahi chhote:** main column upar `safe-area + 58 px` aur neeche `safe-area + 62 px` reserve
+karta ha (round 16/17). Deck in dono ke beech centre hota ha, is liye upar ka reserve label ki height
+jitna kam karne se **har card** hilta - ask tha label hataana, wallet dobara layout karna nahi. Kuch bhi
+nahi hila. (Agar aage chal kar top band tight karna ho to woh apna alag, naapa gaya change ha: deck aadhe
+delta jitna upar aayega.)
+
+**Marker convention:** `/*cardwallet:header*/` barqarar ha - ye patch 8 ka marker ha, aur
+`apk_content_check.py` isi se app-code ka start dhoondta ha (injection checks ka scope), aur
+`verify_release.py` ise literal assert karta ha. Span ki jagah `/*cardwallet:no-wordmark*/` aaya ha - ye
+positive proof ha ke removal chala (smoke checks, content check, glass audit aur patch 17 ka naya
+`SUPERSEDED` entry isi ko dekhte han). Ye entry ek purani `--check` regression bhi theek karti ha: patch 17
+ka wordmark edit round 16 ke baad se **STALE** parh raha tha (patch 31 ne buttons header row se hata diye
+the), aur ab dobara applied parhta ha).
+
+**Gates:** web smoke **261 -> 262/262** (teen wordmark checks ab absence checks han; naye checks: dock ke
+teen controls jahan the wahan han, reserves untouched, header row aur dock row ka geometry twin barqarar,
+container ab bhi `ref:d` ka malik), QA suite **281/281** (group 1 ka header check aur group 33 ka dock
+check ab label ki gair-mojoodgi assert karte han), `apk_content_check.py` **78 -> 79/79** (naye marker ki
+positive row + `MUST_NOT` taake label wapas na aa sake), `liquid_glass_audit.py` **105/105** (preview SVG
+ab wordmark nahi banata), `animation_audit.py` 10 checks / 1 warning (wahi - is patch me koi nayi motion
+nahi), `verify_release.py` **28/29**.
+
+**Negative control:** pichhla bundle (`CardWallet_gesture_fixed.apk` ke bytes) - smoke me **4 checks
+fail** (row khali nahi, 1 wordmark span mojood, marker ghaayab, `ref:d` row ab bhi bhara), aur
+`apk_content_check.py` ki **4 rows** fail, aur QA group 33 me **1** check (29/30 ho gaya). Isi kaam me ek
+trap bhi pakra gaya: QA group 1 ka pehla draft `!/\bWallet\b/.test(text)` tha aur woh **pre-fix** bundle
+par bhi pass ho gaya, kyunke `textContent` bina separator jorta ha - root `"WalletPlatinum Debit Card..."`
+parhta ha, is liye word boundary kabhi match nahi karti. Ab woh **element** ginta ha, jo pakarta ha
+(pre-36 par group-1 family me 1 fail).
+
+**Artifact:** `CardWallet_no_title.apk` - **11,669,121 B**, sha256
+`75f86c0024ab7b1010e50a292694fbf7979190ae0c66cec4f08b52ab58f15ad4`, `repo_export/app/index.js` 499,516 B.
+Debug-signed (wahi throwaway key, `repo_export/signing/debug-local.p12`), `allowBackup=false`, release
+signing ki koshish **nahi** ki gayi (`release-key.p12` is environment me nahi). Install se pehle
+`adb uninstall com.arena.cardwallet`.
+
+**Handover:** verdict wahi - **NOT READY FOR CLIENT HANDOVER** (device-unverified MAJOR items waise hi
+khule han, aur round 20 ke AB1/AB2 ab bhi handover gates han). Is round ka apna device work
+`docs/DEVICE_TEST_PLAN.md` section **AC** (5 rows) ha - khaas kar AC2 (deck ki position pichhle build se
+compare - kuch nahi hilna chahiye) aur AC3 (khali corner par tap/long-press/drag se kuch na ho, aur menu
+bahar-tap par band ho).

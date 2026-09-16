@@ -257,8 +257,15 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
     const b = boot();
     await settle(b.w, 900);
     check(g, "first launch boots with zero script errors", b.errors.length === 0, b.errors.slice(0, 2).join(" | "));
-    check(g, "first launch has a wallet (specimen deck) and the header wordmark",
-      /Wallet/.test(text(b.w)) && all(b.w, "#root img").length >= 3, `${all(b.w, "#root img").length} card images`);
+    // round 21: the top-left "Wallet" label is gone. Assert the *element* is gone, not that the word
+    // is absent from the text: textContent concatenates without separators, so with the label present
+    // the root reads "WalletPlatinum Debit Card..." - a /\bWallet\b/ test never matches that, which is
+    // how this check passed against the pre-round-21 bundle. Element-level, or it proves nothing.
+    const wmSpans = [...(rootEl(b.w)?.querySelectorAll("span") || [])].filter(
+      (el) => (el.textContent || "").trim() === "Wallet");
+    check(g, "first launch has a wallet (specimen deck) and no header wordmark (round 21)",
+      all(b.w, "#root img").length >= 3 && wmSpans.length === 0,
+      `${all(b.w, "#root img").length} card images, ${wmSpans.length} "Wallet" label(s)`);
     const wk = b.inst.writes.map((x) => x[0]);
     check(g, "first launch persists the specimen deck only - settings stay untouched until edited",
       wk.every((k) => k === CARDS_KEY) && b.w.localStorage.getItem(SETTINGS_KEY) === null, wk.join(",") || "no writes");
@@ -1086,9 +1093,10 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
     // the dock is a child of the top bar's container (its ref is what closes the menu on an outside
     // tap), so the "nothing left at the top" claim is about the top *row*, the container's first child.
     const topRow = topBar?.firstElementChild;
-    check(g, "round 16: Create / Search / More sit together in one bottom dock, and the top row holds only the wordmark",
+    check(g, "round 16: Create / Search / More sit together in one bottom dock, and the top row is empty (round 21)",
       !!dock && !!botBar && all(dock, "button[aria-label]").length === 3
-      && !!topRow && all(topRow, "button").length === 0 && /^Wallet$/.test((topRow.textContent || "").trim()),
+      && !!topRow && all(topRow, "button").length === 0 && (topRow.textContent || "").trim() === ""
+      && !/children:`Wallet`/.test(CODE),
       `dock:${dock ? all(dock, "button[aria-label]").map((b) => b.getAttribute("aria-label")).join(",") : "-"} topRowButtons:${topRow ? all(topRow, "button").length : "?"}`);
     check(g, "round 16: no nested blur - the disc inside the dock is told to stop blurring",
       /\.cw-dock \.cw-lg-fab\{backdrop-filter:none;\s*-webkit-backdrop-filter:none\}/.test(CSS)
