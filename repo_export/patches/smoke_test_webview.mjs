@@ -910,10 +910,51 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
   check("carousel: an unreleased drag really does leave the row off-centre",
     Math.abs(txHeld - txAtRest) > 4, `front card x ${txHeld.toFixed(1)}px (was ${txAtRest.toFixed(1)}px)`);
 
-  await settle(Wc, 1200);           // the idle watchdog gets ~0.7s of quiet
+  // patch 35: a finger is not a stolen stream. The old watchdog called 340ms of
+  // event-quiet "stolen", but a finger held still mid-drag is exactly that quiet - so
+  // the row was committed to the nearest card and the *next* move replayed the whole
+  // gesture delta from the new base (the device report: "cards sometimes shift/slide
+  // off to the side"). Nothing may move while the finger is on the glass.
+  const txBeforePause = tx(front());
+  await settle(Wc, 900);            // well past the old 340ms window
+  const txAfterPause = tx(front());
+  check("carousel: a finger held still mid-drag never has the row yanked out from under it",
+    Math.abs(txAfterPause - txBeforePause) < 1,
+    `front card x ${txBeforePause.toFixed(2)} -> ${txAfterPause.toFixed(2)}px across a 900ms hold`);
+
+  // ...and the next move adds only its own delta, instead of replaying the whole gesture
+  const perFingerPx = Math.abs(txHeld - txAtRest) / 110;   // row px per finger px, measured
+  Wc.dispatchEvent(ptr("pointermove", cx + 150, cy));      // the finger moves on by 40px
+  await settle(Wc, 60);
+  const txAfterMove = tx(front());
+  check("carousel: the drag continues from where the finger left it (no delta replay)",
+    Math.abs(txAfterMove - (txAfterPause + 40 * perFingerPx)) < 2,
+    `front card x ${txAfterMove.toFixed(2)}px, expected ~${(txAfterPause + 40 * perFingerPx).toFixed(2)}px`);
+  Wc.dispatchEvent(ptr("pointerup", cx + 150, cy));
+  await settle(Wc, 900);
+  check("carousel: releasing after the hold still settles centred", Math.abs(tx(front())) < 2,
+    `front card x ${tx(front()).toFixed(2)}px`);
+
+  // now the case the watchdog exists for: the stream is gone for good. A held pointer
+  // that has seen no event anywhere for 1500ms is treated as eaten, the row glides home
+  // (never jumps, never commits an index step) and the rest state is centred again.
+  const txStolen = await drag(110, false);
+  await settle(Wc, 2600);           // 1500ms of quiet + the 400ms tick + the glide
   const txRecovered = tx(front());
   check("carousel: watchdog re-centres the row with no pointerup", Math.abs(txRecovered) < 2,
-    `front card x ${txRecovered.toFixed(2)}px after the idle window`);
+    `front card x ${txRecovered.toFixed(2)}px after the idle window (dragged to ${txStolen.toFixed(1)}px)`);
+
+  // the real case behind the device report: the swipe that backgrounded the app (the
+  // bottom gesture strip is the home/recents gesture) - Android delivers nothing else,
+  // but visibilitychange does fire, so the row is put right immediately instead of
+  // waiting for the 1500ms net.
+  const txBeforeHide = await drag(110, false);
+  Object.defineProperty(Wc.document, "hidden", { value: true, configurable: true });
+  Wc.document.dispatchEvent(new Wc.Event("visibilitychange"));
+  await settle(Wc, 700);
+  check("carousel: a gesture lost to the app being backgrounded is recovered at once",
+    Math.abs(tx(front())) < 2, `front card x ${tx(front()).toFixed(2)}px (dragged to ${txBeforeHide.toFixed(1)}px)`);
+  Object.defineProperty(Wc.document, "hidden", { value: false, configurable: true });
 
   await drag(240, true);            // ordinary swipe still works
   const txAfterSwipe = tx(front());
@@ -923,8 +964,136 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
   check("carousel: grabbing mid-glide finishes the settle instead of dropping it",
     /T\.current\?\.\(\),g\.current&&y\(\);let sl=u\.slide\|\|1/.test(BUNDLE_CAROUSEL_SRC),
     "pointerdown calls y()");
+  // the code-level guards the behaviour above rests on (patch 35)
+  const carRecovery = BUNDLE_CAROUSEL_SRC.split("home=()=>")[1]?.split("off=d.on")[0] || "";
+  check("carousel: the idle watchdog refuses to move a held row", 
+    /if\(ptr\.held\(\)&&!ptr\.quiet\(1500\)\)\{arm\(\);return\}/.test(BUNDLE_CAROUSEL_SRC),
+    "a finger on the glass owns the row");
+  check("carousel: the recovery glides home instead of jumping", 
+    /Ju\(d,0,Cd\)/.test(carRecovery) && !/d\.jump\(0\)/.test(carRecovery),
+    "recovery never jumps and never commits an index step");
+  check("carousel: the drag rebases on the row's live value", 
+    /Math\.abs\(d\.get\(\)-k\)>\.5&&\(k=d\.get\(\),sv=s\)/.test(BUNDLE_CAROUSEL_SRC) &&
+      /k=d\.get\(\),sv=s/.test(BUNDLE_CAROUSEL_SRC),
+    "a move can only ever add its own delta");
+  check("carousel: a settle to zero clears the settle slot (it used to disarm the watchdog)",
+    /g\.current=Ju\(d,0,\{\.\.\.Cd,onComplete:\(\)=>\{g\.current=null\}\}\)/.test(BUNDLE_CAROUSEL_SRC),
+    "no finished animation left in g.current");
   check("carousel: no console errors while the row recovers", st.errors.length === 0,
     st.errors.slice(0, 1).join("").slice(0, 160));
+}
+
+
+// ---------------------------------------------------------------------------
+// Test 6h: in the stack, a lost gesture comes back to a card and a cancel is not a tap (patch35)
+//
+// The same report on the other view. __cwStack never got patch 14's treatment, so a
+// gesture the system ate left the deck at a fractional index *for good* - and because
+// `drag.current` stayed set, the `drag.current||p.jump(r)` guard meant the deck stopped
+// following index changes too. `pointercancel` was wired to the tap handler, so a
+// gesture the OS took over (no movement at all) opened whichever card the finger
+// happened to be over.
+// ---------------------------------------------------------------------------
+{
+  const CARDS4s = JSON.stringify([
+    { id: "s1", src: "cards/one.jpg", title: "Alpha One", subtitle: "1", fields: [] },
+    { id: "s2", src: "cards/two.jpg", title: "Bravo Two", subtitle: "2", fields: [] },
+    { id: "s3", src: "cards/three.jpg", title: "Charlie Three", subtitle: "3", fields: [] },
+    { id: "s4", src: "cards/four.jpg", title: "Delta Four", subtitle: "4", fields: [] },
+  ]);
+  const ptr = (W, type, x, y) => {
+    const e = new W.MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(e, "isPrimary", { value: true });
+    Object.defineProperty(e, "pointerId", { value: 1 });
+    return e;
+  };
+  const tx = (el) => parseFloat((inlineStyle(el).match(/translateX\((-?[\d.]+)px\)/) || [])[1] ?? "0");
+  const stageOf = (D) => [...D.querySelectorAll("#root div")].find(
+    (d) => /perspective:\s*1200/.test(inlineStyle(d)) && /overflow:\s*hidden/.test(inlineStyle(d)) &&
+      d.className === "relative w-full");
+  const cardsOf = (D) => [...D.querySelectorAll("#root div.absolute.no-select")];
+  const open = (W) => /WhatsApp/.test(W.document.getElementById("root").textContent || "");
+  const boot = async () => {
+    const s = makeDom({ [CARDS_KEY]: CARDS4s, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) },
+      { withLayout: true });
+    runBundle(s.window, s.errors);
+    await settle(s.window, 900);
+    return s;
+  };
+
+  const st = await boot();
+  const Wk = st.window, Dk = Wk.document;
+  const box = stageOf(Dk);
+  const step = Math.abs(tx(cardsOf(Dk)[1]) - tx(cardsOf(Dk)[0]));
+  // how far the deck is from resting on a whole card, in px
+  const worstOff = () => Math.max(...cardsOf(Dk).map(
+    (el) => Math.abs(tx(el) / step - Math.round(tx(el) / step)) * step));
+  check("stack: four cards rest on exact card slots", cardsOf(Dk).length === 4 && worstOff() < 1,
+    `${cardsOf(Dk).length} cards, spacing ${step.toFixed(1)}px`);
+
+  const cx = (Wk.innerWidth || 800) / 2, cy = (Wk.innerHeight || 600) / 2;
+  box.dispatchEvent(ptr(Wk, "pointerdown", cx, cy));
+  for (let i = 1; i <= 4; i++) { Wk.dispatchEvent(ptr(Wk, "pointermove", cx - i * 40, cy)); await settle(Wk, 25); }
+  check("stack: an unreleased drag really does leave the deck between two cards",
+    worstOff() > 20, `worst offset ${worstOff().toFixed(1)}px (0 would mean nothing to recover)`);
+
+  await settle(Wk, 2600);            // 1500ms of quiet + the 400ms tick + the snap tween
+  check("stack: the deck comes back to a card with no pointerup", worstOff() < 1,
+    `worst offset ${worstOff().toFixed(1)}px`);
+
+  // ...and the deck still answers gestures afterwards (`drag.current` was released)
+  box.dispatchEvent(ptr(Wk, "pointerdown", cx, cy));
+  for (let i = 1; i <= 4; i++) { Wk.dispatchEvent(ptr(Wk, "pointermove", cx - i * 40, cy)); await settle(Wk, 25); }
+  Wk.dispatchEvent(ptr(Wk, "pointerup", cx - 160, cy));
+  await settle(Wk, 900);
+  check("stack: a swipe after the recovery still flips the deck, landing on a card",
+    worstOff() < 1 && Math.abs(tx(cardsOf(Dk)[0])) >= step - 2,
+    `worst offset ${worstOff().toFixed(1)}px, front-left card at ${tx(cardsOf(Dk)[0]).toFixed(1)}px`);
+  check("stack: no console errors while the deck recovers", st.errors.length === 0,
+    st.errors.slice(0, 1).join("").slice(0, 160));
+
+  // the app going to the background is the one case with a *reliable* signal, so the
+  // deck must be back on a card immediately rather than after the 1500ms net
+  box.dispatchEvent(ptr(Wk, "pointerdown", cx, cy));
+  for (let i = 1; i <= 4; i++) { Wk.dispatchEvent(ptr(Wk, "pointermove", cx - i * 30, cy)); await settle(Wk, 25); }
+  Object.defineProperty(Dk, "hidden", { value: true, configurable: true });
+  Dk.dispatchEvent(new Wk.Event("visibilitychange"));
+  await settle(Wk, 700);
+  check("stack: a gesture lost to the app being backgrounded is recovered at once",
+    worstOff() < 1, `worst offset ${worstOff().toFixed(1)}px after backgrounding`);
+  Object.defineProperty(Dk, "hidden", { value: false, configurable: true });
+
+  // a cancel is an abort: no lift, no sheet, and the deck does not move a pixel
+  const sc = await boot();
+  const Wc2 = sc.window, Dc2 = Wc2.document;
+  const box2 = stageOf(Dc2);
+  const before2 = cardsOf(Dc2).map(inlineStyle);
+  box2.dispatchEvent(ptr(Wc2, "pointerdown", 280, 300));     // over a card BEHIND the front one
+  Wc2.dispatchEvent(ptr(Wc2, "pointercancel", 280, 300));
+  await settle(Wc2, 700);                                    // longer than the 480ms long-press
+  check("stack: a cancelled gesture never opens the card under the finger",
+    !open(Wc2) && sc.errors.length === 0, open(Wc2) ? "the sheet opened on a cancel" : "nothing opened");
+  check("stack: ...and it does not move the deck either",
+    cardsOf(Dc2).map(inlineStyle).join("|") === before2.join("|"),
+    "offsets unchanged by the cancel");
+
+  // the code-level guards the behaviour above rests on (patch 35)
+  const STACK_SRC35 = BUNDLE_SRC.split("function __cwStack")[1]?.split("function Td")[0] || "";
+  check("stack: the idle watchdog brings a lost deck back to a card",
+    /if\(ptr\.held\(\)&&!ptr\.quiet\(1500\)\)\{arm\(\);return\}/.test(STACK_SRC35) &&
+      /window\.clearTimeout\(hold\.current\),snap\(e\)/.test(STACK_SRC35),
+    "snap() is index-based, so the recovery is a tween");
+  check("stack: the recovery releases the gesture so index changes move the deck again",
+    /drag\.current=null,kill\.current\?\.\(\)/.test(STACK_SRC35) && /kill\.current=b/.test(STACK_SRC35),
+    "listeners, drag flag and long-press timer all released");
+  check("stack: pointercancel marks the gesture aborted instead of running the tap path",
+    /addEventListener\(`pointercancel`,t=>\{if\(t\.pointerId!==n\)return;ab=!0,y\(t\)\}\)/.test(STACK_SRC35) &&
+      /if\(ab\)\{drag\.current=null,snap\(p\.get\(\)\);return\}/.test(STACK_SRC35),
+    "abort settles to the nearest card and never opens");
+  check("stack: the drag rebases on the deck's live value",
+    /Math\.abs\(p\.get\(\)-w0\)>\.02&&\(w0=p\.get\(\),s0=e\)/.test(STACK_SRC35) &&
+      /w0=p\.get\(\),s0=e/.test(STACK_SRC35),
+    "a move can only ever add its own delta");
 }
 
 

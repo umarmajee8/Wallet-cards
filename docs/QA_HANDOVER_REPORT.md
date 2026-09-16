@@ -399,3 +399,43 @@ round 19 does *not* claim.
   the sandbox token cannot write Pages settings - so `https://umarmajee8.github.io/Wallet-cards/` is a
   pending manual step (Settings → Pages → Deploy from a branch → `main` / `/site`). Nothing in the app
   depends on it.
+
+## Addendum (2026-09-16) - round 20: the gesture that misaligned the cards
+
+**Verdict unchanged (NOT READY FOR CLIENT HANDOVER)** - this round closes a *defect* the client reported,
+it does not close any of §5's device-unverified items.
+
+**The report:** cards "sometimes" shift/slide sideways during a scroll gesture instead of staying centred
+and stacked. Intermittent, so a race rather than a layout error - and it was two of them, both reproduced
+headlessly against the shipped bundle before touching anything:
+
+1. **Carousel** - patch 14's recovery watchdog decided "the pointer stream was stolen" from 340 ms of
+   event *quiet*. A finger that is simply held still mid-drag is exactly that quiet, so the row was
+   committed to the nearest card and jumped sideways (measured: 106 px), and the next `pointermove`
+   replayed the whole gesture delta from the new base (a second 170 px jolt). The drag's origin was a value
+   captured at pointerdown, so anything moving the row behind its back turned the next move into a jump.
+2. **Stack** - `__cwStack` never had that watchdog at all: a gesture the system ate left the deck resting
+   between two cards *permanently* (identical 4.5 s later), `drag.current` stayed set so index changes
+   stopped moving the deck, the long-press timer kept running, and `pointercancel` was wired to the *tap*
+   handler - a bare cancel opened the card under the finger.
+
+**The fix (patch 35)** - one injected helper tracks who is down plus the three signals that mean a WebView
+lost a stream for good (`visibilitychange`, `blur`, `pagehide`); a finger on the glass now owns the row,
+recovery glides (and never re-orders the carousel), and both drags rebase on the live value so a move can
+only ever add its own delta.
+
+**Evidence:** web smoke **261/261** (was 241), QA feature suite **281/281** (was 259; new group
+**"36 gestures"**, 22 checks), `animation_audit.py` unchanged (10 checks / 1 pre-existing warning),
+`liquid_glass_audit.py` 105/105, `apk_content_check.py` 78/78 and `verify_release.py` 28/29 (only the
+deliberate debug cert) against `CardWallet_gesture_fixed.apk` (11,669,260 B, sha256
+`d9370f9cfe91bfd04e15f951223dfe619896766d782ba3b9f98748381803ba6f`).
+
+**Negative control:** the bundle without patch 35 drops the smoke suite to **246/261** (13 of the new
+checks fail, including *"front card x 58.36 -> 0.00px across a 900ms hold"* - the reported symptom verbatim
+- and *"the sheet opened on a cancel"*) and QA group 36 to **9/22**. The new tests are therefore pinned to
+the defect, not to the implementation.
+
+**Still not verified here:** whether a real phone delivers the same touch stream (gesture hand-off,
+cancellation, a glide under a resting thumb), frame pacing during rapid flicks, TalkBack, and the
+lowest-spec device. `docs/DEVICE_TEST_PLAN.md` section **AB** (8 rows; **AB1** and **AB2** are handover
+gates) is the device half of this round. Verdict: **NOT READY FOR CLIENT HANDOVER** - unchanged.

@@ -1318,3 +1318,85 @@ na blurred surface - lekin yeh pehla control ha jo **UI ko chupata ha**, is liye
 agar kisi device par switch on hone par bhi controls na aayen, ya off par kaam karte rahen, to gate khuli
 hawa ha. Yeh **UX guard ha, security control nahi** - card data `localStorage` me waisa hi ha asha ta
 pehle tha, aur copy me kabhi "protected" nahi likha gaya.
+
+## 24. Round 20 - scroll gesture ke dauran cards side me shift nahi hote (patch 35), 2026-09-16
+
+**Kya report hua:** *"while scrolling through the passes the cards sometimes shift/slide off to the side
+instead of staying properly centred/stacked in the carousel ... intermittent"*. Do alag races the, dono
+ship-shuda bundle par jsdom me reproduce kiye gaye (numbers ek throwaway jsdom probe se, fix se **pehle** - wahi numbers ab smoke Test 6f/6h me pinned han) -
+yeh layout ka masla nahi tha, is liye koi constraint/padding change nahi hui.
+
+**Defect 1 - patch 14 ka watchdog live finger ke neeche se row kheench leta tha.** Patch 14 "gesture chori
+ho gaya" ka faisla 340 ms ki *event-khamoshi* se karta tha, lekin drag ke dauran **ruki hui** ungli bilkul
+wahi khamoshi paida karti ha: row nearest card par commit ho kar `d.jump(0)` se **106 px** side me uchhal
+jati thi, aur agla `pointermove` poora gesture delta naye base se dobara laga deta tha (doosra **170 px**
+jhatka). 200 px ka drag, 800 ms ruk kar phir jari: `-509.3 | -307.7 | -106.1 | 95.5 | 297.1` ->
+`-403.2 | -201.6 | 0.0 | ...` -> `-573.0 | ...`. Jarh: `mv` `k+s` par chalta tha jahan `k` pointerdown par
+capture hua tha - is liye jo bhi cheez `d` ko gesture ke peeche se hilati thi (watchdog, index effect), agli
+move ko jump bana deti thi.
+
+**Defect 2 - stack me recovery hi nahi thi, aur cancel ek tap tha.** `__cwStack` ko patch 14 kabhi nahi
+mila: system ka khaaya hua gesture deck ko fractional index par **hamesha ke liye** chordeta tha
+(`0.0 | 229.5 | 459.0 | 688.5` -> `-225.8 | 3.7 | 233.2 | 462.7`, 2.5 s aur 4.5 s baad bilkul wahi),
+`drag.current` set reh jane se `drag.current||p.jump(r)` guard ki wajah se deck index changes par bhi nahi
+hilta tha, 480 ms ka long-press timer chalta reh jata tha, aur `pointercancel` **tap** handler par laga
+tha - bina kisi movement ke ek cancel us card ko khol deta tha jis par ungli thi.
+
+**Fix ka rule: ungli glass par ho to row uski ha.** Ek injected helper `__cwPtr` batata ha ke kaun down ha
+(pointerdown -> up / cancel / lostpointercapture) aur `held()`, `quiet(ms)` aur `onGone` deta ha - jahan
+`onGone` WebView ke stream hamesha ke liye khone ke teen asli signals par chalta ha:
+`visibilitychange` (hidden), `blur`, `pagehide`. App ko background karne wala gesture (patch 14 ki apni
+device report: neeche ka gesture strip **home/recents** gesture hi ha) inhi me se ek signal deta ha, is
+liye recovery **foran aur invisible** hoti ha; sirf ruki hui ungli inme se kuch nahi deti, is liye row ko
+koi haath nahi lagata. 1500 ms ka net sirf us ek case ke liye ha jahan koi signal hi na aaye.
+
+**Recovery glide karti ha, aur index commit nahi karti.** Patch 14 `d.jump(0)` + index commit karta tha;
+ab carousel apne maujooda `Cd` tween par ghar jata ha aur index **badalta nahi** - kisi bhi arbitrary
+offset par commit seamless ho hi nahi sakta (fan ko `slide - sideGap` = ~101 px hilata ha), is liye recovery
+user ko usi card par wapas le jati ha jis par wo tha, aur rest state bilkul 0 hi rehti ha. Stack ki recovery
+`snap()` ha, jo index-based ha - is liye by construction smooth tween.
+
+**Drag ab live value par rebase hoti ha** (dono views me): har move par code apne last write se compare
+karta ha, aur agar kisi aur ne row hil a di to pointer ka origin rebase hota ha, pehle kharch ho chuke
+deltas dobara nahi lagte. Isi wajah se "cards side me drift nahi karte" luck ki jagah construction se sach
+ha - aur settling row (ya chori-shuda gesture ke baad off-centre row) ko pakadne par ab snap nahi hota.
+
+**Stack ko patch 14 ki guarantee bhi mil gayi:** cancel ek abort ha (nearest card par `snap`, kabhi open
+nahi), `pointercancel` long-press timer clear karta ha, aur idle watchdog nearest index commit karta ha,
+`drag.current` **aur** gesture ke listeners (`kill.current`) release karta ha - is liye index changes dobara
+deck ko hilate han. Carousel me `g.current` ab settle-to-zero khatam hone par clear hota ha - pehle ek
+**khatam-shuda** animation usme pari rehti thi, jo watchdog ke `if(g.current)return` guard ko chupke se
+agla touch aane tak band kar deti thi (report ka "sometimes" yehi tha).
+
+**Koi nayi motion language nahi:** wahi springs, wahi snap targets, wahi thresholds (18 px carousel
+release, 360 px/s flick, 6/16 px axis lock, 480 ms long-press). Sirf ek jagah jump ki jagah glide aayi ha -
+audit ka spring inventory badla nahi.
+
+**Gates (sab isi tree par, APK ke andar ka payload tree se byte-identical):**
+
+| Gate | Pehle | Ab |
+|---|---|---|
+| `smoke_test_webview.mjs` | 241/241 | **261/261** (Test 6f extended + naya Test 6h) |
+| `qa_feature_suite.mjs` | 259/259 | **281/281** (naya group "36 gestures" = 22) |
+| `apk_content_check.py` | 78/78 | **78/78** (`CardWallet_gesture_fixed.apk`) |
+| `verify_release.py` | 28/29 | 28/29 (akeela FAIL jaan boojh kar: debug cert) |
+| `animation_audit.py` | 10 / 1 warn | 10 / 1 warn (wahi layout-property warning) |
+| `liquid_glass_audit.py` | 105/105 | **105/105** |
+| `replay_chain.py` | patch 34 tak | **patch 35 tak** (previous bundle + patch35 byte-identical) |
+
+**Negative control.** Bundle **patch 35 ke baghair** (= pichhla shipped payload): smoke **246/261**
+(13 naye checks fail - jinme *"front card x 58.36 -> 0.00px across a 900ms hold"*, yani bilkul wahi
+reported symptom, aur *"the sheet opened on a cancel"*), QA group 36 **9/22**. Prone base bundle tree me
+nahi ha, is liye chain ko *pichhle shipped bytes + patch 35* se verify kiya gaya - nateeja byte-identical
+nikla, yani patch 14 ke waqt qaim kiya gaya "tree == scripts ka output" property ab bhi sach ha.
+
+**Artifact:** `CardWallet_gesture_fixed.apk` - **11,669,260 B**, sha256
+`d9370f9cfe91bfd04e15f951223dfe619896766d782ba3b9f98748381803ba6f`, `repo_export/app/index.js` 499,851 B.
+Debug-signed (throwaway key, `repo_export/signing/debug-local.p12`), `allowBackup=false`, release signing
+ki koshish **nahi** ki gayi (`release-key.p12` is environment me mojood nahi). Install se pehle
+`adb uninstall com.arena.cardwallet`.
+
+**Handover:** verdict **wahi - NOT READY FOR CLIENT HANDOVER** (device-unverified MAJOR items waise hi
+khule han). Is round ka apna device work `docs/DEVICE_TEST_PLAN.md` section **AB** (8 rows) ha - us me se
+**AB1** (normal scroll me cards side me na jayen) aur **AB2** (ajeeb swipe ke baad deck jawab deta rahe)
+handover gates han.

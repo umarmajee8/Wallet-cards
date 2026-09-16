@@ -1727,6 +1727,160 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
     b2.close();
   }
 
+  /* ---- group 36: round 20 - a scroll gesture never misaligns the cards ----- */
+  {
+    const g = "36 gestures";
+    const FOUR = JSON.stringify(sample(4));
+    const ptr = (w, type, x, y) => {
+      const e = new w.MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+      Object.defineProperty(e, "isPrimary", { value: true });
+      Object.defineProperty(e, "pointerId", { value: 1 });
+      return e;
+    };
+    const txOf = (el) => parseFloat((stl(el).match(/translateX\((-?[\d.]+)px\)/) || [])[1] ?? "0");
+    const zOf = (el) => +(stl(el).match(/z-index:\s*(\d+)/) || [])[1] || 0;
+    const pouches = (b) => all(b, "#root div.absolute.top-0");
+    const deck = (b) => all(b, "#root div.absolute.no-select");
+    const stageBox = (b) => all(b, "#root div").find((d) => /perspective:\s*1200/.test(stl(d)) && d.className === "relative w-full");
+    const front = (b) => pouches(b).slice().sort((a, c) => zOf(c) - zOf(a))[0];
+    // the card pitch, measured from the cards themselves (no hard-coded geometry)
+    const slotOf = (els) => {
+      const xs = [...new Set(els.map((e) => +txOf(e).toFixed(1)))].sort((a, c) => a - c);
+      let s = 0;
+      for (let i = 1; i < xs.length; i++) { const d = xs[i] - xs[i - 1]; if (d > 1 && (!s || d < s)) s = d; }
+      return s;
+    };
+    // how far the row / deck is from sitting on whole card slots
+    const worstOff = (els) => {
+      const s = slotOf(els);
+      return s ? Math.max(...els.map((e) => Math.abs(txOf(e) / s - Math.round(txOf(e) / s)) * s)) : 0;
+    };
+    const cx = 195, cy = 400;
+
+    /* --- carousel: a finger on the glass owns the row --------------------- */
+    const bc = boot({ [CARDS_KEY]: FOUR, [SETTINGS_KEY]: JSON.stringify({ view: "carousel", cover: true }) });
+    await settle(bc.w, 900);
+    check(g, "carousel: four cards render and rest on whole card slots",
+      pouches(bc).length >= 4 && worstOff(pouches(bc)) < 1,
+      `${pouches(bc).length} wrappers, pitch ${slotOf(pouches(bc)).toFixed(1)}px`);
+
+    front(bc).dispatchEvent(ptr(bc.w, "pointerdown", cx, cy));
+    for (let i = 1; i <= 4; i++) { bc.w.dispatchEvent(ptr(bc.w, "pointermove", cx - i * 30, cy)); await settle(bc.w, 25); }
+    const draggedX = txOf(front(bc));
+    check(g, "carousel: the drag really does move the row (so the checks below mean something)",
+      Math.abs(draggedX) > 20, `front card x ${draggedX.toFixed(1)}px`);
+
+    await settle(bc.w, 900);          // the finger is still down; it is just still
+    const heldX = txOf(front(bc));
+    check(g, "carousel: holding the finger still mid-drag does not shift the row (the reported drift)",
+      Math.abs(heldX - draggedX) < 1,
+      `front card x ${draggedX.toFixed(2)} -> ${heldX.toFixed(2)}px across a 900ms hold`);
+
+    const perFingerPx = Math.abs(draggedX) / 120;
+    bc.w.dispatchEvent(ptr(bc.w, "pointermove", cx - 150, cy));
+    await settle(bc.w, 60);
+    check(g, "carousel: the next move adds only its own delta - the gesture is never replayed",
+      Math.abs(txOf(front(bc)) - (draggedX - 30 * perFingerPx)) < 2,
+      `x ${txOf(front(bc)).toFixed(2)}px, expected ~${(draggedX - 30 * perFingerPx).toFixed(2)}px`);
+    bc.w.dispatchEvent(ptr(bc.w, "pointerup", cx - 150, cy));
+    await settle(bc.w, 900);
+    check(g, "carousel: releasing after the hold still settles back onto a card slot",
+      worstOff(pouches(bc)) < 1, `worst offset ${worstOff(pouches(bc)).toFixed(1)}px`);
+
+    for (let f = 0; f < 3; f++) {     // rapid flicks, one after another
+      front(bc).dispatchEvent(ptr(bc.w, "pointerdown", cx, cy));
+      for (let i = 1; i <= 4; i++) { bc.w.dispatchEvent(ptr(bc.w, "pointermove", cx - i * 40, cy)); await settle(bc.w, 8); }
+      bc.w.dispatchEvent(ptr(bc.w, "pointerup", cx - 160, cy));
+      await settle(bc.w, 150);
+    }
+    await settle(bc.w, 1200);
+    check(g, "carousel: three rapid flicks in a row still land on a slot, with no console errors",
+      worstOff(pouches(bc)) < 1 && bc.errors.length === 0,
+      `worst offset ${worstOff(pouches(bc)).toFixed(1)}px, ${bc.errors.length} error(s)`);
+
+    /* --- carousel: the stream is gone for good ---------------------------- */
+    const bStolen = boot({ [CARDS_KEY]: FOUR, [SETTINGS_KEY]: JSON.stringify({ view: "carousel", cover: true }) });
+    await settle(bStolen.w, 900);
+    front(bStolen).dispatchEvent(ptr(bStolen.w, "pointerdown", cx, cy));
+    for (let i = 1; i <= 4; i++) { bStolen.w.dispatchEvent(ptr(bStolen.w, "pointermove", cx - i * 30, cy)); await settle(bStolen.w, 25); }
+    await settle(bStolen.w, 2600);    // 1500ms of silence + the 400ms tick + the glide
+    check(g, "carousel: a gesture the system ate is recovered, centred, with no pointerup",
+      worstOff(pouches(bStolen)) < 1 && bStolen.errors.length === 0,
+      `worst offset ${worstOff(pouches(bStolen)).toFixed(1)}px`);
+
+    /* --- stack: the deck always comes back to a card ---------------------- */
+    const bs = boot({ [CARDS_KEY]: FOUR, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) });
+    await settle(bs.w, 900);
+    check(g, "stack: four cards rest on whole card slots",
+      deck(bs).length === 4 && worstOff(deck(bs)) < 1, `pitch ${slotOf(deck(bs)).toFixed(1)}px`);
+    stageBox(bs).dispatchEvent(ptr(bs.w, "pointerdown", cx, cy));
+    for (let i = 1; i <= 4; i++) { bs.w.dispatchEvent(ptr(bs.w, "pointermove", cx - i * 40, cy)); await settle(bs.w, 25); }
+    check(g, "stack: an unreleased drag really does leave the deck between two cards",
+      worstOff(deck(bs)) > 20, `worst offset ${worstOff(deck(bs)).toFixed(1)}px`);
+    await settle(bs.w, 2600);
+    check(g, "stack: with the stream gone the deck snaps back onto a card",
+      worstOff(deck(bs)) < 1 && bs.errors.length === 0, `worst offset ${worstOff(deck(bs)).toFixed(1)}px`);
+    stageBox(bs).dispatchEvent(ptr(bs.w, "pointerdown", cx, cy));
+    for (let i = 1; i <= 4; i++) { bs.w.dispatchEvent(ptr(bs.w, "pointermove", cx - i * 40, cy)); await settle(bs.w, 25); }
+    bs.w.dispatchEvent(ptr(bs.w, "pointerup", cx - 160, cy));
+    await settle(bs.w, 900);
+    check(g, "stack: a swipe after the recovery still flips the deck, landing on a slot",
+      worstOff(deck(bs)) < 1 && Math.abs(txOf(deck(bs)[0])) >= slotOf(deck(bs)) - 2,
+      `worst offset ${worstOff(deck(bs)).toFixed(1)}px, first card at ${txOf(deck(bs)[0]).toFixed(1)}px`);
+
+    /* --- stack: a cancel is an abort, not a tap --------------------------- */
+    const bx = boot({ [CARDS_KEY]: FOUR, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) });
+    await settle(bx.w, 900);
+    const beforeX = deck(bx).map(stl);
+    stageBox(bx).dispatchEvent(ptr(bx.w, "pointerdown", 260, 300));
+    bx.w.dispatchEvent(ptr(bx.w, "pointercancel", 260, 300));
+    await settle(bx.w, 700);          // longer than the 480ms long-press
+    check(g, "stack: a cancelled gesture opens nothing (it used to run the tap path)",
+      !/WhatsApp/.test(text(bx.w)), text(bx.w).slice(0, 60));
+    check(g, "stack: ...and leaves the deck exactly where it was",
+      deck(bx).map(stl).join("|") === beforeX.join("|") && bx.errors.length === 0,
+      `${deck(bx).length} cards, ${bx.errors.length} error(s)`);
+
+    /* --- the code-level contracts the behaviour rests on ------------------ */
+    const CARS = CODE.slice(CODE.indexOf("function Td({cards:"), CODE.indexOf("var Ed="));
+    const STKS = CODE.slice(CODE.indexOf("function __cwStack({cards:"), CODE.indexOf("function Td({cards:"));
+    const PTR_HELPERS = (CODE.match(/__cwPtrState=null;function __cwPtr\(\)/g) || []).length;
+    check(g, "both views read one shared pointer helper (who is down, and the gone signals)",
+      PTR_HELPERS === 1 && /__cwPtr\(\)/.test(CARS) && /__cwPtr\(\)/.test(STKS) &&
+        /visibilitychange/.test(CODE) && /lostpointercapture/.test(CODE),
+      `${PTR_HELPERS} definition(s), ${(CARS.match(/__cwPtr\(\)/g) || []).length + (STKS.match(/__cwPtr\(\)/g) || []).length} read(s)`);
+    check(g, "carousel: the idle watchdog refuses to move a row a finger is on",
+      /if\(ptr\.held\(\)&&!ptr\.quiet\(1500\)\)\{arm\(\);return\}/.test(CARS), "a held finger owns the row");
+    check(g, "carousel: the recovery glides home and never commits an index step",
+      (() => {
+        const rec = CARS.split("home=()=>")[1]?.split("off=d.on")[0] || "";
+        return /Ju\(d,0,Cd\)/.test(rec) && !/d\.jump\(0\)/.test(rec) && !/h\.current\+=/.test(rec);
+      })(), "no jump, no re-order");
+    check(g, "carousel: the drag rebases on the row's live value and re-anchors after every write",
+      /Math\.abs\(d\.get\(\)-k\)>\.5&&\(k=d\.get\(\),sv=s\)/.test(CARS) && /k=d\.get\(\),sv=s\)/.test(CARS),
+      "a move can only ever add its own delta");
+    check(g, "carousel: a settle to zero clears the settle slot (it used to disarm the watchdog)",
+      /g\.current=Ju\(d,0,\{\.\.\.Cd,onComplete:\(\)=>\{g\.current=null\}\}\)/.test(CARS),
+      "no finished animation left in g.current");
+    check(g, "stack: a lost deck is snapped back onto a card and its gesture state is released",
+      /if\(ptr\.held\(\)&&!ptr\.quiet\(1500\)\)\{arm\(\);return\}/.test(STKS) &&
+        /drag\.current=null,kill\.current\?\.\(\),kill\.current=null,window\.clearTimeout\(hold\.current\),snap\(e\)/.test(STKS),
+      "snap() is index-based, so the recovery is a tween");
+    check(g, "stack: a cancel is an abort - it can never walk the tap path",
+      /addEventListener\(`pointercancel`,t=>\{if\(t\.pointerId!==n\)return;ab=!0,y\(t\)\}\)/.test(STKS) &&
+        /if\(ab\)\{drag\.current=null,snap\(p\.get\(\)\);return\}/.test(STKS),
+      "settles to the nearest card, opens nothing");
+    check(g, "stack: the drag rebases on the deck's live value too",
+      /Math\.abs\(p\.get\(\)-w0\)>\.02&&\(w0=p\.get\(\),s0=e\)/.test(STKS) && /w0=p\.get\(\),s0=e\)/.test(STKS),
+      "no stale start index");
+    check(g, "the recovery adds no new motion: the existing tween and springs are reused",
+      /Ju\(d,0,Cd\)/.test(CARS) && /snap\(e\)/.test(STKS) &&
+        !/stiffness/.test(CARS.split("home=()=>")[1]?.split("off=d.on")[0] || "") &&
+        !/stiffness/.test(STKS.split("let t=null,arm=()=>")[1]?.split("off=p.on")[0] || ""),
+      "same language as the release path");
+    bc.close(); bStolen.close(); bs.close(); bx.close();
+  }
+
   /* ---- report ------------------------------------------------------------ */
   const byGroup = {};
   for (const r of results) { (byGroup[r.group] ||= { pass: 0, fail: 0, fails: [] }); byGroup[r.group][r.ok ? "pass" : "fail"]++; if (!r.ok) byGroup[r.group].fails.push(r); }

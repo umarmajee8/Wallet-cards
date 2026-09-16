@@ -83,6 +83,16 @@ CLEAN_NEW = (
     "window.removeEventListener(`pointercancel`,bump)}},[d,u.slide,i]),"
 )
 
+# Patch 35 supersedes the watchdog below: a held finger is not a stolen gesture (the
+# 340ms event-quiet window yanked the row out from under a still finger), the recovery
+# glides instead of `d.jump(0)`, and the "stream is gone" signals (`visibilitychange` /
+# `blur` / `pagehide`) now recover immediately. The success, same as patch 7/21: the
+# successor's text is the proof this patch is still in there, just re-worded downstream.
+DOWNSTREAM_KEEP = {
+    "idle watchdog re-centres the row": "un=ptr.onGone(home)",
+}
+
+
 EDITS = [
     (DOWN_OLD, DOWN_NEW, "grab mid-glide commits the settle"),
     (CLEAN_OLD, CLEAN_NEW, "idle watchdog re-centres the row"),
@@ -94,11 +104,16 @@ def status(data):
 
     The watchdog edit is an *insertion*: its `old` anchor is the exact prefix of its
     `new` text, so "old is still present" would be true forever and a re-run would
-    stack a second watchdog. Check the output first for those.
+    stack a second watchdog. Check the output first for those - and before the plain
+    anchor test, the DOWNSTREAM_KEEP marker, or a re-run would re-insert the old
+    watchdog next to patch 35's replacement.
     """
     todo, done, bad = [], [], []
     for old, new, label in EDITS:
+        keep = DOWNSTREAM_KEEP.get(label)
         if old in new and data.count(new) >= 1:
+            done.append(label)
+        elif keep and keep in data:
             done.append(label)
         elif data.count(old) == 1:
             todo.append((old, new, label))

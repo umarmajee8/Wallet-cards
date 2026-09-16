@@ -540,6 +540,31 @@ Record per row: device, Android + WebView version, result. Two failures are prod
 (the switch does not actually gate the controls on a real screen) and **AA3** (the gate stays open after
 Settings closes, or opens already-on, which is the exact behaviour that was asked to be impossible).
 
+## AB. Round 20 - a gesture never leaves the cards off-centre (patch 35)  ⚠ this is the report itself, on the two views
+
+The race is fixed and pinned in jsdom (smoke Test 6f/6h: a finger held still for 900 ms moves the row
+**0.00 px**, a stolen stream comes back to a slot, a cancel opens nothing). What jsdom cannot show is the
+one thing the report is about: **real touch delivery** - when Android hands a gesture to the system, when
+it cancels a pointer stream, and how a glide looks while a thumb is still on the glass. Use **3+ cards**
+and a **Stack/Carousel** wallet; do this section on the lowest-spec phone you have. **AB1 and AB2 are
+handover gates.**
+
+| # | Do this | Expect |
+|---|---------|--------|
+| AB1 | Carousel, 4+ cards. Swipe one card to the side and **stop with your finger still on the screen** for a full second, then continue the swipe and release. Repeat 10 times, fast and slow, left and right. | While your finger is down the row **does not move on its own** - not one pixel, no snap under the thumb, no horizontal jump when you start moving again. On release it settles onto a card slot, centred, with the same motion as always. A single sideways jolt while a finger is down is the defect this round closes. |
+| AB2 | Carousel and Stack. Swipe **up from the very bottom edge**, so Android's own gesture (home/recents) takes over: the app goes to the background mid-swipe. Come back to the app. | The row/deck is **centred on a card** immediately - no half-shifted fan, no card clipped by the screen edge - and the next swipe works normally. Do it 10 times: the state must never survive the trip to the background. |
+| AB3 | Stack, 4+ cards. Flick repeatedly until you hit a card the deck does not expect, then **pull the notification shade down** mid-swipe and put it back. | The deck snaps back onto a card and keeps answering swipes and taps. It must never rest between two cards (cards visibly overlapping off-grid), and it must not stop following a tap-to-open. |
+| AB4 | Both views. Rotate the phone **during** a drag, and rotate right after a flick settles. | No crash, no card left at a diagonal/fractional offset, and the row/deck is centred after the re-layout. The geometry is rebuilt on rotate; the offset must not be carried over as a stale pixel value. |
+| AB5 | Stack. Start a swipe and cancel it: press, drag 30-50 px, then pull in from the screen's edge (or trigger any system gesture that cancels the touch) so the touch is cancelled, **with no finger movement after the cancel**. | **Nothing opens.** A cancelled gesture must never open the card under the finger, must not lift a card, and must not leave the deck shifted. Repeat with the phone's own back-gesture, with a hardware Back press mid-drag, and by locking the screen mid-drag. |
+| AB6 | Stack. Press and hold a card for ~0.6 s without moving, twice: once normally, once while a system gesture steals the touch (pull down the shade right after pressing). | The deliberate long press still opens the card's details. The *stolen* one must not: a 480 ms hold whose touch was cancelled is not a long press, and no sheet may appear while the shade is down. |
+| AB7 | Both views, 3 cards and then 12 cards. Rapid flicks: 5-6 flicks as fast as you can in one direction, then reverse without stopping. | Cards stay centred and stacked (the fan keeps its pitch), no card ends up half off-screen, and the final resting position is a whole card slot in both directions. With 12 cards the same holds at the ends of the deck (the first and last card must not pull past the edge and stay there). |
+| AB8 | Frame pacing: on the oldest phone, do 20 normal swipes in the carousel and 20 in the stack while watching for hitches; then try TalkBack on (swipe with two fingers) and a stylus/finger combination. | The recovery is a 280 ms tween on the spring the app already uses, so an ordinary swipe must feel exactly as it did before this round - if anything feels slower, or a swipe now "sticks" for a moment before moving, that is a defect to file. Nothing in this round adds a listener that runs per frame; a second finger or a stylus must not move the row while the first finger owns it. |
+
+Record per row: device, Android + WebView version, result. Two failures are product-blocking: **AB1**
+(cards shifting sideways while a finger is on the glass - the report verbatim) and **AB2** (a backgrounded
+swipe leaving the row off-centre, which is the exact state patch 14 was written for and round 20 replaced
+with a signal-driven recovery).
+
 ## Sign-off
 
 The build may only be called production-ready once **A–Z are green** on at least
@@ -550,12 +575,13 @@ signing, NFC, the soft keyboard, rotation rendering and every smoothness/judgeme
 call). Record device model, Android version and result per row, and file anything
 that fails with the section id (e.g. "F3 fails: Back exits the app with Settings
 open"). The Android UI-testable layer is complete and green: `qa_feature_suite.mjs`
-231/231 (group 33 covers the Liquid Glass material, the round-16 footer dock and the round-17 blur
+281/281 (group 33 covers the Liquid Glass material, the round-16 footer dock and the round-17 blur
 budget; group 34 the lock and the backup file, including a Node re-derivation of the PIN digest and an
-AES-GCM round-trip of a real `.cwbak`), `smoke_test_webview.mjs` 239/239, `liquid_glass_audit.py` 96/96
+AES-GCM round-trip of a real `.cwbak`; group 36 the round-20 gesture recovery on both views),
+`smoke_test_webview.mjs` 261/261, `liquid_glass_audit.py` 105/105
 (tier rules, the cost model, the WCAG contrast engine and the round-18 gate's opacity/token rules),
 `verify_release.py` 28/29 with the only FAIL being the deliberate debug signature, and
-`apk_content_check.py` 70/70 against the APK itself (the four-blurred-selector budget plus the round-18
+`apk_content_check.py` 78/78 against `CardWallet_gesture_fixed.apk` (the four-blurred-selector budget plus the round-18
 copy, store key, crypto markers and the gate's opacity - all read out of the shipped entries, not the tree). The jsdom suites need `jsdom@27` + `cssstyle@4.6.0`; on other pairings 11 checks
 fail on *any* bundle because cssstyle does not serialise `backdrop-filter` into the `style` attribute - the
 suite reads those through `inlineStyle()` (see README, round 17).

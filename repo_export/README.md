@@ -568,6 +568,69 @@ This repo contains the patched source for the CardWallet app.
     6-9). **AA1** and **AA3** are handover gates: a customization switch that does not actually reveal the
     controls, or that lets edits through while off, is worse than no switch.
 
+24. **Round 20 - a scroll gesture can no longer misalign the cards** (patch 35), 2026-09-16.
+  - **The ask, verbatim:** *"while scrolling through the passes the cards sometimes shift/slide off to
+    the side instead of staying properly centred/stacked ... intermittent ('sometimes'), so a race, not a
+    layout error"*. Two races, both reproduced in jsdom against the shipped bundle (numbers below from a throwaway jsdom probe run against the shipped
+    bundle before the fix - not a shipped tool; the same numbers are pinned by smoke Test 6f/6h now).
+  - **Defect 1 - the watchdog yanked the row out from under a live finger.** patch 14 called 340 ms of
+    *event-quiet* "the gesture was stolen", but a finger that is simply **still** mid-drag produces exactly
+    that quiet: the row committed to the nearest card and `d.jump(0)` jumped it 106 px sideways, and the
+    next `pointermove` replayed the whole gesture delta from the new base (a second 170 px jolt). A drag of
+    200 px, held still for 800 ms, then continued: `-509.3 | -307.7 | -106.1 | 95.5 | 297.1` ->
+    `-403.2 | -201.6 | 0.0 | ...` -> `-573.0 | ...`. `mv` computed `k+s` from a start value captured at
+    pointerdown, so *anything* that moved `d` behind the gesture's back turned the next move into a jump.
+  - **Defect 2 - the stack had no recovery at all, and a cancel was a tap.** `__cwStack` never got patch
+    14's treatment: a gesture the system ate left the deck at a fractional index **for good**
+    (`0.0 | 229.5 | 459.0 | 688.5` -> `-225.8 | 3.7 | 233.2 | 462.7`, identical 2.5 s and 4.5 s later),
+    `drag.current` stayed set so the `drag.current||p.jump(r)` guard meant index changes stopped moving the
+    deck too, the 480 ms long-press timer kept running, and `pointercancel` was wired to the *tap* handler -
+    a bare cancel (no movement at all) opened the card under the finger.
+  - **The rule now: a finger on the glass owns the row.** One injected helper (`__cwPtr`) tracks who is down
+    (pointerdown -> up / cancel / lostpointercapture) and exposes `held()`, `quiet(ms)` and an `onGone`
+    signal for the three ways a WebView loses a stream for good - `visibilitychange` (hidden), `blur`,
+    `pagehide`. The foreground gesture that backgrounded the app (patch 14's own device report: the bottom
+    gesture strip *is* the home/recents gesture) fires one of those, so it recovers **immediately and
+    invisibly**; a resting finger fires none of them, so nothing touches the row. The 1500 ms net is left
+    for the one case with no signal at all.
+  - **The recovery glides, and commits nothing.** Where patch 14 did `d.jump(0)` plus an index commit,
+    the carousel now glides home on its existing `Cd` tween and **never changes the index** - committing at
+    an arbitrary offset cannot be seamless (it moves the fan by `slide - sideGap`, ~101 px here), so the
+    recovery returns the user to the card they were on, calmly, and the rest state is still exactly 0. The
+    stack's recovery is `snap()`, which is index-based and therefore a smooth tween by construction.
+  - **The drag is rebased on the live value**, in both views: every move compares what the row actually is
+    with what the gesture last wrote, and if something else moved it the pointer's origin is re-based rather
+    than replaying the deltas it already spent. This is what makes "the cards never drift sideways" true by
+    construction instead of by luck, and it is why grabbing a settling row (or a row a stolen gesture left
+    off-centre) no longer snaps it.
+  - **Stack: patch 14's guarantees, finally.** A cancel is an abort (`snap` to the nearest card, never
+    open), `pointercancel` clears the long-press timer, and the idle watchdog commits the nearest index,
+    releases `drag.current` **and** the gesture's listeners (`kill.current`) so index changes move the deck
+    again. `g.current` in the carousel is now cleared when a settle-to-zero finishes - it used to hold a
+    *finished* animation, which silently disabled the watchdog's `if(g.current)return` guard until the next
+    touch (the "sometimes" in the report).
+  - **No new motion language.** Same springs, same snap targets, same thresholds (18 px carousel release,
+    360 px/s flick, 6/16 px axis lock, 480 ms long-press). The only new motion is a recovery glide where
+    there used to be a jump; the audit's spring inventory is unchanged.
+  - **Gates.** web smoke **241 -> 261/261** (Test 6f extended: the held-finger 900 ms hold, the delta
+    continuity, the backgrounded-app recovery; new Test 6h: the stack's slot invariant, the stolen-stream
+    recovery, the swipe-after-recovery, the cancel, plus the source contracts), QA feature suite
+    **259 -> 281/281** (new group "36 gestures", 22 checks: the same behaviour on both views, three rapid
+    flicks, and the code-level contracts), `apk_content_check.py` **78/78** against
+    `CardWallet_gesture_fixed.apk`, `verify_release.py` **28/29** (only the deliberate debug cert),
+    `animation_audit.py` 10 checks / 1 warning (unchanged), `liquid_glass_audit.py` **105/105**.
+  - **Negative control.** The bundle without patch 35 (i.e. the previous shipped bytes): smoke **246/261**
+    (13 new checks fail - including *"front card x 58.36 -> 0.00px across a 900ms hold"*, the reported
+    symptom, and *"the sheet opened on a cancel"*), QA group 36 **9/22**. `replay_chain.py --stock <the
+    previous bundle> --upto 35` reproduces `app/index.js` byte-identically (the pristine base bundle is not
+    in the tree, so the chain was verified from the previous shipped bytes plus patch 35 - the
+    tree-equals-scripts property patch 14 relied on still holds here).
+  - **Device work.** `docs/DEVICE_TEST_PLAN.md` section **AB** (8 rows) - the gesture the OS eats
+    (bottom gesture strip), a finger resting mid-drag, rapid flicks, 3+ cards in both views, rotation and
+    backgrounding mid-swipe, and a cancel from the edge-back gesture. **AB1** and **AB2** are handover gates:
+    cards that drift sideways during a normal scroll, or a deck that stops answering after one weird swipe,
+    are exactly the report this round closes.
+
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.
