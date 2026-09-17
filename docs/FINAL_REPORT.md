@@ -1527,3 +1527,72 @@ koshish **nahi** ki gayi. Install se pehle `adb uninstall com.arena.cardwallet`.
 **Handover:** verdict wahi - **NOT READY FOR CLIENT HANDOVER**. Is round ka device work
 `docs/DEVICE_TEST_PLAN.md` section **AD** (5 rows) ha: menu Light me, Dark me, aur System me phone toggle
 karte hue - aur bahar-tap par dismissal. Round 20 ke **AB1**/**AB2** ab bhi handover gates han.
+
+## 27. Round 23 - card viewer ke khaali bands ab touch nahi lete (patch 38), 2026-09-17
+
+**Report, verbatim:** *"On the card detail/preview screen (shown when a card is opened), the areas above
+and below the card itself (the top region near the header, and the bottom region above the WhatsApp/Save
+buttons - both highlighted in red in the screenshot) should not be interactive/clickable/tappable at all.
+Currently these empty areas seem to register touches or scroll actions, which shouldn't happen."* Scope
+bhi wahi diya gaya: *"Only the two bottom buttons (WhatsApp and Save) remain functional/clickable"*, aur
+card *"keeps whatever interaction it currently has (e.g. viewing/zooming)"*.
+
+**Ye bands asal me kya thi:** viewer (`function jd`) ek hi `fixed inset-0 z-50` box ha jis ke teen bachay
+han - poora backdrop, card box, aur button row. Top aur bottom band me sirf backdrop hota ha, is liye wahan
+ka har touch usi par girta tha - aur us ke parent par `onClick:te` laga tha, yani viewer ka apna close
+routine. Natija: **khaali band me kahin bhi tap = card preview band**. Yehi report ka "registers touches"
+wala hissa ha. Dusri taraf overlay apne liye koi `touch-action` declare nahi karta tha, is liye band me
+drag browser ke liye aam pan gesture ban jata tha - "or scroll actions" wala hissa. Round 9 (patch 15) ne
+yehi class ka bug **pouch row** ke liye theek kiya tha (`<main>` par `touch-action:none`, ek
+`pointer-events:none` wrapper, aur drag par `closest('[data-cwc]')` guard) - lekin woh guard `<main>` par
+ha, aur ye overlay `<main>` ka **sibling** ha, is liye yahan tak pohanchta hi nahi. (Round 9 ka apna test
+comment - *"yeh jaga kam na kray - is pr touch swipe kuch b kam na kray"* - bilkul yehi report ha, ek
+screen pehle.)
+
+**Fix** (sirf overlay root par): `className` me `touch-none` (yani `touch-action:none`), root se `onClick:te`
+hata diya, aur backdrop ko `data-cwband:"preview"` + `/*cardwallet:inert-bands*/` marker ke saath inert
+shield bana diya. `touch-action:none` is screen ke liye round-9 wala guard ha: band ka har touch isi ke
+andar shuru hota ha, is liye browser wahan se pan, zoom, rubber-band ya double-tap-zoom nahi kar sakta.
+Click handler hatana wohi cheez ha jo report ne maangi - bands ab kuch dismiss nahi karte. Aur backdrop ko
+hit target **rakhna** (usay `pointer-events:none` banane ke bajaye) hi bands ko "transparent" ke bajaye
+"dead" banata ha: shield touch ko khud kha jata ha, is liye woh overlay ke peeche z-40 par baithe dock ke
+Create/Search/More buttons tak nahi pohanch sakta.
+
+**Jaan-boojh kar nahi chhua:** card box aur uske gesture handlers (`onPointerDown:re` -> long-press details
+/ double-tap flip / pinch zoom / `onWheel`), do bottom buttons (`pointer-events:none` row ke andar
+`pointer-events-auto`), viewer ke colours (`#09090b` card, `rgba(9,9,11,0.94)` backdrop - design se
+theme-independent, Photos ki tarah), aur stylesheet: is round me **koi CSS block nahi** aata, ye bundle me
+pehle se mojood `.touch-none{touch-action:none}` utility use karta ha.
+
+**Band ke ilawa viewer band karne ke tareeqay jo bache hain** (report ne viewer ko na-band karne ko nahi
+kaha tha): card ko neeche swipe karna - card ka apna gesture, `if(n>90){te();return}` - aur patch 26 ka
+Android Back / history contract (`shut=()=>{if(f){p(null);…}`). Tap-outside dismissal issi round me
+retire hota ha.
+
+**Gates:** web smoke **266 -> 286/286** (naya Test 6n, round 9 ke Test 6g ki shakal me: bands ek marked
+shield han, dono bands me tap ab dismiss nahi karta, band me drag kuch nahi badalta, do buttons hi overlay
+ke waahid controls han *aur* un ke taps apne handlers tak pohanchte han - `navigator.vibrate` spy - jabke
+card ab bhi double-tap par flip hota ha aur swipe-down par band hota ha), QA suite **283 -> 300/300**
+(group 37 yehi contract end-to-end dohrata ha, Save button ke "Saved to gallery" feedback ke saath),
+`apk_content_check.py` **83 -> 90/90** (teen positive rows, ek `MUST_NOT` taake band-tap dismissal wapas na
+aa sake, aur carry rows jo card ke handlers, uska swipe-down close aur button row pin karte han),
+`liquid_glass_audit.py` **111 -> 113/113** (fix *sirf* behavioural ha: shield paint-only ha - ek background,
+na blur na shadow - aur round koi stylesheet block ya colour nahi laata), `animation_audit.py` 10 checks /
+1 warning (barqarar), `verify_release.py` **28/29**.
+
+**Negative control:** pichhla bundle - smoke **278/286** (8 checks fail: shield unmarked, overlay par koi
+touch guard nahi, aur dono band taps viewer dismiss kar dete han), QA **293/300** (group 37 **10/17**),
+`apk_content_check.py` **85/90** `CardWallet_themed_menu.apk` ke against (4 rows). 11 "kept working" checks
+- buttons, share/save paths, card gestures, swipe-down close - **dono** bundles par pass hote han, aur
+yehi unhe saboot banata ha ke fix ne unhein chhua nahi.
+
+**Artifact:** `CardWallet_inert_bands.apk` - **11,669,370 B**, sha256
+`5a64084f429fd2de8d66fad82d374987df592f751010e93204420d971acf443e`, `repo_export/app/index.js` 499,556 B
+(+ `index.css` 38,011 B - is round me bilkul wahi). Debug-signed (wahi throwaway key), `allowBackup=false`,
+release signing ki koshish **nahi** ki gayi. Install se pehle `adb uninstall com.arena.cardwallet`.
+
+**Handover:** verdict wahi - **NOT READY FOR CLIENT HANDOVER**. Is round ka device work
+`docs/DEVICE_TEST_PLAN.md` section **AE** (5 rows) ha: dono khaali bands (dono themes me), un me drag /
+scroll ki koshish, do buttons, card ke apne gestures, aur viewer band karne ke do bache hue tareeqay. Round
+20 ke **AB1**/**AB2** ab bhi handover gates han.
+

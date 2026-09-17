@@ -1914,6 +1914,131 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
     bc.close(); bStolen.close(); bs.close(); bx.close();
   }
 
+  /* ---- group 37: round 23 - the viewer's empty bands take no touches ------- */
+  {
+    const g = "37 inert bands";
+    const b = boot({ [CARDS_KEY]: JSON.stringify(sample(3)), [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) });
+    await settle(b.w, 900);
+    const w = b.w;
+    const viewer = () => all(w, "#root div").find((d) => /^fixed inset-0 z-50/.test(d.className || ""));
+    const shield = () => all(w, "#root [data-cwband]")[0];
+    const band = () => viewer()?.children?.[0];
+    const vCard = () => [...(viewer()?.children || [])].find((d) => /no-select absolute touch-none/.test(d.className || ""));
+    const vBtn = (l) => [...(viewer()?.querySelectorAll("button") || [])].find((x) => (x.textContent || "").trim() === l);
+    const open = () => /WhatsApp/.test(text(w));
+    // the deck's own open gesture: a tap on the stack (the same path group 36 uses for its taps)
+    const openViewer = async () => {
+      for (let i = 0; i < 3 && !open(); i += 1) {
+        const stage = deckStage(w);
+        if (!stage) return false;
+        press(w, stage, "pointerdown", 195, 300);
+        await settle(w, 80);
+        press(w, stage, "pointerup", 195, 300);
+        await settle(w, 1700);
+      }
+      return open();
+    };
+    const tapBand = async (x, y) => {
+      const el = band();
+      if (!el) return false;
+      press(w, el, "pointerdown", x, y);
+      press(w, el, "pointerup", x, y);
+      await click(w, el, 700);
+      return true;
+    };
+    const dragBand = (x, y) => {
+      const el = band();
+      if (!el) return false;
+      press(w, el, "pointerdown", x, y);
+      for (const step of [40, 90, 150]) press(w, el, "pointermove", x, y + step);
+      press(w, el, "pointerup", x, y + 150);
+      return true;
+    };
+    const cardStyle = () => stl(vCard()?.querySelector("img")?.parentElement);
+
+    check(g, "the viewer opens from a card tap (the bands have something to be dead around)",
+      (await openViewer()) && !!viewer(), open() ? "viewer open" : "viewer never opened");
+
+    /* the bands are one inert shield ---------------------------------------- */
+    check(g, "the empty bands are covered by one full-screen, handler-free shield",
+      !!band() && /absolute inset-0/.test(band().className || "") && band().children.length === 0 &&
+        !band().hasAttribute("onclick") && !band().hasAttribute("role"),
+      band() ? `class=${band().className} children=${band().children.length}` : "no band element");
+    check(g, "the shield is the marked one (data-cwband = preview), so the bands are dead and not transparent",
+      !!shield() && shield() === band(), shield() ? String(shield().getAttribute("data-cwband")) : "no [data-cwband]");
+    check(g, "the overlay root declares touch-action:none (no pan/zoom/rubber-band from a band, round 9's guard for this screen)",
+      /touch-none/.test(viewer()?.className || ""), viewer() ? viewer().className : "no viewer");
+    check(g, "the shield is painted, not wired: class + data-cwband + style, nothing else",
+      !!band() && [...band().attributes].map((a) => a.name).sort().join(",") === "class,data-cwband,style",
+      band() ? [...band().attributes].map((a) => a.name).join(",") : "-");
+
+    /* taps and drags in the bands ------------------------------------------- */
+    const tappedTop = await tapBand(195, 60);
+    const stayedTop = open();
+    check(g, "a tap in the top band (above the card, under the header) does not dismiss the opened card",
+      tappedTop && stayedTop, `tapped=${tappedTop} open=${stayedTop}`);
+    await openViewer();
+    const tappedBottom = await tapBand(195, 660);
+    const stayedBottom = open();
+    check(g, "a tap in the bottom band (between the card and the buttons) does not dismiss it either",
+      tappedBottom && stayedBottom, `tapped=${tappedBottom} open=${stayedBottom}`);
+    await openViewer();
+    const before = cardStyle();
+    dragBand(195, 120);
+    await settle(w, 800);
+    check(g, "a drag in a band changes nothing: still open, card neither zoomed nor panned, page not scrolled",
+      open() && cardStyle() === before && w.scrollY === 0,
+      `open=${open()} card-untouched=${cardStyle() === before} scrollY=${w.scrollY}`);
+
+    /* the two buttons are the overlay's only controls ----------------------- */
+    const labels = [...(viewer()?.querySelectorAll("button") || [])].map((x) => (x.textContent || "").trim()).filter(Boolean);
+    check(g, "the two bottom buttons are still there - and are the overlay's only controls",
+      ["WhatsApp", "Save"].every((l) => labels.includes(l)) && labels.every((l) => ["WhatsApp", "Save"].includes(l)),
+      labels.join(" | "));
+    const sharesBefore = b.inst.shares.length;
+    await click(w, vBtn("WhatsApp"), 900);
+    check(g, "the WhatsApp button still works (its share path fires through the Web Share fallback)",
+      b.inst.shares.length > sharesBefore || /WhatsApp/.test(text(w)),
+      `web shares:${sharesBefore} -> ${b.inst.shares.length}`);
+    await click(w, vBtn("Save"), 900);
+    check(g, "the Save button still works (its saved-to-gallery feedback shows)",
+      /Saved to gallery/.test(text(w)), text(w).slice(-60));
+
+    /* the card keeps its own behaviour -------------------------------------- */
+    for (const _ of [0, 1]) {
+      press(w, vCard(), "pointerdown", 150, 400);
+      press(w, vCard(), "pointerup", 150, 400);
+    }
+    await settle(w, 1400);
+    check(g, "double-tapping the card still turns it over (the preview is not frozen)",
+      /No back side yet|Double tap the card/.test(text(w)), text(w).slice(-70));
+    press(w, vCard(), "pointerdown", 150, 400);
+    press(w, vCard(), "pointermove", 150, 470);
+    press(w, vCard(), "pointermove", 150, 545);
+    press(w, vCard(), "pointerup", 150, 545);
+    await settle(w, 1400);
+    check(g, "swiping the card down still closes the viewer - the bands were not the only way out",
+      !open(), open() ? "still open" : "closed by the card's own gesture");
+
+    /* the code the behaviour rests on --------------------------------------- */
+    check(g, "the overlay's old dismissal click is gone and the touch-action guard is in the shipped bundle",
+      !CODE.includes("transition:{duration:.26},onClick:te") && /z-50 touch-none/.test(CODE),
+      /z-50 touch-none/.test(CODE) ? "guard present" : "guard missing");
+    const mark = CODE.indexOf("/*cardwallet:inert-bands*/");
+    const slice = mark < 0 ? "" : CODE.slice(mark - 130, mark + 150);
+    check(g, "the inert shield is marked in the bundle, together with the attribute the tests read",
+      !!slice && slice.includes("z-50 touch-none") && slice.includes('"data-cwband":`preview`'),
+      slice ? "marker + attribute" : "marker missing");
+    check(g, "the fix did not touch the card's handlers or the two buttons",
+      ["onPointerDown:re", "onPointerMove:M", "onPointerUp:N", "onWheel:e=>{"].every((h) => CODE.includes(h)) &&
+        CODE.includes("if(n>90){te();return}") &&
+        (CODE.match(/pointer-events-auto flex items-center gap-2 rounded-full px-5 text-\[15px\] font-semibold text-white/g) || []).length === 2,
+      "card gestures + both buttons intact");
+    check(g, "no console errors in the viewer band flow", b.errors.length === 0,
+      b.errors.slice(0, 1).join("").slice(0, 160));
+    b.close();
+  }
+
   /* ---- report ------------------------------------------------------------ */
   const byGroup = {};
   for (const r of results) { (byGroup[r.group] ||= { pass: 0, fail: 0, fails: [] }); byGroup[r.group][r.ok ? "pass" : "fail"]++; if (!r.ok) byGroup[r.group].fails.push(r); }

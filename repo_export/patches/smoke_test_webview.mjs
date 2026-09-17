@@ -842,8 +842,19 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
 
   // Closing hands the deck over: the card that was opened becomes the front one,
   // and the lift/flap state is fully released (no stuck card).
-  const sheet = [...Ds.querySelectorAll("#root div")].find((d) => /z-50/.test(d.className || ""));
-  sheet?.dispatchEvent(new Ws.MouseEvent("click", { bubbles: true }));
+  // Round 23 retired the tap-on-the-backdrop dismissal (the report asked for the empty bands to stop
+  // taking touches), so the hand-off is driven through the viewer's own remaining close gesture:
+  // swiping the card down, which is the same handler the device row exercises. See Test 6n.
+  const viewerCard = [...Ds.querySelectorAll("#root div")].find((d) => /no-select absolute touch-none/.test(d.className || ""));
+  const closeFrom = (x, y) => {
+    viewerCard.dispatchEvent(ptr("pointerdown", x, y));
+    viewerCard.dispatchEvent(ptr("pointermove", x, y + 60));
+    viewerCard.dispatchEvent(ptr("pointermove", x, y + 140));
+    viewerCard.dispatchEvent(ptr("pointerup", x, y + 140));
+  };
+  check("stack: closing the viewer now happens through the card's own swipe-down", !!viewerCard,
+    viewerCard ? "card box found" : "no viewer card box in the tree");
+  closeFrom(195, 300);
   await settle(Ws, 1200);
   const back = cards();
   check("stack: after closing, the deck follows the card you opened - nothing stuck lifted",
@@ -2144,6 +2155,208 @@ check("rounds 11-12: no console errors from the compact sheet", m.errors.length 
   const errs = [carPlain, carWild, stPlain, stWild, carBig, stBig, mPrev].flatMap((m) => m.errors || []);
   check("round 12: no console errors across the independent views, the staging and the glide",
     errs.length === 0, errs.slice(0, 1).join("").slice(0, 200));
+}
+
+// ---------------------------------------------------------------------------
+// Test 6n: round 23 - the empty bands around the card preview take no touches
+//
+// The report framed the dead space above and below the opened card in red: "the areas above and below
+// the card itself ... should not be interactive/clickable/tappable at all. Currently these empty areas
+// seem to register touches or scroll actions, which shouldn't happen", with "Only the two bottom
+// buttons (WhatsApp and Save) remain functional/clickable" and the card itself keeping its behaviour.
+//
+// Those bands were the viewer's own backdrop: it is the only thing under them, and its parent (the
+// `fixed inset-0 z-50` overlay root) carried `onClick:te` - the viewer's close routine - so a tap in the
+// band dismissed the card. The overlay also declared no `touch-action`, so a drag there was left to the
+// browser as a pan gesture. Round 9's guard for the same class of bug lives on `<main>`, and this
+// overlay is `<main>`'s sibling, so none of it reached the bands. This block is the same shape as Test
+// 6g (the pouch row's dead bands), applied to the viewer.
+//
+// Every phase re-opens the viewer if a check closed it (that is the pre-patch failure mode), so a
+// regression fails a handful of named checks instead of aborting the suite.
+// ---------------------------------------------------------------------------
+{
+  const CARDS3n = JSON.stringify([
+    { id: "n1", src: "cards/one.jpg", title: "Nova One", subtitle: "1", fields: [] },
+    { id: "n2", src: "cards/two.jpg", title: "Oscar Two", subtitle: "2", fields: [] },
+    { id: "n3", src: "cards/three.jpg", title: "Papa Three", subtitle: "3", fields: [] },
+  ]);
+  const st = makeDom(
+    { [CARDS_KEY]: CARDS3n, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) },
+    { withLayout: true },
+  );
+  runBundle(st.window, st.errors);
+  await settle(st.window, 900);
+  const Wn = st.window, Dn = Wn.document;
+  const ptr = (type, x, y) => {
+    const e = new Wn.MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(e, "isPrimary", { value: true });
+    Object.defineProperty(e, "pointerId", { value: 1 });
+    return e;
+  };
+  const clickAt = (el, x, y) => {
+    if (!el) return false;
+    el.dispatchEvent(new Wn.MouseEvent("click", { bubbles: true, clientX: x, clientY: y }));
+    return true;
+  };
+  const styleOf = (el) => inlineStyle(el);
+  const open = () => /WhatsApp/.test(textOf(Wn));
+  const overlay = () => [...Dn.querySelectorAll("#root div")].find((d) => /^fixed inset-0 z-50/.test(d.className || ""));
+  const band = () => overlay()?.children?.[0];                     // backdrop == the band hit target
+  const shield = () => Dn.querySelector("#root [data-cwband]");
+  const viewerCard = () => [...(overlay()?.children || [])].find((d) => /no-select absolute touch-none/.test(d.className || ""));
+  const rowOf = () => [...(overlay()?.children || [])].find((d) => /pointer-events-none absolute inset-x-0/.test(d.className || ""));
+  const viewerButtons = () => [...(overlay()?.querySelectorAll("button") || [])];
+  const btn = (label) => viewerButtons().find((b) => (b.textContent || "").trim() === label);
+
+  // the deck opens the viewer; this is also the recovery path between phases
+  const openViewer = async () => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (open()) return true;
+      const stage = [...Dn.querySelectorAll("#root div")].find((d) => /perspective:\s*1200/.test(styleOf(d)));
+      if (!stage) return false;
+      stage.dispatchEvent(ptr("pointerdown", 195, 300));
+      await settle(Wn, 80);
+      Wn.dispatchEvent(ptr("pointerup", 195, 300));
+      await settle(Wn, 1700);
+    }
+    return open();
+  };
+  await openViewer();
+  check("round 23: the card viewer is open (the bands have something to be dead around)",
+    open() && !!overlay(), open() ? "viewer open" : "viewer never opened");
+
+  // ---- the bands are one inert shield --------------------------------------
+  const b0 = band();
+  check("round 23: the empty bands are covered by one full-screen shield, not a control",
+    !!b0 && /absolute inset-0/.test(b0.className || "") && b0.children.length === 0 &&
+      !b0.hasAttribute("onclick") && !b0.hasAttribute("role") && !b0.hasAttribute("tabindex"),
+    b0 ? `class=${b0.className} children=${b0.children.length} onclick=${b0.hasAttribute("onclick")}` : "no band element");
+  check("round 23: the shield is the marked inert one (data-cwband = preview)",
+    !!shield() && shield() === b0, shield() ? String(shield().getAttribute("data-cwband")) : "no [data-cwband] in the tree");
+  check("round 23: the overlay root declares touch-action:none - no pan, zoom, rubber-band or "
+    + "double-tap zoom can start in a band (round 9's <main> guard is a sibling, not an ancestor)",
+    /touch-none/.test(overlay()?.className || "") && /touch-action:\s*none/.test(CSS_SRC.match(/\.touch-none\{[^}]*\}/)?.[0] || ""),
+    overlay() ? overlay().className : "no overlay");
+  check("round 23: the shield is painted, not wired - three attributes, none of them a control",
+    !!b0 && [...b0.attributes].map((a) => a.name).sort().join(",") === "class,data-cwband,style" &&
+      b0.className === "absolute inset-0",
+    b0 ? `${[...b0.attributes].map((a) => a.name).join(",")} / class=${b0.className}` : "-");
+
+  // ---- a tap in the top band, then in the bottom band ----------------------
+  const tapBand = async (x, y) => {
+    const b = band();
+    if (!b) return false;
+    b.dispatchEvent(ptr("pointerdown", x, y));
+    b.dispatchEvent(ptr("pointerup", x, y));
+    clickAt(b, x, y);
+    await settle(Wn, 700);
+    return true;
+  };
+  const tappedTop = await tapBand(195, 60);
+  const stayedAfterTop = open();
+  check("round 23: a tap in the top band (above the card, under the header) no longer dismisses the "
+    + "opened card", tappedTop && stayedAfterTop, `tapped=${tappedTop} open=${stayedAfterTop}`);
+  await openViewer();
+  const tappedBottom = await tapBand(195, 660);
+  const stayedAfterBottom = open();
+  check("round 23: a tap in the bottom band (between the card and the buttons) does not dismiss it "
+    + "either", tappedBottom && stayedAfterBottom, `tapped=${tappedBottom} open=${stayedAfterBottom}`);
+  await openViewer();
+
+  // ---- a drag in the band: no dismissal, no card movement, no scroll -------
+  const imageOf = () => viewerCard()?.querySelector("img");
+  const beforeTransform = imageOf() ? styleOf(imageOf().parentElement) : "";
+  const dragBand = (x, y) => {
+    const b = band();
+    if (!b) return false;
+    b.dispatchEvent(ptr("pointerdown", x, y));
+    for (const step of [40, 90, 150]) b.dispatchEvent(ptr("pointermove", x, y + step));
+    b.dispatchEvent(ptr("pointerup", x, y + 150));
+    return true;
+  };
+  dragBand(195, 120);
+  await settle(Wn, 800);
+  check("round 23: a drag in a band changes nothing - the card has not zoomed or panned, the page "
+    + "behind has not scrolled, and no pan gesture was ever handed to the browser",
+    open() && imageOf() && styleOf(imageOf().parentElement) === beforeTransform && Wn.scrollY === 0 &&
+      /touch-none/.test(overlay()?.className || ""),
+    `${open() ? "viewer open" : "viewer closed"}; card untouched=${styleOf(imageOf()?.parentElement) === beforeTransform}; scrollY=${Wn.scrollY}; guard=${/touch-none/.test(overlay()?.className || "")}`);
+
+  // ---- the two buttons are the only controls in the overlay ----------------
+  const labels = viewerButtons().map((b) => (b.textContent || "").trim()).filter(Boolean);
+  check("round 23: the two bottom buttons are still there and are the overlay's only controls",
+    ["WhatsApp", "Save"].every((l) => labels.includes(l)) && labels.every((l) => ["WhatsApp", "Save"].includes(l)),
+    labels.join(" | "));
+  check("round 23: both buttons stay hit targets (pointer-events:auto) inside the pointer-events:none row",
+    /pointer-events-none/.test(rowOf()?.className || "") &&
+      ["WhatsApp", "Save"].every((l) => /pointer-events-auto/.test(btn(l)?.className || "")),
+    `${rowOf()?.className ?? "-"} / ${["WhatsApp", "Save"].map((l) => `${l}:${/pointer-events-auto/.test(btn(l)?.className || "")}`).join(" ")}`);
+  // and the taps really do land on them: each button buzzes on press before it does anything else, so a
+  // spy on navigator.vibrate is an honest "the button handled it" witness. jsdom's HTMLImageElement has
+  // no decode(); the app preloads artwork with it, so stub it or the Save tap would stop at a toast
+  // about decode instead of doing its work (the app catches that - it is not a crash - but it is noise).
+  Wn.HTMLImageElement.prototype.decode ??= () => Promise.resolve();
+  let buzzes = 0;
+  Wn.navigator.vibrate = () => { buzzes += 1; return true; };
+  const press = async (label) => {
+    const b = btn(label);
+    b?.dispatchEvent(ptr("pointerdown", 195, 800));
+    b?.dispatchEvent(ptr("pointerup", 195, 800));
+    clickAt(b, 195, 800);
+    await settle(Wn, 400);
+    return !!b;
+  };
+  const foundWhatsApp = await press("WhatsApp");
+  const afterWhatsApp = buzzes;
+  check("round 23: the WhatsApp tap lands on its own handler (it buzzes on press) and the viewer stays",
+    foundWhatsApp && afterWhatsApp === 1 && open(), `found=${foundWhatsApp} buzz=${afterWhatsApp} open=${open()}`);
+  const foundSave = await press("Save");
+  check("round 23: the Save tap runs its handler end to end (press buzz + the saved toast)",
+    foundSave && buzzes > afterWhatsApp && /Saved to gallery/.test(textOf(Wn)),
+    `found=${foundSave} buzz=${buzzes} toast=${/Saved to gallery/.test(textOf(Wn))}`);
+
+  // ---- the card keeps its own behaviour ------------------------------------
+  check("round 23: the card box keeps its own touch-action and gesture handlers",
+    !!viewerCard() && /touch-none/.test(viewerCard().className || ""),
+    viewerCard() ? viewerCard().className : "no card box");
+  for (const t of [0, 1]) {
+    viewerCard()?.dispatchEvent(ptr("pointerdown", 195, 400));
+    viewerCard()?.dispatchEvent(ptr("pointerup", 195, 400));
+  }
+  await settle(Wn, 1500);
+  check("round 23: double-tapping the card still turns it over (the preview is not frozen)",
+    /No back side yet|Double tap the card/.test(textOf(Wn)), textOf(Wn).slice(-80).replace(/\s+/g, " "));
+  const swipeDown = (x, y) => {
+    const c = viewerCard();
+    if (!c) return;
+    c.dispatchEvent(ptr("pointerdown", x, y));
+    c.dispatchEvent(ptr("pointermove", x, y + 70));
+    c.dispatchEvent(ptr("pointermove", x, y + 145));
+    c.dispatchEvent(ptr("pointerup", x, y + 145));
+  };
+  swipeDown(195, 400);
+  await settle(Wn, 1500);
+  check("round 23: swiping the card down still closes the viewer (the bands were not the only way out)",
+    !open(), open() ? "still open" : "closed by the card's own gesture");
+
+  // ---- the code the behaviour rests on ------------------------------------
+  const markAt = BUNDLE_SRC.indexOf("/*cardwallet:inert-bands*/");
+  const viewerSrc = markAt < 0 ? "" : BUNDLE_SRC.slice(markAt - 130, markAt + 150);
+  check("round 23: the overlay root no longer closes on a click (the old dismissal is gone)",
+    !BUNDLE_SRC.includes("transition:{duration:.26},onClick:te") && /z-50 touch-none/.test(BUNDLE_SRC),
+    /z-50 touch-none/.test(BUNDLE_SRC) ? "touch-action guard in the bundle" : "guard missing");
+  check("round 23: the shield carries the marker that says why the bands are dead",
+    !!viewerSrc && viewerSrc.includes("z-50 touch-none") && viewerSrc.includes("/*cardwallet:inert-bands*/") &&
+      viewerSrc.includes('"data-cwband":`preview`'),
+    viewerSrc ? viewerSrc.slice(Math.max(0, viewerSrc.indexOf("z-50 touch-none")), viewerSrc.length).slice(0, 70) : "marker missing");
+  check("round 23: the card's handlers and the two button handlers are untouched by the fix",
+    ["onPointerDown:re", "onPointerMove:M", "onPointerUp:N", "onWheel:e=>{"].every((g) => BUNDLE_SRC.includes(g)) &&
+      BUNDLE_SRC.includes("if(n>90){te();return}") &&
+      (BUNDLE_SRC.match(/pointer-events-auto flex items-center gap-2 rounded-full px-5 text-\[15px\] font-semibold text-white/g) || []).length === 2,
+    "card gestures + both buttons intact");
+  check("round 23: no console errors in the viewer band flow", st.errors.length === 0,
+    st.errors.slice(0, 1).join("").slice(0, 180));
 }
 
 // ---------------------------------------------------------------------------

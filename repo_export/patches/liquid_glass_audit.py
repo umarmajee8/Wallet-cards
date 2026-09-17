@@ -371,6 +371,23 @@ check("round 22: --menu-shadow exists in both themes and differs (a black shadow
       and LIGHT["--menu-shadow"] != DARK["--menu-shadow"],
       f"{LIGHT.get('--menu-shadow')} / {DARK.get('--menu-shadow')}")
 
+# ------------------------------------------------------- round 23: the viewer's inert bands
+# The report's fix is behavioural - the empty bands around the opened card stop taking touches - so the
+# audit's half is proving it is *only* behavioural: the shield is paint-only (one background, no blur, no
+# shadow, no extra compositor layer), it rides the `touch-none` utility the stylesheet already ships, and
+# the viewer's deliberately theme-independent colours are untouched. If this round had needed a colour or
+# a material, it would have needed a stylesheet block - and it does not have one.
+INERT = re.search(r"/\*cardwallet:inert-bands\*/\(0,U\.jsx\)\(`div`,\{className:`absolute inset-0`,"
+                  r'"data-cwband":`preview`,style:\{([^}]*)\}\}', JS)
+check("round 23: the inert shield is paint-only - one background, no blur, no shadow, no layer of its own",
+      bool(INERT) and INERT.group(1).strip() == "background:`rgba(9,9,11,0.94)`",
+      INERT.group(1) if INERT else "shield not found in the bundle")
+check("round 23: the band fix adds no stylesheet block and no colour - the viewer keeps its #000-family "
+      "literals (the camera/viewer surfaces stay theme-independent by design)",
+      "Round 23" not in CSS and JS.count("background:`rgba(9,9,11,0.94)`") == 1
+      and "className:`fixed inset-0 z-50 touch-none`" in JS and ".touch-none{touch-action:none}" in CSS,
+      f"css block:{'Round 23' in CSS} backdrop literal:{JS.count('background:`rgba(9,9,11,0.94)`')}")
+
 ALPHAS = {f"{sc}/{n}": parse_color(var(n, "html.dark" if sc == "dark" else ":root"))[3]
           for sc in ("light", "dark") for n in ("--lg-tint", "--lg-tint-2")}
 check("tier-1 fill alpha stays in the glass band (0.45 - 0.92)",

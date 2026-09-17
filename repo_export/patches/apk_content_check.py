@@ -87,6 +87,18 @@ MUST = [
      "background:`var(--sheet)`,border:`1px solid var(--line)`,boxShadow:`var(--menu-shadow)`"),
     ("round 22  menu rows read --ink, the destructive row --danger",
      "style:{color:e.danger?`var(--danger)`:`var(--ink)`}"),
+    ("round 23  the viewer overlay refuses pan/zoom/scroll that starts in its empty bands",
+     "className:`fixed inset-0 z-50 touch-none`"),
+    ("round 23  those bands are one marked, inert shield instead of a dismissal target",
+     '"data-cwband":`preview`'),
+    ("round 23  the marker records why the bands are dead",
+     "/*cardwallet:inert-bands*/"),
+    ("round 23  the card keeps its own gesture handlers (it is still the interactive part)",
+     "onPointerDown:re,onPointerMove:M,onPointerUp:N,onPointerCancel:N"),
+    ("round 23  the card's own swipe-down close is still wired",
+     "if(n>90){te();return}"),
+    ("round 23  the two bottom buttons stay hit targets inside the pointer-events:none row",
+     "pointer-events-none absolute inset-x-0 flex justify-center gap-2.5 px-5"),
 ]
 MUST_NOT = [
     ("removed feature 'Auto-detect details' must stay out", "Auto-detect details"),
@@ -94,6 +106,8 @@ MUST_NOT = [
     ("removed feature 'Make your own pouch' must stay out", "Make your own pouch"),
     ("round 21  the removed 'Wallet' header label must stay out", "children:`Wallet`"),
     ("round 22  the fixed near-black menu panel must stay out (the report's bug)", "#0b0b0d"),
+    ("round 23  the overlay's band-tap dismissal must stay out (the report's bug)",
+     "transition:{duration:.26},onClick:te"),
     ("no CVV/CVC field may be offered or stored (patch29)", "`CVV`"),
     ("no eval in the shipped bundle", "eval("),
 ]

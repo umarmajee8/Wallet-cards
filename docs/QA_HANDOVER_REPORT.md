@@ -526,7 +526,55 @@ panel is measured against the sheet token, not against a photograph behind it. `
 section **AD** (5 rows; screenshots are the evidence) is the device half. Verdict: **NOT READY FOR CLIENT
 HANDOVER** - unchanged, and round 20's **AB1**/**AB2** remain the two handover gates.
 
-**Note for the reviewer:** this branch now carries rounds 20, 21 and 22; the site and `download/index.html`
-point at `CardWallet_themed_menu.apk` (its sha256/size on the download page describe the file it serves).
+### Round 23 - the card viewer's empty bands take no touches (patch 38)
+
+**Report:** on the opened-card screen, the two regions above and below the card (top region near the
+header, bottom strip above the WhatsApp/Save buttons) "should not be interactive/clickable/tappable at
+all" - they "seem to register touches or scroll actions". Scope as given: only the two bottom buttons stay
+functional, and the card keeps its existing behaviour.
+
+**Root cause:** the viewer is one `fixed inset-0 z-50` overlay whose first child is the full-screen
+backdrop. The bands are that backdrop, so every touch there landed on it - and the overlay root carried
+`onClick:te`, the viewer's own close routine, so **a band tap dismissed the card preview**. The overlay also
+declared no `touch-action` of its own, so a drag in a band was an ordinary browser pan gesture. Round 9
+(patch 15) had already fixed exactly this class of bug for the pouch row, but its guard lives on `<main>`
+and this overlay is `<main>`'s sibling, so it never applied here.
+
+**Fix:** the overlay root gains `touch-none` (`touch-action:none`, so no pan/zoom/rubber-band/
+double-tap-zoom can start in the bands - the round-9 guard for this screen), loses `onClick:te` (the bands
+no longer dismiss), and the backdrop is explicitly marked as the inert shield (`data-cwband:"preview"` +
+`/*cardwallet:inert-bands*/`). The shield stays a hit target on purpose: it swallows the touch, so it can
+never reach the dock's Create/Search/More buttons sitting behind the overlay. Untouched: the card box and
+its gesture handlers, the two buttons (`pointer-events-auto` inside the `pointer-events:none` row), the
+viewer's theme-independent colours, and the stylesheet - this round adds **no CSS block**, it rides the
+existing `.touch-none` utility.
+
+**Remaining close paths** (verified): swiping the card down (the card's own gesture) and the Android Back
+/ history contract from patch 26. The tap-outside dismissal is retired by this round, as the report asked.
+
+**Evidence:** web smoke **286/286** (was 266; the new Test 6n is shaped like round 9's pouch-band test,
+with a `navigator.vibrate` spy proving each button's tap still reaches its own handler, and the card's
+double-tap flip + swipe-down close still exercised), QA suite **300/300** (was 283; group 37 = 17 checks),
+`apk_content_check.py` **90/90** against `CardWallet_inert_bands.apk` (11,669,370 B, sha256
+`5a64084f429fd2de8d66fad82d374987df592f751010e93204420d971acf443e`), `liquid_glass_audit.py` **113/113**
+(was 111: the shield is paint-only - one background, no blur, no shadow - and the round adds no colour and
+no stylesheet block), `animation_audit.py` 10 checks / 1 warning unchanged, `verify_release.py` 28/29 (the
+deliberate debug cert).
+
+**Negative control:** the previous bundle scores smoke **278/286** (8 round-23 checks fail: the shield is
+unmarked, the overlay has no touch guard, and both band taps dismiss the viewer), QA group 37 **10/17**,
+content check **85/90** against the round-22 APK. The 11 "kept working" checks - buttons, share/save
+paths, card gestures, swipe-down close - pass on both bundles, which is what makes them evidence the fix
+did not disturb them.
+
+**Not verified here:** the WebView's own pan/overscroll behaviour with a real finger. jsdom has no layout
+and no scroller, so the suites pin the declaration (`touch-action:none` on the overlay root, i.e. every
+band touch starts inside the guarded element), the hit-target chain (the shield swallows the touch), and
+the event plumbing. `docs/DEVICE_TEST_PLAN.md` section **AE** (5 rows, AE2 the one that needs care) is the
+device half. Verdict: **NOT READY FOR CLIENT HANDOVER** - unchanged; round 20's **AB1**/**AB2** remain the
+two handover gates.
+
+**Note for the reviewer:** this branch now carries rounds 20, 21, 22 and 23; the site and `download/index.html`
+point at `CardWallet_inert_bands.apk` (its sha256/size on the download page describe the file it serves).
 Until the PR is merged the GitHub raw link there resolves only against `main`; the branch-raw URL given to
 the client works meanwhile.

@@ -10,11 +10,12 @@ SHA-256: `63dbd8b1929fdbcb673a19ebab585c0c723ae41518188ff437e84da0c2233e9a`
 Signer cert SHA-256: `86383a7f13662e8b55885cb5331341f8db964ad065da074cc360082a3e436726`
 
 **Currently on device:** the rounds since §M ship as debug-signed builds because no release
-keystore is available here - the newest is `CardWallet_themed_menu.apk` (2026-09-16, rounds
-§N-§AD: stack eject, carousel settle, inert bands + per-card pouch colour, cover colour +
-NFC/appearance defaults + header wordmark, no header wordmark (round 21), and - round 22 -
-**the overflow menu follows the theme**). Same debug key throughout, so `adb install -r` keeps the
-app's data; §AC's and §AD's rows are the ones that matter for this build.
+keystore is available here - the newest is `CardWallet_inert_bands.apk` (2026-09-17, rounds
+§N-§AE: stack eject, carousel settle, inert bands + per-card pouch colour, cover colour +
+NFC/appearance defaults + header wordmark, no header wordmark (round 21), the overflow menu
+following the theme (round 22), and - round 23 - **the card viewer's empty bands taking no
+touches**). Same debug key throughout, so `adb install -r` keeps the app's data; §AD's and §AE's
+rows are the ones that matter for this build.
 
 ## 0. Install
 
@@ -604,6 +605,29 @@ Record per row: device, Android + WebView version, result, and (for AD1/AD2) a s
 visual report, so the screenshot is the evidence. None of AD1-AD5 is a handover gate on its own; round 20's
 **AB1**/**AB2** still are.
 
+## AE. Round 23 - the viewer's empty bands take no touches (patch 38)  ⚠ the report itself, on the opened card
+
+The report framed two regions in red on the card preview screen: everything **above** the card (up to the
+header) and the strip **between** the card and the WhatsApp/Save buttons. Both should be dead - no tap, no
+long-press, no drag, no scroll - while the two buttons and the card itself keep working. jsdom can prove
+the declarations and the event plumbing (the bands are one marked shield, a band tap no longer dismisses,
+the card's handlers are intact); it cannot prove what the WebView does with a finger, which is this
+section's job. The bands are deliberately inert *and opaque to touches*: the shield still swallows the
+touch, so the Create/Search/More buttons behind the overlay can never be pressed through it.
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| AE1 | Open a card (tap it), then **tap** the empty space above the card (where the header used to be) and the strip between the card and the buttons. | Nothing happens. The card does **not** close, nothing opens, no ripple. (Before this build both taps dismissed the preview - that is the bug in the report.) Do it in Light and in Dark. |
+| AE2 | On the same screen, **drag** up and down in each empty band, a short flick and a long drag, top and bottom. | The bands do not move anything: the page behind does not scroll or rubber-band, the card does not zoom or pan, the app does not pull-to-refresh or double-tap-zoom. The card appears frozen in the frame. |
+| AE3 | Tap **WhatsApp** and **Save**. | Both still work exactly as before (share sheet / saved-to-gallery toast). They are the only live controls on the screen, and their tap targets are unchanged. |
+| AE4 | Now use the **card**: double-tap it, pinch-zoom it, drag it while zoomed, long-press it, swipe it **down**. | Everything behaves as before: double-tap flips it to the back (or shows "No back side yet"), pinch/drag pans a zoomed card, long-press opens Details, and a downward swipe still closes the viewer. The fix must not have frozen the preview. |
+| AE5 | Close the viewer, then reopen a card and close it with the **Android Back** gesture/button. | Back closes the viewer (patch 26's history contract) - the bands were never the only way out. Also confirm the Android back gesture from the wallet itself still exits the app as before. |
+
+Record per row: device, Android + WebView version, result. **AE2** is the row that needs care - the
+browser's own pan/scroll behaviour is exactly what the report was about, and it is the one thing jsdom can
+never see. Screenshots of the two bands (AE1, before/after) are the evidence for the report. None of
+AE1-AE5 is a handover gate on its own; round 20's **AB1**/**AB2** still are.
+
 ## Sign-off
 
 The build may only be called production-ready once **A–Z are green** on at least
@@ -614,13 +638,15 @@ signing, NFC, the soft keyboard, rotation rendering and every smoothness/judgeme
 call). Record device model, Android version and result per row, and file anything
 that fails with the section id (e.g. "F3 fails: Back exits the app with Settings
 open"). The Android UI-testable layer is complete and green: `qa_feature_suite.mjs`
-281/281 (group 33 covers the Liquid Glass material, the round-16 footer dock and the round-17 blur
-budget; group 34 the lock and the backup file, including a Node re-derivation of the PIN digest and an
-AES-GCM round-trip of a real `.cwbak`; group 36 the round-20 gesture recovery on both views),
-`smoke_test_webview.mjs` 266/266, `liquid_glass_audit.py` 111/111
-(tier rules, the cost model, the WCAG contrast engine and the round-18 gate's opacity/token rules),
-`verify_release.py` 28/29 with the only FAIL being the deliberate debug signature, and
-`apk_content_check.py` 83/83 against `CardWallet_themed_menu.apk` (the four-blurred-selector budget plus the round-18
-copy, store key, crypto markers and the gate's opacity - all read out of the shipped entries, not the tree). The jsdom suites need `jsdom@27` + `cssstyle@4.6.0`; on other pairings 11 checks
+300/300 (group 33 covers the Liquid Glass material, the round-16 footer dock, the round-17 blur
+budget and the round-22 themed menu; group 34 the lock and the backup file, including a Node
+re-derivation of the PIN digest and an AES-GCM round-trip of a real `.cwbak`; group 36 the round-20
+gesture recovery on both views; group 37 the round-23 inert bands around the card viewer),
+`smoke_test_webview.mjs` 286/286, `liquid_glass_audit.py` 113/113
+(tier rules, the cost model, the WCAG contrast engine, the round-18 gate's opacity/token rules and
+the round-22 menu contrast), `verify_release.py` 28/29 with the only FAIL being the deliberate debug
+signature, and `apk_content_check.py` 90/90 against `CardWallet_inert_bands.apk` (the
+four-blurred-selector budget plus the round-18 copy, store key, crypto markers and the gate's
+opacity - all read out of the shipped entries, not the tree). The jsdom suites need `jsdom@27` + `cssstyle@4.6.0`; on other pairings 11 checks
 fail on *any* bundle because cssstyle does not serialise `backdrop-filter` into the `style` attribute - the
 suite reads those through `inlineStyle()` (see README, round 17).

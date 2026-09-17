@@ -733,10 +733,66 @@ This repo contains the patched source for the CardWallet app.
     in System with the phone toggled mid-session, plus the outside-tap dismissal and a screenshot
     comparison against the report's own image.
 
+27. **Round 23 - the viewer's empty bands take no touches** (patch 38), 2026-09-17.
+  - **The report, verbatim:** *"On the card detail/preview screen (shown when a card is opened), the
+    areas above and below the card itself (the top region near the header, and the bottom region above
+    the WhatsApp/Save buttons - both highlighted in red in the screenshot) should not be
+    interactive/clickable/tappable at all. Currently these empty areas seem to register touches or
+    scroll actions, which shouldn't happen."* Scope as asked: *"Only the two bottom buttons (WhatsApp and
+    Save) remain functional/clickable"*, and the card *"keeps whatever interaction it currently has
+    (e.g. viewing/zooming)"*.
+  - **What those bands were.** The viewer (`function jd`) is one `fixed inset-0 z-50` box with three
+    children: the full-screen backdrop, the card box, and the button row. The backdrop is the only thing
+    under the top and bottom bands, so every touch there landed on it - and its parent carried
+    `onClick:te`, the viewer's own close routine. **A tap anywhere in the empty band dismissed the card
+    preview**: the "registers touches" half of the report. The overlay also declared no `touch-action` of
+    its own, so a drag in the band was left to the browser as an ordinary pan gesture: the "or scroll
+    actions" half. Round 9 (patch 15) fixed exactly this class of bug for the *pouch row*
+    (`touch-action:none` on `<main>`, a `pointer-events:none` wrapper, a `closest('[data-cwc]')` guard on
+    the drag) - but that guard lives on `<main>`, and this overlay is `<main>`'s **sibling**, so none of
+    it applied here. (Round 9's own test comment - *"yeh jaga kam na kray - is pr touch swipe kuch b kam
+    na kray"* - is the same report, one screen earlier.)
+  - **The fix** (the overlay root: `className` gains `touch-none`, `onClick:te` goes, the backdrop is
+    marked `data-cwband:"preview"` with a `/*cardwallet:inert-bands*/` marker). `touch-action:none` on
+    the overlay root is the round-9 guard for this screen: every band touch starts inside it, so the
+    browser can no longer pan, zoom, rubber-band or double-tap-zoom from there. Dropping the root's click
+    handler is what the report asked for - the bands no longer dismiss anything. Keeping the backdrop as
+    the hit target (rather than making it `pointer-events:none`) is what makes the bands *dead* instead
+    of *transparent*: the shield still swallows the touch, so it cannot reach the dock's
+    Create/Search/More buttons sitting at z-40 behind the overlay.
+  - **Deliberately not touched.** The card box and its gesture handlers (`onPointerDown:re` ->
+    long-press details / double-tap flip / pinch zoom / `onWheel`), the two bottom buttons
+    (`pointer-events-auto` inside the `pointer-events:none` row), the viewer's colours (`#09090b` card,
+    `rgba(9,9,11,0.94)` backdrop - theme-independent by design, like Photos), and the stylesheet: this
+    round adds **no CSS block at all** and rides the `.touch-none{touch-action:none}` utility the bundle
+    already ships.
+  - **Close paths that remain** (the bands were not the only way out, and the report did not ask for the
+    viewer to become undismissable): swiping the card down - the card's own gesture,
+    `if(n>90){te();return}` - and the Android Back / history contract from patch 26
+    (`shut=()=>{if(f){p(null);…}`). The tap-outside dismissal is the behaviour this round retires.
+  - **Gates.** web smoke **266 -> 286/286** (a new Test 6n in the shape of round 9's Test 6g: the bands
+    are one marked shield, a tap in each band no longer dismisses, a drag in a band changes nothing, the
+    two buttons are still the overlay's only controls *and* their taps visibly reach their own handlers -
+    a `navigator.vibrate` spy - while the card still flips on a double-tap and still closes on a
+    swipe-down), QA suite **283 -> 300/300** (group 37 repeats the contract end to end, including the
+    Save button's "Saved to gallery" feedback), `apk_content_check.py` **83 -> 90/90** (three positive
+    rows, a `MUST_NOT` so the band-tap dismissal cannot come back, and carry rows pinning the card's
+    handlers, its swipe-down close and the button row), `liquid_glass_audit.py` **111 -> 113/113** (the
+    fix is *only* behavioural: the shield is paint-only - one background, no blur, no shadow - and the
+    round adds no stylesheet block and no colour), `animation_audit.py` 10 checks / 1 warning (unchanged),
+    `verify_release.py` **28/29**.
+  - **Negative control.** The previous bundle: smoke **278/286** (8 checks fail - the shield is unmarked,
+    the overlay has no touch guard, and both band taps dismiss the viewer), QA **293/300** (group 37
+    10/17), `apk_content_check.py` **85/90** against `CardWallet_themed_menu.apk` (4 rows). The 11
+    "kept working" checks - buttons, share/save paths, card gestures, swipe-down close - pass on *both*
+    bundles, which is what makes them evidence that the fix did not disturb them.
+  - **Device work.** `docs/DEVICE_TEST_PLAN.md` section **AE** (5 rows): the two bands in both themes,
+    drag/scroll attempts, the buttons, the card's own gestures, and the two remaining close paths.
+
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.
-- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch37), plus
+- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch38), plus
   the readable sources of the settings sheet - `patch19_settings.src.js`,
   `patch22_settings.src.js` and `patch24_settings.src.js`, each minified by its own script (one
   flat node per line, no comments; the newest one owns the span and the older two report it as
@@ -750,8 +806,11 @@ This repo contains the patched source for the CardWallet app.
   `smoke_test_webview.mjs`, `qa_feature_suite.mjs`, `animation_audit.py` and
   `liquid_glass_audit.py`. Stylesheet blocks are appended over time, so a tool that wants to
   describe one block must slice it **banner -> next banner** (patch 33/34's `block_span`, patch
-  37's `block_of`, the audit's `block_from`) - a `[index(marker):]` slice quietly grows into every
-  later round and makes an old block look like it owns the new one's declarations.
+  37's `block_of`, the audit's `block_from`, `apk_content_check.py`'s `block_from` and QA group 35's
+  `blockFrom`) - a `[index(marker):]` slice quietly grows into every later round and makes an old
+  block look like it owns the new one's declarations. Patch 38 adds no block at all: it is the one
+  round since round 15 that is pure behaviour, so its marker (`/*cardwallet:inert-bands*/`) lives in
+  the JS bundle, next to the shield it explains.
 - `header_options.json` - the header's option list (top-bar buttons + the two
   dropdowns they open). Consumed by `patches/patch8_header_options.py`.
 
