@@ -291,7 +291,7 @@ What changed in the bundle:
 | `+` | `var(--ink)` glyph, `var(--chip)` behind it when open | `#000` disc, white plus at 2.5 stroke, soft drop shadow, 4px halo while its menu is open |
 | search | same ink glyph on the page | bare `#000` loupe at 2.3 stroke, 26px, no chip |
 | overflow | three vertical dots | **hamburger** — three 2.7-round bars, bare `#000`, 26px |
-| dropdown | `var(--sheet)` panel, `var(--ink)` rows | `#0b0b0d` panel, white rows, `#ff453a` destructive row |
+| dropdown | `var(--sheet)` panel, `var(--ink)` rows | `#0b0b0d` panel, white rows, `#ff453a` destructive row **<- round 22 (patch 37) went back to the stock tokens: the literal was written when the app was light-only and it stopped following the theme, which the client reported** |
 | where the options come from | hard-coded `Add card / Search cards / More` + hard-coded rows | generated from `header_options.json` |
 
 Tap targets are unchanged (44px, `h-11 w-11`) for both filled and bare options, so
@@ -1464,3 +1464,66 @@ khule han, aur round 20 ke AB1/AB2 ab bhi handover gates han). Is round ka apna 
 `docs/DEVICE_TEST_PLAN.md` section **AC** (5 rows) ha - khaas kar AC2 (deck ki position pichhle build se
 compare - kuch nahi hilna chahiye) aur AC3 (khali corner par tap/long-press/drag se kuch na ho, aur menu
 bahar-tap par band ho).
+
+## 26. Round 22 - overflow menu dobara theme ke saath chalta ha (patch 37 + stylesheet), 2026-09-16
+
+**Report, verbatim:** *"In Light mode, the app's overflow menu (the dropdown showing \"Settings\" and
+\"Delete all cards\") is still rendering with a dark/black background instead of following the light theme.
+Every other UI element on screen ... correctly switches to light mode - only this specific popup menu
+stays hardcoded dark."* Ask tha: menu ke *"background, text, and icon colors"* ko theme se bandho aur
+System / Light / Dark teeno me confirm karo.
+
+**Ye kahan se aaya:** asal (stock) panel themed tha - `rounded-2xl sheet-bg` + `var(--line)` border. Round
+4 (patch 7, "header look" mock) ne `sheet-bg` hata kar use `#0b0b0d` panel bana diya tha, aur usi patch
+me likha tha: *"that was an explicit choice, not an oversight, so it does not invert"* - us waqt app sirf
+light thi. Uske baad har round ne app ko theme-aware banaya (System/Light/Dark) aur surfaces tokens par
+le gaya - bas yehi ek surface apne literals par reh gaya. Report ka screenshot bilkul wahi ha.
+
+**Fix:** panel `#0b0b0d` -> `var(--sheet)`, hairline `rgba(255,255,255,.14)` -> `var(--line)`, rows
+`#fff`/`#ff453a` -> `var(--ink)`/`var(--danger)`, aur drop shadow - jo ek value kisi mojood token se
+nahi banti aur light vs black backdrop par alag honi chahiye - `--menu-shadow` ban gayi, dono themes ke
+liye ek ek baar round-22 block me (`:root` = `rgba(15,23,42,.28)`, `html.dark` = `rgba(0,0,0,.75)`).
+`#0b0b0d` bundle se poori tarah nikal gaya. Icons ka koi alag kaam nahi chaha: menu ke `<svg>`s
+`currentColor` par stroked han, is liye row ke colour ke saath invert ho jate han - report ka "and icon
+colors" wahi ek declaration ha jo labels ko theek karta ha.
+
+**Jaan-boojh kar nahi chhua:** camera view (live feed par dark chrome), full-screen card viewer (`#000`,
+Photos jaisa), sheet scrims (`rgba(10,10,12,.45)`), toast pill (`rgba(20,20,22,.92)`) aur card artwork -
+ye sab jaan-boojh kar theme-independent han. "Delete all cards" ka confirm sheet pehle se themed tha;
+sirf us ke destructive button par compiled `text-[#ff453a]` class ha, jo wahi rehti ha - dono themes me
+ek hi red, bilkul jaise vault ka `--danger` (aur ab menu ki destructive row bhi wahi token use karti ha).
+
+**Is round ne chain ki teen latent bugs pakri (sab ek hi shakal ki):** round 18, 19 aur 22 har ek
+stylesheet **block append** karta ha, aur kai tools apne block ko *"mere banner se file ke end tak"*
+samajhte the - jo chupke se har baad ke round ko bhi apne andar le leta ha. Round 22 append honay ke baad
+un slices ne round 18 ke block ko round 22 ka shadow literal, round 19 ko "bara" aur round 19 ke "no colour
+literal" rule ko fail karwa diya. Patch 37 ke apne pehle draft me ulti taraf wahi bug tha (us ne banner ko
+fixed `=` run se match kiya jo round 19 ke banner se bhi match ho gaya, aur round 19 ka block rewrite kar
+diya) - commit se pehle pakra gaya, aur isi liye ab file ke aakhir me guard list ha. Fix: patch 33/34 ka
+`sync_appended` aur audit ke `V18`/`V19`, `apk_content_check.py` ke round-18/19 rules aur QA group 35 ka
+`R19` ab **banner -> next banner** convention use karte han; patch 37 khud guess karne se inkaar karta ha
+aur assert karta ha ke round 15/16/17/18/19 ke blocks aur gate ke dono rules stylesheet me mojood han.
+Patch 7 me `DOWNSTREAM_KEEP` entries aayi han taake uska `--check` in tokens ko apna kaam samjhe (wahi
+trick jo patch 21 button sizes ke liye use karta ha).
+
+**Gates:** web smoke **262 -> 266/266** (panel/rows checks ab token-level han - jsdom inline style me
+`var()` resolve nahi karta, is liye woh assert karte han "ye token ka naam leta ha *aur* dono themes me
+token alag resolve hota ha" - saath me usi menu ka dark-mode pass aur `currentColor` icon check), QA suite
+**281 -> 283/283** (group 33: panel token-bound aur tokens ulta resolve karte han),
+`apk_content_check.py` **79 -> 83/83** (do positive rows, ek `MUST_NOT` taake near-black panel wapas na
+aa sake, aur dono themes ka `--menu-shadow` rule), `liquid_glass_audit.py` **105 -> 111/111** (menu rows
+**18.86:1** light / **15.63:1** dark; destructive row naapi aur 3:1 affordance floor par gated -
+**3.41:1** light / **6.03:1** dark, app ka mojooda system red), `animation_audit.py` 10 checks / 1 warning
+(barqarar - koi nayi motion nahi), `verify_release.py` **28/29**.
+
+**Negative control:** pichhla bundle - smoke **260/266** (6 checks fail: panel `rgb(11, 11, 13)`, rows
+`rgb(255, 255, 255)`), `apk_content_check.py` **77/83** (4 nayi rows), QA group 33 **30/32**.
+
+**Artifact:** `CardWallet_themed_menu.apk` - **11,669,355 B**, sha256
+`163c7cbbd4ec3e807857988481f48f233dd640856fe72c8ea389d3c2554deb57`, `repo_export/app/index.js` 499,506 B
+(+ `index.css` 38,011 B). Debug-signed (wahi throwaway key), `allowBackup=false`, release signing ki
+koshish **nahi** ki gayi. Install se pehle `adb uninstall com.arena.cardwallet`.
+
+**Handover:** verdict wahi - **NOT READY FOR CLIENT HANDOVER**. Is round ka device work
+`docs/DEVICE_TEST_PLAN.md` section **AD** (5 rows) ha: menu Light me, Dark me, aur System me phone toggle
+karte hue - aur bahar-tap par dismissal. Round 20 ke **AB1**/**AB2** ab bhi handover gates han.

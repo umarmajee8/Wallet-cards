@@ -480,3 +480,53 @@ unchanged (round 20's **AB1**/**AB2** remain the two handover gates).
 both rounds and the site/download pointers now name `CardWallet_no_title.apk`; until the PR is merged the
 GitHub raw link on `download/index.html` resolves only against `main` (the branch-raw URL the client was
 given works meanwhile).
+
+## Addendum (2026-09-16) - round 22: the overflow menu now follows the theme
+
+**Report:** in Light mode the dropdown ("Settings" / "Delete all cards") rendered near-black while the rest
+of the UI went light - *"only this specific popup menu stays hardcoded dark"* - with the ask to bind its
+background, text and icon colours to the theme and to verify Light / System / Dark.
+
+**Root cause (traceable, not a stray line):** the stock panel was themed (`rounded-2xl sheet-bg`,
+`var(--line)` hairline). Round 4's header mock (patch 7) replaced that with a literal `#0b0b0d` panel and
+white rows, and its own notes called it "an explicit choice, not an oversight, so it does not invert" -
+written while the app was light-only. Every later round made the app theme-aware and moved surfaces onto
+tokens; this surface kept its literals. The report's screenshot is that state.
+
+**Fix:** panel -> `var(--sheet)`, hairline -> `var(--line)`, rows -> `var(--ink)` / `var(--danger)`, and
+the drop shadow becomes `--menu-shadow`, defined once per theme (the only value no existing token could
+express, and it must differ between a light and a black backdrop). Icons are stroked `currentColor`, so
+they invert with the rows - no separate declaration was needed. Deliberately untouched: the camera chrome,
+the full-screen card viewer, the sheet scrims, the toast and the artwork (all meant to be
+theme-independent); the "Delete all cards" confirm sheet was already themed.
+
+**Chain hygiene (three latent bugs of one shape, found and fixed while doing this):** rounds 18, 19 and 22
+each *append* a stylesheet block, and several tools described a block as "from my banner to the end of the
+file" - which silently swallows every later round. After round 22 appended, those slices made round 18's
+"no colour literals" rule trip on round 22's shadow, round 19's "stays small" rule fail, and QA group 35's
+"no new colour" contract fail. Fixed in patch 33/34 (`block_span`), the audit (`V18`/`V19`), the content
+check (round-18/19 rules) and QA group 35 (`R19`): a block is now **its banner -> the next banner**. Patch
+37's first draft had the same bug in the other direction (its banner match also matched round 19's, and it
+rewrote round 19's block) - caught before commit, and patch 37 now asserts rounds 15-19 and the gate's two
+rules are still present before it writes anything.
+
+**Evidence:** web smoke **266/266** (was 262), QA suite **283/283** (was 281), `apk_content_check.py`
+**83/83** (was 79) against `CardWallet_themed_menu.apk` (11,669,355 B, sha256
+`163c7cbbd4ec3e807857988481f48f233dd640856fe72c8ea389d3c2554deb57`), `liquid_glass_audit.py` **111/111**
+(was 105; menu rows 18.86:1 light / 15.63:1 dark, destructive row 3.41:1 light / 6.03:1 dark - printed and
+gated at the 3:1 affordance floor, because it is the app's existing system red), `animation_audit.py`
+10 checks / 1 warning unchanged (no new motion), `verify_release.py` 28/29 (the deliberate debug cert).
+
+**Negative control:** the previous bundle scores smoke **260/266** (the panel reads `rgb(11, 11, 13)`, the
+rows `rgb(255, 255, 255)`), content check **77/83**, QA group 33 **30/32**.
+
+**Not verified here:** the rendered result. jsdom does not resolve `var()` in inline styles, so the suites
+pin the declaration and the resolved token values, not the pixels on the glass; contrast for the light
+panel is measured against the sheet token, not against a photograph behind it. `docs/DEVICE_TEST_PLAN.md`
+section **AD** (5 rows; screenshots are the evidence) is the device half. Verdict: **NOT READY FOR CLIENT
+HANDOVER** - unchanged, and round 20's **AB1**/**AB2** remain the two handover gates.
+
+**Note for the reviewer:** this branch now carries rounds 20, 21 and 22; the site and `download/index.html`
+point at `CardWallet_themed_menu.apk` (its sha256/size on the download page describe the file it serves).
+Until the PR is merged the GitHub raw link there resolves only against `main`; the branch-raw URL given to
+the client works meanwhile.

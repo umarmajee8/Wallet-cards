@@ -339,6 +339,38 @@ for row in SUITES:
           worst >= limit,
           f"worst {worst:.2f}:1 (tint a={tc[3]} over {worst_bg})")
 
+# ------------------------------------------------------- round 22: the themed overflow menu
+# The panel patch 7 painted `#0b0b0d` for its light-theme mock (an explicit choice when the app had no
+# dark theme) was the last surface that ignored the theme - the client reported it. It is tokens now, so
+# it is opacity-free text on the sheet: measure ink AND the destructive red, in both themes.
+for scope, label, ink, bg in (
+    ("light", "menu row text on the light sheet", "--ink", "--sheet"),
+    ("dark", "menu row text on the dark sheet", "--ink", "--sheet"),
+):
+    sel = "html.dark" if scope == "dark" else ":root"
+    t, b = parse_color(var(ink, sel)), parse_color(var(bg, sel))
+    r = ratio((t[0], t[1], t[2]), (b[0], b[1], b[2]))
+    worst_rows.append((scope, label, round(r, 2), None))
+    check(f"contrast {scope}/{label} >= {MIN_TEXT}:1", r >= MIN_TEXT, f"{r:.2f}:1")
+# The destructive row wears the app's `--danger` (system red in both themes, exactly as the vault's
+# error text already did), so it is judged at the 3:1 affordance floor rather than the 4.5:1 body-text
+# one - and the number is printed, not assumed. `#ff453a` on white is 3.41:1 by construction.
+for scope, limit in (("light", 3.0), ("dark", 3.0)):
+    sel = "html.dark" if scope == "dark" else ":root"
+    t, b = parse_color(var("--danger", sel)), parse_color(var("--sheet", sel))
+    r = ratio((t[0], t[1], t[2]), (b[0], b[1], b[2]))
+    worst_rows.append((scope, "destructive menu row (--danger)", round(r, 2), None))
+    check(f"contrast {scope}/destructive menu row (--danger) >= {limit}:1 affordance floor",
+          r >= limit, f"{r:.2f}:1 - the same system red the vault already ships")
+check("round 22: the menu panel is token-bound in the bundle (no literal can survive a theme switch)",
+      "background:`var(--sheet)`,border:`1px solid var(--line)`,boxShadow:`var(--menu-shadow)`" in JS
+      and "style:{color:e.danger?`var(--danger)`:`var(--ink)`}" in JS and "#0b0b0d" not in JS,
+      "panel + rows read --sheet / --line / --menu-shadow / --ink / --danger")
+check("round 22: --menu-shadow exists in both themes and differs (a black shadow over black would not show)",
+      LIGHT.get("--menu-shadow") is not None and DARK.get("--menu-shadow") is not None
+      and LIGHT["--menu-shadow"] != DARK["--menu-shadow"],
+      f"{LIGHT.get('--menu-shadow')} / {DARK.get('--menu-shadow')}")
+
 ALPHAS = {f"{sc}/{n}": parse_color(var(n, "html.dark" if sc == "dark" else ":root"))[3]
           for sc in ("light", "dark") for n in ("--lg-tint", "--lg-tint-2")}
 check("tier-1 fill alpha stays in the glass band (0.45 - 0.92)",
@@ -356,11 +388,29 @@ check("blur radii differ by surface (sheet > control)",
       int(re.sub(r"\D", "", var("--lg-blur"))) > int(re.sub(r"\D", "", var("--lg-blur-ctl"))),
       f"{var('--lg-blur')} sheet vs {var('--lg-blur-ctl')} control")
 SAT1 = "saturate(var(--lg-sat))" in decl or "saturate(1." in decl
+def block_from(marker: str) -> str:
+    """The stylesheet block that starts at `marker`'s banner and ends at the next banner.
+
+    A block owns its banner -> the next banner, which is the convention the appending patches use
+    (patch 33/34's `block_span`, patch 37's `block_of`). The older `CSS[CSS.index(marker):]` slices
+    silently grew into every later round: once round 21 and round 22 appended blocks, round 22's
+    `--menu-shadow` literal appeared inside round 18's "no colour literals" check and round 22's text
+    inside round 19's "stays small" one.
+    """
+    i = CSS.find(marker)
+    if i < 0:
+        return ""
+    start = CSS.rindex("/*", 0, i)
+    nxt = re.search(r"\n/\* ={20,}", CSS[i + 2:])
+    return CSS[start:(i + 2 + nxt.start()) if nxt else len(CSS)]
+
+
+
 check("saturation lift differs by tier too",
       ("1.9" in fab) and SAT1, "controls lift chroma harder - small area, more edge")
 
 # ---------------------------------------------------------------- round 18: the gate + vault rows
-V18 = CSS[CSS.index("Round 18 - the lock gate"):] if "Round 18 - the lock gate" in CSS else ""
+V18 = block_from("Round 18 - the lock gate")
 check("round 18: the lock/backup stylesheet block is in the shipped CSS", bool(V18), f"{len(V18)} chars")
 LOCK = rule(r"\.cw-lock\{", V18)
 # the block's own banner comment *describes* backdrop-filter (to say it is not used), so every rule-level
@@ -402,7 +452,7 @@ check("round 18: backups are AES-GCM under PBKDF2-SHA256, iterations pinned",
 check("round 18: a restore that busts the storage quota keeps the current deck",
       "your current cards are unchanged" in JS, "-")
 
-V19 = CSS[CSS.index("Round 19 - the customization gate"):] if "Round 19 - the customization gate" in CSS else ""
+V19 = block_from("Round 19 - the customization gate")
 BODIES19 = "".join(m.group(2) for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", V19))
 JS19 = JS[JS.index("Round 19 - the customization gate"):] if "Round 19 - the customization gate" in JS else ""
 check("round 19: the customization-gate block is in the shipped CSS and stays small",

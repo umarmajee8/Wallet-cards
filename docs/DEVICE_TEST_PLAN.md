@@ -10,11 +10,11 @@ SHA-256: `63dbd8b1929fdbcb673a19ebab585c0c723ae41518188ff437e84da0c2233e9a`
 Signer cert SHA-256: `86383a7f13662e8b55885cb5331341f8db964ad065da074cc360082a3e436726`
 
 **Currently on device:** the rounds since §M ship as debug-signed builds because no release
-keystore is available here - the newest is `CardWallet_no_title.apk` (2026-09-16, rounds
-§N-§AC: stack eject, carousel settle, inert bands + per-card pouch colour, cover colour +
-NFC/appearance defaults + header wordmark, and - round 21 - **no header wordmark**). Same debug
-key throughout, so `adb install -r` keeps the app's data; §AC's row is the one that matters for
-this build.
+keystore is available here - the newest is `CardWallet_themed_menu.apk` (2026-09-16, rounds
+§N-§AD: stack eject, carousel settle, inert bands + per-card pouch colour, cover colour +
+NFC/appearance defaults + header wordmark, no header wordmark (round 21), and - round 22 -
+**the overflow menu follows the theme**). Same debug key throughout, so `adb install -r` keeps the
+app's data; §AC's and §AD's rows are the ones that matter for this build.
 
 ## 0. Install
 
@@ -585,6 +585,25 @@ compositor); smoke pins the DOM and the byte-level gates pin the bundle, so this
 Record per row: device, Android + WebView version, result. None of AC1-AC5 is a handover gate on its own
 (round 20's AB1/AB2 still are), but AC2 and AC3 are the two the patch could plausibly get wrong.
 
+## AD. Round 22 - the overflow menu follows the theme (patch 37)  ⚠ the report itself, in the two themes
+
+The report: in **Light** mode the dropdown ("Settings" / "Delete all cards") stayed near-black while the
+rest of the app went light. It is token-bound now, and jsdom can only prove the *declaration* (it does not
+resolve `var()`), so the rendered result is this section's job. Use **Settings -> Appearance** to switch
+Light / System / Dark; the menu is opened from the dock's right-hand control (the hamburger).
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| AD1 | Appearance = **Light**, open the menu over the wallet. Compare against the screenshot in the report. | The panel is **white** with a hairline and a soft shadow, the rows and their icons are **near-black**, "Delete all cards" stays red. It matches the Settings sheet behind it - no black slab, no white-on-white text. |
+| AD2 | Appearance = **Dark**, open the menu. | The panel is the same dark sheet as Settings (`#1c1c1e`-ish, not pure black), rows and icons **near-white**, red destructive row still red. Nothing from the light theme leaks. |
+| AD3 | Appearance = **System**, then toggle the **phone's** dark mode while the app is open, and reopen the menu each time. | The menu follows the phone both ways. (The menu is not re-rendered while it is open - if the phone flips with the menu open, closing and reopening it must show the new theme; a stale panel *while open* would be a defect to file.) |
+| AD4 | Tap the rows, and dismiss by tapping outside. | "Settings" opens the sheet, "Delete all cards" shows its confirm sheet, and an outside tap still closes the menu - the dismissal path (`ref:d`) and the anchors were untouched this round. |
+| AD5 | Hold the phone at an angle in bright light, both themes, and read the panel over a bright card. | Text stays legible, the shadow reads as depth (not a black smear on white / a lost edge on black), and the panel edge does not disappear into the wallet background. |
+
+Record per row: device, Android + WebView version, result, and (for AD1/AD2) a screenshot - this round is a
+visual report, so the screenshot is the evidence. None of AD1-AD5 is a handover gate on its own; round 20's
+**AB1**/**AB2** still are.
+
 ## Sign-off
 
 The build may only be called production-ready once **A–Z are green** on at least
@@ -598,10 +617,10 @@ open"). The Android UI-testable layer is complete and green: `qa_feature_suite.m
 281/281 (group 33 covers the Liquid Glass material, the round-16 footer dock and the round-17 blur
 budget; group 34 the lock and the backup file, including a Node re-derivation of the PIN digest and an
 AES-GCM round-trip of a real `.cwbak`; group 36 the round-20 gesture recovery on both views),
-`smoke_test_webview.mjs` 262/262, `liquid_glass_audit.py` 105/105
+`smoke_test_webview.mjs` 266/266, `liquid_glass_audit.py` 111/111
 (tier rules, the cost model, the WCAG contrast engine and the round-18 gate's opacity/token rules),
 `verify_release.py` 28/29 with the only FAIL being the deliberate debug signature, and
-`apk_content_check.py` 79/79 against `CardWallet_no_title.apk` (the four-blurred-selector budget plus the round-18
+`apk_content_check.py` 83/83 against `CardWallet_themed_menu.apk` (the four-blurred-selector budget plus the round-18
 copy, store key, crypto markers and the gate's opacity - all read out of the shipped entries, not the tree). The jsdom suites need `jsdom@27` + `cssstyle@4.6.0`; on other pairings 11 checks
 fail on *any* bundle because cssstyle does not serialise `backdrop-filter` into the `style` attribute - the
 suite reads those through `inlineStyle()` (see README, round 17).

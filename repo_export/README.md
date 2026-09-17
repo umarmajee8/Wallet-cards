@@ -680,10 +680,63 @@ This repo contains the patched source for the CardWallet app.
     themes and with a notch, the deck has not moved against the previous build, the empty corner is dead
     space (tap / long-press / drag / outside-tap dismissal), and the dock's three controls are untouched.
 
+26. **Round 22 - the overflow menu follows the theme again** (patch 37 + `app/index.css`), 2026-09-16.
+  - **The report, verbatim:** *"In Light mode, the app's overflow menu (the dropdown showing \"Settings\"
+    and \"Delete all cards\") is still rendering with a dark/black background instead of following the light
+    theme. Every other UI element on screen ... correctly switches to light mode - only this specific popup
+    menu stays hardcoded dark."* With the fix: bind *"the menu's background, text, and icon colors"* to the
+    theme and confirm it under System / Light / Dark.
+  - **Where it came from** (a traceable regression, not a stray line): the *stock* panel was themed -
+    `rounded-2xl sheet-bg` + `border:1px solid var(--line)`. Round 4 (patch 7, the "header look" mock)
+    stripped `sheet-bg` and painted it, in that patch's own words, "a `#0b0b0d` panel with white rows ...
+    an explicit choice, not an oversight, so it does not invert" - written when the app was light-only.
+    Every round after it made the app theme-aware and moved surfaces to tokens; this one kept its
+    literals. The screenshot in the report is exactly that.
+  - **The fix.** Panel `#0b0b0d` -> `var(--sheet)`, hairline `rgba(255,255,255,.14)` -> `var(--line)`,
+    rows `#fff`/`#ff453a` -> `var(--ink)`/`var(--danger)`, and the drop shadow - the one value no existing
+    token expresses, and which must differ between a light and a black backdrop - becomes
+    `--menu-shadow`, defined once per theme in the round-22 stylesheet block
+    (`:root` = `rgba(15,23,42,.28)`, `html.dark` = `rgba(0,0,0,.75)`). `#0b0b0d` leaves the bundle
+    entirely. Icons needed no edit: the menu's `<svg>`s are stroked `currentColor`, so they inherit the
+    row colour - the report's "and icon colors" is the same declaration as the labels.
+  - **Deliberately not touched.** The camera view (dark chrome over a live feed), the full-screen card
+    viewer (`#000`, like Photos), the sheet scrims (`rgba(10,10,12,.45)`), the toast pill
+    (`rgba(20,20,22,.92)`) and the card artwork are *meant* to be theme-independent. The "Delete all
+    cards" confirm sheet was already themed (`sheet-bg`); only its destructive button is a compiled
+    `text-[#ff453a]` class, and it stays - one red in both themes, matching the vault's existing
+    `--danger` (which is how the menu's destructive row behaves now too).
+  - **Chain work this forced (three latent bugs, all the same shape).** Round 18, 19 and 22 each *append*
+    a stylesheet block; several tools described "their" block as *"from my banner to the end of the
+    file"*, which silently grew to include every later round. Once round 22 appended, those slices made
+    round 18's block look like it contained round 22's shadow literal, round 19's like it had grown, and
+    round 19's "no colour literal" rule fail. Patch 37's own first draft had the same class of bug in the
+    other direction (it matched its banner with a fixed run of `=` that also matched round 19's, and
+    rewrote round 19's block - caught before commit, and the guard list below exists because of it).
+    Fixed: patch 33/34's `sync_appended` and the audit's `V18`/`V19`, `apk_content_check.py`'s round-18
+    and round-19 rules and QA group 35's `R19` now use the banner -> next-banner convention; patch 37
+    refuses to guess and asserts that rounds 15, 16, 17, 18 and 19 - and the gate's own two rules - are
+    still in the stylesheet. Patch 7 gained `DOWNSTREAM_KEEP` entries so its `--check` recognises the
+    tokens as its own work kept (the same trick patch 21 uses for the button sizes).
+  - **Gates.** web smoke **262 -> 266/266** (the panel/rows checks are token-level now - jsdom does not
+    resolve `var()` in inline styles, so they assert "it names this token *and* the token differs
+    between the themes" - plus a dark-mode pass on the same menu and a `currentColor` icon check), QA
+    suite **281 -> 283/283** (group 33: the panel is token-bound and the tokens resolve the other way),
+    `apk_content_check.py` **79 -> 83/83** (two positive rows, a `MUST_NOT` so the near-black panel
+    cannot come back, and a two-theme `--menu-shadow` rule), `liquid_glass_audit.py` **105 -> 111/111**
+    (menu rows measured at **18.86:1** light / **15.63:1** dark; the destructive row printed and gated at
+    the 3:1 affordance floor - **3.41:1** light / **6.03:1** dark, the app's existing system red),
+    `animation_audit.py` 10 checks / 1 warning (unchanged - no new motion), `verify_release.py` **28/29**.
+  - **Negative control.** The previous bundle: smoke **260/266** (6 checks fail - the panel reads
+    `rgb(11, 11, 13)`, the rows `rgb(255, 255, 255)`), `apk_content_check.py` **77/83** (the 4 new rows),
+    QA group 33 30/32.
+  - **Device work.** `docs/DEVICE_TEST_PLAN.md` section **AD** (5 rows): the menu in Light, in Dark, and
+    in System with the phone toggled mid-session, plus the outside-tap dismissal and a screenshot
+    comparison against the report's own image.
+
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.
-- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch36), plus
+- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch37), plus
   the readable sources of the settings sheet - `patch19_settings.src.js`,
   `patch22_settings.src.js` and `patch24_settings.src.js`, each minified by its own script (one
   flat node per line, no comments; the newest one owns the span and the older two report it as
@@ -695,7 +748,10 @@ This repo contains the patched source for the CardWallet app.
   `apkbuilder.py` (aligned zip, v1/v2/v3 signing, PKCS#12 keystore),
   `axml.py` (binary manifest reader/patcher), `verify_release.py`,
   `smoke_test_webview.mjs`, `qa_feature_suite.mjs`, `animation_audit.py` and
-  `liquid_glass_audit.py`.
+  `liquid_glass_audit.py`. Stylesheet blocks are appended over time, so a tool that wants to
+  describe one block must slice it **banner -> next banner** (patch 33/34's `block_span`, patch
+  37's `block_of`, the audit's `block_from`) - a `[index(marker):]` slice quietly grows into every
+  later round and makes an old block look like it owns the new one's declarations.
 - `header_options.json` - the header's option list (top-bar buttons + the two
   dropdowns they open). Consumed by `patches/patch8_header_options.py`.
 

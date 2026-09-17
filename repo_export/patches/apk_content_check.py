@@ -83,12 +83,17 @@ MUST = [
     ("carry    NFC and auto-detect stay pinned off at load", "n.autoDetect=!1,n.nfc=!1"),
     ("carry    the header row is empty but still there (the dock's geometry twin, round 17)",
      "children:[/*cardwallet:header*//*cardwallet:no-wordmark*/]"),
+    ("round 22  the overflow menu rides the theme tokens (sheet, hairline, token shadow)",
+     "background:`var(--sheet)`,border:`1px solid var(--line)`,boxShadow:`var(--menu-shadow)`"),
+    ("round 22  menu rows read --ink, the destructive row --danger",
+     "style:{color:e.danger?`var(--danger)`:`var(--ink)`}"),
 ]
 MUST_NOT = [
     ("removed feature 'Auto-detect details' must stay out", "Auto-detect details"),
     ("removed feature 'Fill in from picture' must stay out", "Fill in from picture"),
     ("removed feature 'Make your own pouch' must stay out", "Make your own pouch"),
     ("round 21  the removed 'Wallet' header label must stay out", "children:`Wallet`"),
+    ("round 22  the fixed near-black menu panel must stay out (the report's bug)", "#0b0b0d"),
     ("no CVV/CVC field may be offered or stored (patch29)", "`CVV`"),
     ("no eval in the shipped bundle", "eval("),
 ]
@@ -105,6 +110,16 @@ MUST_NOT_APP = [
 ]
 # The app's own copy is allowed to *say* CVV (it promises not to ask for one); the data layer may not.
 CVV_COPY = "no CVV, no PIN"
+
+
+def block_from(css: str, marker: str) -> str:
+    """The stylesheet block that starts at `marker`'s banner and ends at the next banner."""
+    i = css.find(marker)
+    if i < 0:
+        return ""
+    start = css.rindex("/*", 0, i)
+    nxt = re.search(r"\n/\* ={20,}", css[i + 2:])
+    return css[start:(i + 2 + nxt.start()) if nxt else len(css)]
 
 
 def main() -> int:
@@ -140,11 +155,18 @@ def main() -> int:
         and "position:fixed" in lock_rule.group(1) and "inset:0" in lock_rule.group(1),
         (lock_rule.group(1)[:70] if lock_rule else "no .cw-lock rule"))
     chk("round 18  the danger colour is a token, not a literal, in the shipped CSS",
-        "--danger:#ff453a" in css and "#ff453a" not in css.split("Round 18 - the lock gate")[-1])
-    g19 = css[css.index("Round 19 - the customization gate"):] if "Round 19 - the customization gate" in css else ""
+        "--danger:#ff453a" in css and "#ff453a" not in block_from(css, "Round 18 - the lock gate"))
+    # A block owns its banner -> the next banner. The plain `css[index(marker):]` slice grew into every
+    # later round: once round 22 appended its block, that block's `rgba(...)` shadow tripped this
+    # round-19 "no colour literals" rule.
+    g19 = block_from(css, "Round 19 - the customization gate")
     chk("round 19  the shipped stylesheet carries the customization-gate block", bool(g19), f"{len(g19)} chars")
     chk("round 19  the gate hides one block only while <html> says off (fail-open if the module is missing)",
         'html[data-cw-custom="off"] .cw-cust-body{display:none}' in g19 and g19.count("display:none") == 1, "-")
+    chk("round 22  the shipped stylesheet defines --menu-shadow for both themes (and they differ)",
+        ":root{--menu-shadow:" in css and "html.dark{--menu-shadow:" in css
+        and css.split(":root{--menu-shadow:")[1].split("}")[0] != css.split("html.dark{--menu-shadow:")[1].split("}")[0],
+        "the only value the menu cannot take from an existing token")
     chk("round 19  the gate adds no blurred surface and no colour literal to the app",
         bool(g19) and "backdrop-filter" not in g19 and not re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(", g19), "-")
     chk("round 19  the gate's DOM module never builds markup from strings", ".innerHTML" not in js[js.index("window.__cwCust"):] if "window.__cwCust" in js else False, "-")

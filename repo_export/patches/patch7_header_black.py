@@ -130,7 +130,17 @@ EDITS = [
 
 # Patch 21 shrinks these buttons (h-11 -> h-10, glyph 23 -> 21) *inside* the span patch 7
 # wrote. The colour/tone work all survives, so the successor's text marks this edit as kept.
-DOWNSTREAM_KEEP = {"header buttons": "flex h-9 items-center justify-center rounded-full"}
+#
+# Round 22 (patch 37) sends the panel and the rows back to theme tokens: the mock's "#0b0b0d panel,
+# white rows ... it does not invert" was written when the app was light-only, and it was the one
+# surface that never followed the dark theme (and later the Light/System/Dark setting) - the client
+# reported it as a bug. The tokens it uses now are the stock app's own idea (`sheet-bg` was
+# `background:var(--sheet)`), kept inline. The successor's text marks both edits as kept.
+DOWNSTREAM_KEEP = {
+    "header buttons": "flex h-9 items-center justify-center rounded-full",
+    "menu panel": "background:`var(--sheet)`,border:`1px solid var(--line)`,boxShadow:`var(--menu-shadow)`",
+    "menu rows": "style:{color:e.danger?`var(--danger)`:`var(--ink)`}",
+}
 
 
 def find_anchor(data: str, olds: list[str], new: str, label: str = "") -> str | None:

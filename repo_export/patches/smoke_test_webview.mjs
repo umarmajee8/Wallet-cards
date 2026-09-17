@@ -260,6 +260,24 @@ check("ui: header actions present (Add / Search / More)",
 
 // --- black header options (patch7 styling + patch8 config) ---------------
 const HEADER_CFG = JSON.parse(fs.readFileSync(path.join(ROOT, "repo_export", "header_options.json"), "utf8"));
+// Round 22: jsdom's cssstyle does not resolve `var(--x)` in an inline style, so a themed surface has
+// to be checked as "it names this token, and the token differs between the themes". `cssTokens` reads
+// the shipped stylesheet the way the browser would - later blocks win - and answers both halves.
+const cssTokens = (selector) => {
+  const out = {};
+  const body = new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\{([^}]*)\\}", "g");
+  for (const m of CSS_SRC.matchAll(body)) {
+    for (const decl of m[1].split(";")) {
+      const i = decl.indexOf(":");
+      if (i > 0) out[decl.slice(0, i).trim()] = decl.slice(i + 1).trim();
+    }
+  }
+  return out;
+};
+const LIGHT_TOKEN = cssTokens(":root");
+const DARK_TOKEN = { ...LIGHT_TOKEN, ...cssTokens("html.dark") };
+const usesToken = (el, prop, token) => styleDecl(el, prop).includes(`var(${token})`);
+
 const styleDecl = (el, prop) =>
   ((el?.getAttribute("style") || "").match(new RegExp(`(?:^|;)\\s*${prop}:\s*([^;]*)`, "i"))?.[1] || "").trim();
 const rgbToHex = (v) => {
@@ -459,14 +477,32 @@ const panel = hdrPanel();
     !!more && /h15/.test(d) && /M4\.5 7\.1/.test(d) && !more.querySelector("circle"),
     d.slice(0, 70) || "no bars path");
 }
-check("header: dropdown panel is black with a white hairline, not sheet-white",
-  colorOf(panel, "background") === "#0b0b0d" && /rgba\(255, 255, 255, 0\.14\)/.test(styleDecl(panel, "border")),
-  `bg=${colorOf(panel, "background")} border=${styleDecl(panel, "border")}`);
+// round 22: the panel is the one surface patch 7 had painted near-black for the light-theme mock
+// ("#0b0b0d panel, white rows ... it does not invert") and it kept that literal through every round
+// that made the app theme-aware. It rides the tokens again - this is the light theme.
+check("header: the dropdown panel rides the theme tokens, not a literal",
+  usesToken(panel, "background", "--sheet") && usesToken(panel, "border", "--line")
+  && usesToken(panel, "box-shadow", "--menu-shadow"),
+  `bg=${styleDecl(panel, "background")} border=${styleDecl(panel, "border")} shadow=${styleDecl(panel, "box-shadow")}`);
+check("header: those tokens really do differ between light and dark (the bug was a fixed dark panel)",
+  LIGHT_TOKEN["--sheet"] === "#fff" && DARK_TOKEN["--sheet"] === "#1c1c1e"
+  && LIGHT_TOKEN["--ink"] === "#111113" && DARK_TOKEN["--ink"] === "#f5f5f7"
+  && LIGHT_TOKEN["--menu-shadow"] !== DARK_TOKEN["--menu-shadow"],
+  `sheet ${LIGHT_TOKEN["--sheet"]} -> ${DARK_TOKEN["--sheet"]}, ink ${LIGHT_TOKEN["--ink"]} -> ${DARK_TOKEN["--ink"]}`);
 {
   const rows = [...(panel?.querySelectorAll("button") || [])];
   const plain = rows.filter((r) => !/Delete all cards/.test(r.textContent || ""));
-  check("header: dropdown rows read white", plain.length > 0 && plain.every((r) => isWhite(colorOf(r, "color"))),
-    rows.map((r) => colorOf(r, "color")).join(" | "));
+  const icons = plain.map((r) => r.querySelector("svg"));
+  check("header: dropdown rows read the themed ink, and the destructive row the themed red",
+    plain.length > 0 && plain.every((r) => usesToken(r, "color", "--ink"))
+    && rows.filter((r) => /Delete all cards/.test(r.textContent || "")).every((r) => usesToken(r, "color", "--danger"))
+    && LIGHT_TOKEN["--danger"] === "#ff453a",
+    rows.map((r) => `${(r.textContent || "").trim().slice(0, 12)}=${styleDecl(r, "color")}`).join(" | "));
+  // the report asked for "background, text and icon colors": the icons are stroked currentColor, so
+  // they inherit the row's colour with no declaration of their own.
+  check("header: the menu icons are currentColor, so they invert with the rows",
+    icons.length > 0 && icons.every((i) => /currentColor/.test(i.innerHTML) || /stroke="currentColor"/.test(i.outerHTML)),
+    `${icons.length} icon(s), strokes=${icons.map((i) => (i.outerHTML.match(/stroke="([^"]*)"/) || [])[1]).join(",")}`);
 }
 
 // dismiss by tapping outside (the menu has no scrim; it listens for a
@@ -488,8 +524,9 @@ check("ui: overflow menu opens (Settings / Delete all cards)",
   labels().includes("Settings") && labels().includes("Delete all cards"));
 {
   const del = [...(hdrPanel()?.querySelectorAll("button") || [])].find((r) => /Delete all cards/.test(r.textContent || ""));
-  check("header: the destructive row keeps its red on the black panel",
-    colorOf(del, "color") === "#ff453a", colorOf(del, "color"));
+  check("header: the destructive row keeps its red in both themes (var(--danger) is red in each)",
+    usesToken(del, "color", "--danger") && LIGHT_TOKEN["--danger"] === "#ff453a" && DARK_TOKEN["--danger"] === "#ff6961",
+    `${styleDecl(del, "color")} | light ${LIGHT_TOKEN["--danger"]} / dark ${DARK_TOKEN["--danger"]}`);
 }
 tap(byText(/^Settings$/));
 await settle(W, 600);
@@ -636,6 +673,25 @@ await settle(darkOff.window, 900);
 check("cover OFF + dark theme: title is var(--ink) (white on black)",
   darkOff.window.document.documentElement.classList.contains("dark") &&
   titleStyle(darkOff.window.document).color.includes("--ink"), titleStyle(darkOff.window.document).color);
+// round 22: the same menu, now with the app in dark - it must invert with everything else, which is
+// the half of the report that was already "working" (and must keep working).
+{
+  const Wd = darkOff.window, Dd = Wd.document;
+  const moreBtn = [...Dd.querySelectorAll("#root button[aria-label]")].find((b) => b.getAttribute("aria-label") === "More");
+  moreBtn?.dispatchEvent(new Wd.MouseEvent("click", { bubbles: true }));
+  await settle(Wd, 500);
+  const dpanel = [...Dd.querySelectorAll("#root div")].find((d) => /w-\[248px\]/.test(d.className || ""));
+  const drows = [...(dpanel?.querySelectorAll("button") || [])];
+  const plainRows = drows.filter((r) => !/Delete all cards/.test(r.textContent || ""));
+  check("header: the same menu in dark mode is the same declaration, resolving the other way",
+    usesToken(dpanel, "background", "--sheet") && usesToken(dpanel, "border", "--line")
+    && plainRows.length > 0 && plainRows.every((r) => usesToken(r, "color", "--ink"))
+    && DARK_TOKEN["--sheet"] === "#1c1c1e" && DARK_TOKEN["--ink"] === "#f5f5f7",
+    `bg=${styleDecl(dpanel, "background")} (dark sheet ${DARK_TOKEN["--sheet"]}), rows=${plainRows.map((r) => styleDecl(r, "color")).join(",")}`);
+  check("header: the same menu in dark mode is not the literal it used to be",
+    BUNDLE_SRC.includes("background:`var(--sheet)`") && !BUNDLE_SRC.includes("#0b0b0d"),
+    "one declaration, both themes");
+}
 
 // -- existing installs without the key keep the pouch --
 const legacy = makeDom({ [CARDS_KEY]: CARDS, [SETTINGS_KEY]: JSON.stringify({ appearance: "system", theme: "slate" }) });

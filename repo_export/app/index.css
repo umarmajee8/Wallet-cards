@@ -313,3 +313,13 @@ opacity:1;transition:opacity .2s var(--lg-ease)
 html[data-cw-custom="off"] .cw-cust-body{display:none}
 .cw-cust-slot{display:block}
 @media (prefers-reduced-motion:reduce){.cw-cust-slot *{transition:none}}
+
+/* =====================================================================================
+   Round 22 - the overflow menu follows the theme. The panel was the one surface patch 7 painted
+   near-black for the light-theme mock ("#0b0b0d panel, white rows" - an explicit choice while the
+   app had no dark theme), and it kept that literal through every round that made the app
+   theme-aware. Panel, hairline and rows are tokens again; the drop shadow is the only value a
+   token cannot express, so it lives here - literally - once per theme.
+   ===================================================================================== */
+:root{--menu-shadow:0 22px 46px -22px rgba(15,23,42,.28)}
+html.dark{--menu-shadow:0 22px 46px -22px rgba(0,0,0,.75)}

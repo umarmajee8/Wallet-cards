@@ -1102,6 +1102,21 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
       /\.cw-dock \.cw-lg-fab\{backdrop-filter:none;\s*-webkit-backdrop-filter:none\}/.test(CSS)
       && /cw-lg-fab/.test(byLabel(home.w, "Add card")?.className || ""),
       "the CSS carries the suppression rule and the disc keeps its tier-2 look");
+    // round 22: the overflow menu was the one surface still carrying patch 7's light-theme literal
+    // ("#0b0b0d panel, white rows") - the report caught it in Light mode. Panel, hairline, rows and
+    // the destructive row are tokens again, so the same declaration resolves both ways.
+    // (the group's own declMap/tok helpers above do the token lookup)
+    check(g, "round 22: the overflow menu is painted from tokens, not the round-4 near-black literal",
+      CODE.includes("background:`var(--sheet)`,border:`1px solid var(--line)`,boxShadow:`var(--menu-shadow)`")
+      && CODE.includes("style:{color:e.danger?`var(--danger)`:`var(--ink)`}")
+      && !CODE.includes("#0b0b0d"),
+      `panel/rows token-bound, #0b0b0d present=${CODE.includes("#0b0b0d")}`);
+    check(g, "round 22: those tokens resolve differently per theme, so the menu cannot stay dark in Light",
+      tok("sheet", false) === "#fff" && tok("sheet", true) === "#1c1c1e"
+      && tok("ink", false) === "#111113" && tok("ink", true) === "#f5f5f7"
+      && tok("menu-shadow", false) && tok("menu-shadow", true) && tok("menu-shadow", false) !== tok("menu-shadow", true),
+      `sheet ${tok("sheet", false)}/${tok("sheet", true)}, ink ${tok("ink", false)}/${tok("ink", true)}, ` +
+      `shadow ${tok("menu-shadow", false)}/${tok("menu-shadow", true)}`);
     const fab = byLabel(home.w, "Add card");
     check(g, "the create button carries the tier-1 glass class", /cw-lg-fab/.test(fab?.className || ""), fab?.className || "-");
     check(g, "its fill is a themed glass token, never a hardcoded colour",
@@ -1588,7 +1603,17 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
   {
     const g = "35 customization";
     const CSSR = fs.readFileSync(path.join(APP, "index.css"), "utf8");
-    const R19 = CSSR.slice(CSSR.indexOf("Round 19 - the customization gate"));
+    // A block owns its banner -> the next banner: the plain `slice(indexOf(marker))` grew into the
+    // rounds appended after this one, so round 22's `--menu-shadow` shadow literal tripped the
+    // "no new colour" contract below. (The JS module is still the last JS block.)
+    const blockFrom = (marker) => {
+      const i = CSSR.indexOf(marker);
+      if (i < 0) return "";
+      const start = CSSR.lastIndexOf("/*", i);
+      const nxt = CSSR.slice(i + 2).search(/\n\/\* ={20,}/);
+      return CSSR.slice(start, nxt < 0 ? CSSR.length : i + 2 + nxt);
+    };
+    const R19 = blockFrom("Round 19 - the customization gate");
     const MOD = CODE.slice(CODE.indexOf("Round 19 - the customization gate"));
     const HIDE_RULE = /html\[data-cw-custom="off"\] \.cw-cust-body\{display:none\}/;
     const HAS19 = CODE.includes("Round 19 - the customization gate") && CSSR.includes("Round 19 - the customization gate");
