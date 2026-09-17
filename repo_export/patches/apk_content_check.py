@@ -99,6 +99,10 @@ MUST = [
      "if(n>90){te();return}"),
     ("round 23  the two bottom buttons stay hit targets inside the pointer-events:none row",
      "pointer-events-none absolute inset-x-0 flex justify-center gap-2.5 px-5"),
+    ("round 24  the three controls keep the old header bar's boxes and glyphs (36px, 19/21px)",
+     "flex h-9 items-center justify-center rounded-full"),
+    ("round 24  and the old bar's own order/spacing contract: three tone:auto controls",
+     "chip:!1,tone:`auto`"),
 ]
 MUST_NOT = [
     ("removed feature 'Auto-detect details' must stay out", "Auto-detect details"),
@@ -177,6 +181,17 @@ def main() -> int:
     chk("round 19  the shipped stylesheet carries the customization-gate block", bool(g19), f"{len(g19)} chars")
     chk("round 19  the gate hides one block only while <html> says off (fail-open if the module is missing)",
         'html[data-cw-custom="off"] .cw-cust-body{display:none}' in g19 and g19.count("display:none") == 1, "-")
+    dock_rules = len(re.findall(r"\.cw-dock\{", css))
+    chk("round 24  the shipped stylesheet carries the action bar's spacing block (and it is the last word on .cw-dock)",
+        "Round 24 - the action bar carries the old header bar's own spacing" in css
+        and ".cw-dock{gap:4px;padding:6px 8px}" in css
+        and css.rindex(".cw-dock{") == css.index(".cw-dock{gap:4px;padding:6px 8px}"),
+        f"{dock_rules} .cw-dock{{ rules, the override last")
+    chk("round 24  the CSS-only change really is CSS-only (the bundle's action-bar markup is untouched)",
+        "cw-dock pointer-events-auto flex items-center" in js
+        and "pointer-events-none fixed inset-x-0 bottom-0 z-40 px-2" in js
+        and "children:[/*cardwallet:header*//*cardwallet:no-wordmark*/]" in js,
+        "the pill, its bottom anchor and the empty top row are all still there")
     chk("round 22  the shipped stylesheet defines --menu-shadow for both themes (and they differ)",
         ":root{--menu-shadow:" in css and "html.dark{--menu-shadow:" in css
         and css.split(":root{--menu-shadow:")[1].split("}")[0] != css.split("html.dark{--menu-shadow:")[1].split("}")[0],

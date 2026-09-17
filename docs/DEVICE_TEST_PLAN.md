@@ -10,12 +10,13 @@ SHA-256: `63dbd8b1929fdbcb673a19ebab585c0c723ae41518188ff437e84da0c2233e9a`
 Signer cert SHA-256: `86383a7f13662e8b55885cb5331341f8db964ad065da074cc360082a3e436726`
 
 **Currently on device:** the rounds since §M ship as debug-signed builds because no release
-keystore is available here - the newest is `CardWallet_inert_bands.apk` (2026-09-17, rounds
-§N-§AE: stack eject, carousel settle, inert bands + per-card pouch colour, cover colour +
+keystore is available here - the newest is `CardWallet_action_bar.apk` (2026-09-17, rounds
+§N-§AF: stack eject, carousel settle, inert bands + per-card pouch colour, cover colour +
 NFC/appearance defaults + header wordmark, no header wordmark (round 21), the overflow menu
-following the theme (round 22), and - round 23 - **the card viewer's empty bands taking no
-touches**). Same debug key throughout, so `adb install -r` keeps the app's data; §AD's and §AE's
-rows are the ones that matter for this build.
+following the theme (round 22), the card viewer's empty bands taking no touches (round 23), and -
+round 24 - **the bottom-right action bar carrying the old header bar's own spacing**). Note the
+signature: this build's throwaway debug key was generated fresh (the sandbox lost the previous one), so
+`adb uninstall com.arena.cardwallet` first; §AE's and §AF's rows are the ones that matter for it.
 
 ## 0. Install
 
@@ -628,6 +629,26 @@ browser's own pan/scroll behaviour is exactly what the report was about, and it 
 never see. Screenshots of the two bands (AE1, before/after) are the evidence for the report. None of
 AE1-AE5 is a handover gate on its own; round 20's **AB1**/**AB2** still are.
 
+## AF. Round 24 - the action bar's seat and spacing (patch 39)  ⚠ the report itself, on the bottom edge
+
+The request: the top-right bar ("+", Search, More) moved to the bottom-right, floating, safe-area padded,
+same actions, same seat on every screen. The move shipped in rounds 16-17 and this build adds the old
+bar's own inner spacing (4px between the controls, 8px inside the pill). jsdom can prove the classes, the
+anchors, the insets and the mount across screens; it cannot see the real gesture bar, the real bottom edge
+or how the pill reads over a moving deck - that is this section.
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| AF1 | On the main wallet screen, look at the bottom-right: the pill with **+**, search and menu. | It floats above the cards, right-aligned, clear of the gesture bar / home indicator (safe-area inset respected). Nothing is cut off, and no control sits under the system gesture area. |
+| AF2 | Compare against the old top-right bar screenshots (and, if you have it, the round-15 build). | Same three controls in the same order, same 36px boxes, same icon sizes, tighter spacing between them than the previous round-24 build (4px instead of 10px) - the measurement is in the patch notes. |
+| AF3 | Tap **+**, then **Search**, then the **menu**; open Settings from the menu and close it; delete-all confirm and cancel. | Every action behaves exactly as before. The pill does not move, jump or resize while its menus open and close (the menu still opens *upward* from the pill's right edge). |
+| AF4 | Open a card (viewer), then open Settings, then a search - watch the pill each time. | The pill keeps its exact seat behind those overlays (it is not re-anchored, not duplicated, and the top of the screen stays empty). Close each surface and confirm nothing moved. |
+| AF5 | A small phone (≤5"), landscape, and a phone with a notch/home-indicator. | The pill is reachable one-handed in portrait, stays inside the screen in landscape, and clears the cutouts in both orientations. Nothing overlaps the cards' bottom row. |
+
+Record per row: device, Android + WebView version, result, and one photo of the bottom-right corner per
+device. **AF1** and **AF5** are the rows the browser cannot judge. None of AF1-AF5 is a handover gate on
+its own; round 20's **AB1**/**AB2** still are.
+
 ## Sign-off
 
 The build may only be called production-ready once **A–Z are green** on at least
@@ -638,15 +659,16 @@ signing, NFC, the soft keyboard, rotation rendering and every smoothness/judgeme
 call). Record device model, Android version and result per row, and file anything
 that fails with the section id (e.g. "F3 fails: Back exits the app with Settings
 open"). The Android UI-testable layer is complete and green: `qa_feature_suite.mjs`
-300/300 (group 33 covers the Liquid Glass material, the round-16 footer dock, the round-17 blur
+323/323 (group 33 covers the Liquid Glass material, the round-16 footer dock, the round-17 blur
 budget and the round-22 themed menu; group 34 the lock and the backup file, including a Node
 re-derivation of the PIN digest and an AES-GCM round-trip of a real `.cwbak`; group 36 the round-20
-gesture recovery on both views; group 37 the round-23 inert bands around the card viewer),
-`smoke_test_webview.mjs` 286/286, `liquid_glass_audit.py` 113/113
+gesture recovery on both views; group 37 the round-23 inert bands around the card viewer; group 38 the round-24 action bar's
+seat and metrics),
+`smoke_test_webview.mjs` 308/308, `liquid_glass_audit.py` 117/117
 (tier rules, the cost model, the WCAG contrast engine, the round-18 gate's opacity/token rules and
 the round-22 menu contrast), `verify_release.py` 28/29 with the only FAIL being the deliberate debug
-signature, and `apk_content_check.py` 90/90 against `CardWallet_inert_bands.apk` (the
-four-blurred-selector budget plus the round-18 copy, store key, crypto markers and the gate's
-opacity - all read out of the shipped entries, not the tree). The jsdom suites need `jsdom@27` + `cssstyle@4.6.0`; on other pairings 11 checks
+signature, and `apk_content_check.py` 94/94 against `CardWallet_action_bar.apk` (the
+four-blurred-selector budget plus the round-18 copy, store key, crypto markers, the gate's opacity and
+round 24's action-bar metrics - all read out of the shipped entries, not the tree). The jsdom suites need `jsdom@27` + `cssstyle@4.6.0`; on other pairings 11 checks
 fail on *any* bundle because cssstyle does not serialise `backdrop-filter` into the `style` attribute - the
 suite reads those through `inlineStyle()` (see README, round 17).

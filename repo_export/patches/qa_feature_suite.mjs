@@ -2039,6 +2039,137 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
     b.close();
   }
 
+  /* ---- group 38: round 24 - the action bar is the old header bar, bottom-right -- */
+  {
+    const g = "38 action bar";
+    const CSS24 = fs.readFileSync(path.join(APP, "index.css"), "utf8");   // group 33/34/35 own their own copies
+    const THREE = JSON.stringify(sample(3));
+    const OLD_ORDER = "Add card,Search cards,More";
+    const seatOf = (b) => {
+      const row = all(b, "#root .cw-dock")[0]?.parentElement;
+      const bar = row?.parentElement;
+      const pill = all(b, "#root .cw-dock")[0];
+      return {
+        pill, row, bar,
+        labels: [...(pill?.querySelectorAll("button") || [])].map((x) => (x.getAttribute("aria-label") || "").trim()).join(","),
+        pillClass: pill?.className || "", rowClass: row?.className || "",
+        barClass: bar?.className || "", barStyle: bar?.getAttribute("style") || "",
+      };
+    };
+    const SEAT = (s) => `${s.pillClass}|${s.rowClass}|${s.barClass}|${s.barStyle}`;
+
+    /* --- the old bar's metrics, inside the pill ---------------------------- */
+    check(g, "the pill's inner spacing is the old header bar's own (gap-1 = 4px, px-2 = 8px)",
+      /\.cw-dock\{gap:4px;padding:6px 8px\}/.test(CSS24),
+      (CSS24.match(/\.cw-dock\{gap:[^}]*\}/) || ["no spacing override"])[0]);
+    check(g, "round 16's own pill rule is overridden, not rewritten",
+      /\.cw-dock\{\nwidth:max-content;\ngap:10px;\npadding:6px 10px;\nborder-radius:999px;/.test(CSS24) &&
+        CSS24.lastIndexOf(".cw-dock{") > CSS24.indexOf(".cw-dock{\nwidth:max-content;"),
+      `${(CSS24.match(/\.cw-dock\{/g) || []).length} .cw-dock{ rules, the override last`);
+    check(g, "the three controls still carry the old bar's boxes, glyphs and order",
+      CODE.includes("flex h-9 items-center justify-center rounded-full") && CODE.includes("size:cp?19:21") &&
+        (CODE.match(/tone:`auto`/g) || []).length === 3 && CODE.includes("label:`Add card`") &&
+        CODE.indexOf("label:`Add card`") < CODE.indexOf("label:`Search cards`") &&
+        CODE.indexOf("label:`Search cards`") < CODE.indexOf("label:`More`"),
+      "h-9 / 19+21px glyphs / tone:auto x3 / Add card -> Search cards -> More");
+
+    /* --- the seat, on the main wallet screen ------------------------------- */
+    const b = boot({ [CARDS_KEY]: THREE, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) });
+    await settle(b.w, 900);
+    const seat0 = seatOf(b);
+    check(g, "the bar is one pill anchored to the bottom edge and right-aligned",
+      /fixed inset-x-0 bottom-0 z-40/.test(seat0.barClass) && /justify-end/.test(seat0.rowClass) &&
+        /cw-dock/.test(seat0.pillClass) && !/top-0/.test(seat0.barClass),
+      `${seat0.barClass.slice(0, 44)} || ${seat0.pillClass}`);
+    check(g, "the bar holds exactly the three old controls, and nothing else",
+      seat0.labels === OLD_ORDER && seat0.bar.querySelectorAll("button").length === 3,
+      `${seat0.labels} (${seat0.bar.querySelectorAll("button").length} in the bar)`);
+    check(g, "its safe-area padding is the bottom inset (the home indicator / gesture bar)",
+      /env\(safe-area-inset-bottom\)/.test(seat0.barStyle) && /padding-bottom/i.test(seat0.barStyle), seat0.barStyle);
+    check(g, "the top of the screen stays empty - the bar is not duplicated there",
+      (() => {
+        const tops = all(b, "#root div").filter((d) => /inset-x-0 top-0 z-40/.test(d.className || ""));
+        const row = tops[0]?.firstElementChild;
+        // exactly one top-anchored bar may exist (the container); a second one would BE the action bar
+        return tops.length === 1 && !!row && row.querySelectorAll("button").length === 0
+          && (row.textContent || "").trim() === "";
+      })(), `${all(b, "#root div").filter((d) => /inset-x-0 top-0 z-40/.test(d.className || "")).length} top-anchored bar(s), the row has 0 buttons and no text`);
+
+    /* --- the same seat on every screen ------------------------------------ */
+    const seats = [];
+    for (const [name, store, vp] of [
+      ["carousel", { [CARDS_KEY]: THREE, [SETTINGS_KEY]: JSON.stringify({ view: "carousel" }) }, undefined],
+      ["stack", { [CARDS_KEY]: THREE, [SETTINGS_KEY]: JSON.stringify({ view: "stack" }) }, undefined],
+      ["dark", { [CARDS_KEY]: THREE, [SETTINGS_KEY]: JSON.stringify({ view: "carousel", appearance: "dark" }) }, undefined],
+      ["empty wallet", { [SETTINGS_KEY]: JSON.stringify({ view: "carousel" }) }, undefined],
+      ["small phone", { [CARDS_KEY]: THREE, [SETTINGS_KEY]: JSON.stringify({ view: "stack" }) }, { width: 320, height: 568 }],
+      ["landscape", { [CARDS_KEY]: THREE, [SETTINGS_KEY]: JSON.stringify({ view: "stack" }) }, { width: 915, height: 412 }],
+    ]) {
+      const inst = boot(store, vp);
+      await settle(inst.w, 800);
+      const s = seatOf(inst);
+      seats.push([name, s]);
+      check(g, `${name}: the same three controls in the same seat, no errors`,
+        s.labels === OLD_ORDER && /fixed inset-x-0 bottom-0 z-40/.test(s.barClass) &&
+          /env\(safe-area-inset-bottom\)/.test(s.barStyle) && inst.errors.length === 0,
+        `${s.labels} | err=${inst.errors.length}`);
+      inst.close();
+    }
+    check(g, "the seat is identical across every screen (one class string, one anchor, one inset)",
+      new Set(seats.map(([, s]) => SEAT(s))).size === 1,
+      `${new Set(seats.map(([, s]) => SEAT(s))).size} distinct seat(s) across ${seats.length} screens`);
+
+    /* --- while surfaces are open, and through the actions ------------------ */
+    const surfaces = [];
+    for (const [name, openIt] of [
+      ["search", async () => { await click(b.w, byLabel(b.w, "Search cards"), 700); }],
+      ["option menu", async () => { await click(b.w, byLabel(b.w, "More"), 500); }],
+      ["settings sheet", async () => { await click(b.w, anyBtn(b.w, /^Settings$/), 900); }],
+      ["customize sheet", async () => { await click(b.w, anyBtn(b.w, /^Customize cards$/), 900); }],
+    ]) {
+      await openIt();
+      surfaces.push([name, seatOf(b)]);
+    }
+    check(g, "search, the option menu and both sheets open without the bar leaving its seat",
+      surfaces.every(([, s]) => s.labels === OLD_ORDER && SEAT(s) === SEAT(seat0)),
+      surfaces.map(([n, s]) => `${n}:${SEAT(s) === SEAT(seat0) ? "same seat" : "MOVED"}`).join(" | "));
+    check(g, "the Search control opens the search screen, and closing it leaves the bar alone",
+      !!inputFor(b.w, "Search"),
+      inputFor(b.w, "Search") ? "search field mounted" : "no search field");
+    b.close();
+
+    // the actions themselves, on a fresh wallet with nothing else open (the surfaces above are left
+    // stacked on purpose - that is the seat test - so the action path gets its own boot)
+    const ba = boot({ [CARDS_KEY]: THREE, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) });
+    await settle(ba.w, 900);
+    check(g, "the + control opens its own menu (Add from gallery / Take a picture)",
+      (await click(ba.w, byLabel(ba.w, "Add card"), 700)) && /Add from gallery/.test(text(ba.w)),
+      text(ba.w).slice(0, 60));
+    await click(ba.w, byLabel(ba.w, "Add card"), 1500);
+    const menuNode = all(ba.w, "#root div").find((d) => /w-\[248px\]/.test(d.className || ""));
+    check(g, "tapping + again closes it again (no stuck overlay)",
+      !menuNode || /opacity:\s*0\b/.test(menuNode.parentElement?.getAttribute("style") || ""),
+      menuNode ? "playing its exit animation" : "menu node gone");
+    check(g, "the More control opens the overflow menu above the pill",
+      (await click(ba.w, byLabel(ba.w, "More"), 600)) && /Settings/.test(text(ba.w)) &&
+        /Delete all cards/.test(text(ba.w)),
+      text(ba.w).slice(0, 60));
+    await click(ba.w, anyBtn(ba.w, /^Delete all cards$/), 800);
+    check(g, "the overflow menu's destructive row still opens its confirm sheet",
+      /Delete all cards/.test(text(ba.w)) && /Cancel/.test(text(ba.w)), text(ba.w).slice(-80));
+    await click(ba.w, anyBtn(ba.w, /^Cancel$/), 700);
+    check(g, "the Settings row still opens the settings sheet",
+      (await click(ba.w, byLabel(ba.w, "More"), 500)) && (await click(ba.w, anyBtn(ba.w, /^Settings$/), 900)) &&
+        /Done/.test(text(ba.w)),
+      text(ba.w).slice(-60));
+    await click(ba.w, anyBtn(ba.w, /^Done$/), 800);
+    check(g, "after all three actions the bar is still in its seat",
+      SEAT(seatOf(ba)) === SEAT(seat0) && seatOf(ba).labels === OLD_ORDER, seatOf(ba).labels);
+    check(g, "no console errors across the action-bar walk-through", b.errors.length === 0 && ba.errors.length === 0,
+      `${b.errors.length + ba.errors.length} error(s): ${(b.errors.concat(ba.errors)[0] || "").slice(0, 120)}`);
+    ba.close();
+  }
+
   /* ---- report ------------------------------------------------------------ */
   const byGroup = {};
   for (const r of results) { (byGroup[r.group] ||= { pass: 0, fail: 0, fails: [] }); byGroup[r.group][r.ok ? "pass" : "fail"]++; if (!r.ok) byGroup[r.group].fails.push(r); }

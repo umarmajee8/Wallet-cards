@@ -1596,3 +1596,55 @@ release signing ki koshish **nahi** ki gayi. Install se pehle `adb uninstall com
 scroll ki koshish, do buttons, card ke apne gestures, aur viewer band karne ke do bache hue tareeqay. Round
 20 ke **AB1**/**AB2** ab bhi handover gates han.
 
+## 28. Round 24 - action bar bottom-right, purani header bar ke apne metrics (patch 39, CSS only), 2026-09-17
+
+**Request, verbatim:** *"Move the top-right action bar (currently containing "+" Add button, Search icon,
+and Menu/Settings icon) from the top of the screen to the bottom-right corner instead - same exact
+grouping, icons, and functionality, just relocated."* Saath: content ke upar float kare (bottom nav ke
+upar nahi), safe-area padding rahe, actions wahi rahen, aur har screen par seat fixed rahe.
+
+**Move khud pehle ho chuka tha.** Round 16-17 (patches 31-32, 2026-09-07) ne wohi teen controls usi
+request par bottom-right glass pill me bitha diye the (*"header pr jo b ha - create, search, setting - sab
+ko footer pr set kro"*), aur tab se har build me `apk_content_check.py` ise pin karta aaya ha. Jo cheez
+nahi aayi thi woh ye round laata ha: **purani bar ka apna spacing.**
+
+**Naapa gaya, andaza nahi.** Aakhri build jis me bar ab bhi top-right par thi
+(`CardWallet_liquid_glass.apk`, round 15) aur stock app se: purani bar teen nange `h-9 w-9` (36px)
+buttons thi, `gap-1` (4px) ka faasla, `px-2` (8px) inset, glyphs 19px (create disc) / 21px, `tone:auto`,
+labels Add card / Search cards / More - apna koi container nahi. Round 16 ne wohi controls **verbatim**
+uthaye (is liye size, labels, icons, order aur tone pehle se match the) aur unhe `.cw-dock` pill me wrap
+kiya jo `gap:10px; padding:6px 10px` par bani thi. Farq bas usi inner spacing ka tha.
+
+**Fix:** ek appended rule, sheet me sab se aakhir - `.cw-dock{gap:4px;padding:6px 8px}`. Round 16 ka apna
+block byte-identical ha (assert hota ha), koi colour, blur, shadow, radius ya motion nahi; pill ka frame
+wahi rehta ha jahan purani bar ka aakhri control khatam hota tha (container `px-2` + row `px-2` = screen se
+16px - round 17 ka alignment rule).
+
+**Jaan-boojh kar wahi:** bottom-right seat, `env(safe-area-inset-bottom) + 10px` bar padding, deck ka apna
+`+62px` reserve, teeno handlers, upar khulne wala 248px menu, material/fallbacks - aur bundle khud: is
+round me **koi JavaScript likha hi nahi gaya.**
+
+**Gates:** web smoke **286 -> 308/308** (naya Test 6o: pill par purani bar ke metrics, bottom-right par
+waahid control cluster aur screen ka top khaali, seat **identical** paanch boots par (carousel / stack /
+cover-off / dark / empty wallet), seat search, option menu, dono sheets aur card viewer ke saath bhi wahi,
+aur teeno actions ab bhi chalte han), QA suite **300 -> 323/323** (group 38 = 23 checks, small-phone aur
+landscape viewports sameet), liquid-glass audit **113 -> 117/117** (change paint-neutral ha: wahi tier-1
+blur, wahi pill, aur block me koi colour/blur/shadow/motion nahi), `apk_content_check.py` **90 -> 94/94**,
+`animation_audit.py` 10 checks / 1 warning (barqarar), `verify_release.py` **28/29**.
+
+**Do negative controls** (kyunke ye round placement ka claim ha): (a) pre-patch tree - smoke **306/308**,
+QA group 38 **21/23**, yani bilkul wahi do metric rows katte han; (b) report ki regression dobara banai -
+wahi bar wapas top-right par (`bottom-0` -> `top-0`, menu `mb-1` -> `mt-1`): smoke **296/308** (9 round-24
+rows + round-16/17 ke "bottom-anchored pill" aur "opens upward" rows), QA group 38 **15/23**. Dono controls
+me "kept working" rows green rehte han - isi liye woh saboot han, decoration nahi.
+
+**Artifact:** `CardWallet_action_bar.apk` - **11,669,728 B**, sha256
+`9adcbf84c9294bb5d36185b2c8ed9cad6b3735dfc5c3b9e6a96963c5cca42a20`, `repo_export/app/index.js` 499,384 B
+(is round me bilkul wahi) + `index.css` 38,994 B (is round me +983 B, sirf round-24 block). Debug-signed
+(throwaway key dobara ban gayi - pehle `adb uninstall com.arena.cardwallet`), `allowBackup=false`,
+release signing ki koshish **nahi** ki gayi.
+
+**Handover:** verdict wahi - **NOT READY FOR CLIENT HANDOVER**. Is round ka device work
+`docs/DEVICE_TEST_PLAN.md` section **AF** (5 rows) ha. Round 20 ke **AB1**/**AB2** ab bhi handover gates
+han.
+

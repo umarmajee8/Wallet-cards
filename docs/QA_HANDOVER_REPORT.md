@@ -574,7 +574,46 @@ the event plumbing. `docs/DEVICE_TEST_PLAN.md` section **AE** (5 rows, AE2 the o
 device half. Verdict: **NOT READY FOR CLIENT HANDOVER** - unchanged; round 20's **AB1**/**AB2** remain the
 two handover gates.
 
-**Note for the reviewer:** this branch now carries rounds 20, 21, 22 and 23; the site and `download/index.html`
-point at `CardWallet_inert_bands.apk` (its sha256/size on the download page describe the file it serves).
+### Round 24 - the action bar: bottom-right, with the old header bar's own spacing (patch 39, CSS only)
+
+**Request:** move the top-right action bar ("+" Add, Search, More) to the bottom-right corner - same
+grouping, icons, functionality - floating above the content, safe-area padded, same seat on every screen.
+
+**What the current code already did:** the move itself shipped in rounds 16-17 (patches 31-32, 2026-09-07,
+for the same request) and has been pinned by `apk_content_check.py` in every build since: one glass pill
+(`.cw-dock`), bottom-anchored bar with `env(safe-area-inset-bottom)`, right-aligned row, the same three
+controls in the same order, deck reserving the pill's height. **What had not travelled was the old bar's
+own spacing** - measured out of the last build with the bar still at the top-right
+(`CardWallet_liquid_glass.apk`, round 15): three bare 36px buttons, `gap-1` (4px), `px-2` (8px) inset -
+whereas round 16 built the pill with `gap:10px; padding:6px 10px`.
+
+**Fix:** one appended stylesheet rule, `:root`-level and last in the sheet: `.cw-dock{gap:4px;padding:6px 8px}`.
+No JavaScript at all; round 16's own rule is untouched (the override is asserted to be the last `.cw-dock`
+declaration, and its predecessor byte-identical). No colour, blur, shadow, radius or motion is added, so
+the material and its fallbacks are exactly as round 16 shipped them.
+
+**Evidence:** web smoke **286 -> 308/308** (new Test 6o: metrics, the bottom-right seat, the seat identical
+across five boots, the seat surviving search / option menu / both sheets / the card viewer, and all three
+actions still running with their menus opening upward), QA suite **300 -> 323/323** (group 38 = 23 checks,
+including small-phone and landscape viewports), `liquid_glass_audit.py` **113 -> 117/117** (paint-neutral
+change: same tier-1 blur, same pill radius, block adds nothing), `apk_content_check.py` **90 -> 94/94**
+against `CardWallet_action_bar.apk` (11,669,728 B, sha256
+`9adcbf84c9294bb5d36185b2c8ed9cad6b3735dfc5c3b9e6a96963c5cca42a20`), `animation_audit.py` 10 checks /
+1 warning unchanged, `verify_release.py` 28/29 (the deliberate debug cert).
+
+**Negative controls (two - a placement claim needs one that moves the bar back):** (a) pre-patch tree:
+smoke **306/308**, QA group 38 **21/23** (exactly the two metric rows bite). (b) the reported regression
+simulated - the bar put back at the top-right (`bottom-0` -> `top-0`, menu `mb-1` -> `mt-1`): smoke
+**296/308** (9 round-24 rows, plus round 16/17's "bottom-anchored pill" and "opens upward" rows), QA group
+38 **15/23**. In both controls the "kept working" rows stay green.
+
+**Not verified here:** the real bottom edge, the real gesture bar and one-handed reach. jsdom has no
+layout, so the suites pin the anchors, the classes, the safe-area expression and the mount across screens.
+`docs/DEVICE_TEST_PLAN.md` section **AF** (5 rows; AF1 and AF5 are the ones a browser cannot judge) is the
+device half. Verdict: **NOT READY FOR CLIENT HANDOVER** - unchanged; round 20's **AB1**/**AB2** remain the
+two handover gates.
+
+**Note for the reviewer:** this branch now carries rounds 20, 21, 22, 23 and 24; the site and `download/index.html`
+point at `CardWallet_action_bar.apk` (its sha256/size on the download page describe the file it serves).
 Until the PR is merged the GitHub raw link there resolves only against `main`; the branch-raw URL given to
 the client works meanwhile.

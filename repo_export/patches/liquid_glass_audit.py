@@ -388,6 +388,32 @@ check("round 23: the band fix adds no stylesheet block and no colour - the viewe
       and "className:`fixed inset-0 z-50 touch-none`" in JS and ".touch-none{touch-action:none}" in CSS,
       f"css block:{'Round 23' in CSS} backdrop literal:{JS.count('background:`rgba(9,9,11,0.94)`')}")
 
+# ------------------------------------------------ round 24: the action bar's own metrics
+# The bar's *seat* (bottom-right, safe-area padded) is round 16/17 work; this round only set the pill's
+# inner spacing to the old header bar's own (`gap-1 px-2` = 4px/8px, measured out of the round-15 build
+# that still had the bar at the top-right). So the audit's interest is that the change is paint-neutral:
+# the material, the frame and every fallback must be exactly as they were.
+DOCK24 = re.compile(r"\.cw-dock\{gap:4px;padding:6px 8px\}")
+R24_AT = CSS.find("Round 24 - the action bar")
+R24 = CSS[R24_AT:CSS.find("\n.cw-dock{gap:4px", R24_AT) + len("\n.cw-dock{gap:4px;padding:6px 8px}")] if R24_AT >= 0 else ""
+DOCK_RULES = len(re.findall(r"\.cw-dock\{", CSS))
+check("round 24: the pill's inner spacing is the old header bar's own, and it is the last .cw-dock rule",
+      bool(DOCK24.search(CSS)) and CSS.rindex(".cw-dock{") == DOCK24.search(CSS).start()
+      and DOCK_RULES == 5,
+      f"{DOCK_RULES} .cw-dock{{ rules, override last")
+check("round 24: spacing only - the block adds no colour, blur, shadow, radius or motion",
+      bool(R24) and not re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(|backdrop-filter|box-shadow|border|transition|animation|blur", R24),
+      R24.splitlines()[-1] if R24 else "block not found")
+check("round 24: the dock's material and frame are untouched by it (same tier-1 blur, same pill)",
+      "backdrop-filter:blur(22px) saturate(1.78) brightness(1.03)" in dock
+      and "border-radius:999px" in dock and "width:max-content" in dock,
+      "tier-1 fill, pill radius and max-content width all as round 16 built them")
+check("round 24: the bar's seat keeps the bottom safe-area inset (the home indicator / gesture bar)",
+      "pointer-events-none fixed inset-x-0 bottom-0 z-40 px-2" in JS
+      and "paddingBottom:`calc(env(safe-area-inset-bottom) + 10px)`" in JS
+      and "paddingBottom:`calc(env(safe-area-inset-bottom) + 62px)`" in JS,
+      "bar inset + the deck's own reserve")
+
 ALPHAS = {f"{sc}/{n}": parse_color(var(n, "html.dark" if sc == "dark" else ":root"))[3]
           for sc in ("light", "dark") for n in ("--lg-tint", "--lg-tint-2")}
 check("tier-1 fill alpha stays in the glass band (0.45 - 0.92)",

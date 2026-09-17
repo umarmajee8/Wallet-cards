@@ -789,10 +789,50 @@ This repo contains the patched source for the CardWallet app.
   - **Device work.** `docs/DEVICE_TEST_PLAN.md` section **AE** (5 rows): the two bands in both themes,
     drag/scroll attempts, the buttons, the card's own gestures, and the two remaining close paths.
 
+28. **Round 24 - the action bar sits bottom-right with the old header bar's own metrics** (patch 39, CSS only), 2026-09-17.
+  - **The request, verbatim:** *"Move the top-right action bar (currently containing \"+\" Add button,
+    Search icon, and Menu/Settings icon) from the top of the screen to the bottom-right corner instead -
+    same exact grouping, icons, and functionality, just relocated."* Plus: floating above the content (not
+    over a bottom nav), safe-area padded, actions unchanged, and the same fixed seat on every screen.
+  - **The relocation itself was already shipped** - rounds 16-17 (patches 31-32, 2026-09-07) moved the
+    same three controls into a bottom-right glass pill for the same request (*"header pr jo b ha - create,
+    search, setting - sab ko footer pr set kro"*), and `apk_content_check.py` has pinned it in every
+    build since. What had *not* travelled is the one thing this round adds: **the old bar's own spacing.**
+  - **Measured, not guessed.** From the last build with the bar still at the top-right
+    (`CardWallet_liquid_glass.apk`, round 15) and the stock app: the old bar was three bare `h-9 w-9`
+    (36px) buttons, `gap-1` (4px) apart, `px-2` (8px) inset, glyphs 19px (create disc) / 21px, `tone:auto`,
+    labels Add card / Search cards / More - no container of its own. Round 16 lifted those controls
+    verbatim (so size, labels, icons, order and tone already matched) and wrapped them in the `.cw-dock`
+    pill built with `gap:10px; padding:6px 10px`. The delta was exactly that inner spacing.
+  - **The fix:** one appended rule, `:root`-level and last in the sheet -
+    `.cw-dock{gap:4px;padding:6px 8px}`. Round 16's own block is byte-identical (asserted), no colour, no
+    blur, no shadow, no radius, no motion; the pill's frame still lands where the old bar's last control
+    ended (container `px-2` + row `px-2` = 16px from the screen edge - round 17's alignment rule).
+  - **Deliberately unchanged:** the bottom-right seat, the `env(safe-area-inset-bottom) + 10px` bar
+    padding, the deck's own `+62px` reserve, the three handlers, the upward-opening 248px menu, the
+    material/fallbacks, and the bundle itself - this round writes **no JavaScript at all**.
+  - **Gates.** web smoke **286 -> 308/308** (a new Test 6o: the pill carries the old bar's metrics, the bar
+    is the only control cluster at the bottom-right with the top of the screen empty, the seat is
+    *identical* across five boots (carousel / stack / cover-off / dark / empty wallet), the seat survives
+    search, the option menu, both sheets and the card viewer, and all three actions still run), QA suite
+    **300 -> 323/323** (group 38 = 23 checks, including small-phone and landscape viewports), the
+    liquid-glass audit **113 -> 117/117** (the change is paint-neutral: same tier-1 blur, same pill, and
+    the block adds no colour/blur/shadow/motion), `apk_content_check.py` **90 -> 94/94**,
+    `animation_audit.py` 10 checks / 1 warning unchanged, `verify_release.py` 28/29.
+  - **Negative controls (two, because this round is a placement claim).** (a) The pre-patch tree: smoke
+    **306/308**, QA group 38 **21/23** - exactly the two metric rows bite. (b) The reported regression
+    simulated - the same bar put *back* at the top-right (`bottom-0` -> `top-0`, menu `mb-1` -> `mt-1`):
+    smoke **296/308** (9 round-24 rows plus the round-16/17 "bottom-anchored pill" and "opens upward"
+    rows), QA group 38 **15/23**. Both controls leave the "kept working" rows green, which is what makes
+    them evidence rather than decoration.
+  - **Device work.** `docs/DEVICE_TEST_PLAN.md` section **AF** (5 rows): the seat on a gesture-nav phone
+    and a notch phone, the spacing against the old screenshots, the three actions, the bar with a sheet /
+    the viewer open, and small-phone + landscape reach.
+
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.
-- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch38), plus
+- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch39), plus
   the readable sources of the settings sheet - `patch19_settings.src.js`,
   `patch22_settings.src.js` and `patch24_settings.src.js`, each minified by its own script (one
   flat node per line, no comments; the newest one owns the span and the older two report it as

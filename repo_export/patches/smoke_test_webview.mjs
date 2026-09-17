@@ -2360,6 +2360,199 @@ check("rounds 11-12: no console errors from the compact sheet", m.errors.length 
 }
 
 // ---------------------------------------------------------------------------
+// Test 6o: round 24 - the action bar is the old header bar, seated bottom-right, on every screen
+//
+// The request: *"Move the top-right action bar (currently containing "+" Add button, Search icon, and
+// Menu/Settings icon) from the top of the screen to the bottom-right corner instead - same exact
+// grouping, icons, and functionality, just relocated"* - floating above the content, safe-area padded,
+// same seat on every screen, actions unchanged.
+//
+// The relocation shipped in rounds 16-17; what had not travelled was the OLD BAR'S OWN SPACING, measured
+// out of the last build that still had it at the top-right (`CardWallet_liquid_glass.apk`, round 15):
+// three `h-9 w-9` controls, `gap-1` (4px) apart, `px-2` (8px) inset, glyphs 19/21px, `tone:auto`, labels
+// Add card / Search cards / More - bare buttons, no container. Round 16 wrapped the same three controls
+// in the `.cw-dock` glass pill with `gap:10px; padding:6px 10px`. This test pins the matched metrics and
+// the "same seat on every screen" property the request asks for.
+// ---------------------------------------------------------------------------
+{
+  const CARDS3o = JSON.stringify([
+    { id: "o1", src: "cards/one.jpg", title: "Nova One", subtitle: "1", fields: [] },
+    { id: "o2", src: "cards/two.jpg", title: "Oscar Two", subtitle: "2", fields: [] },
+    { id: "o3", src: "cards/three.jpg", title: "Papa Three", subtitle: "3", fields: [] },
+  ]);
+  const OLD_ORDER = "Add card,Search cards,More";
+  const seatOf = (doc) => {
+    const pill = doc.querySelector("#root .cw-dock");
+    const row = pill?.parentElement;
+    const bar = row?.parentElement;
+    return {
+      pill, row, bar,
+      labels: [...(pill?.querySelectorAll("button") || [])].map((b) => (b.getAttribute("aria-label") || "").trim()).join(","),
+      pillClass: pill?.className || "", rowClass: row?.className || "", barClass: bar?.className || "",
+      barStyle: bar?.getAttribute("style") || "",
+    };
+  };
+
+  /* --- the old bar's metrics, now inside the pill --------------------------- */
+  check("round 24: the pill's inner spacing is the old header bar's own (gap-1 = 4px, px-2 = 8px)",
+    /\.cw-dock\{gap:4px;padding:6px 8px\}/.test(CSS_SRC),
+    (CSS_SRC.match(/\.cw-dock\{gap:[^}]*\}/) || ["no spacing override"])[0]);
+  check("round 24: the three controls still carry the old bar's size and glyphs (36px box, 19/21px)",
+    BUNDLE_SRC.includes("flex h-9 items-center justify-center rounded-full") && BUNDLE_SRC.includes("size:cp?19:21") &&
+      (BUNDLE_SRC.match(/tone:`auto`/g) || []).length === 3,
+    `${(BUNDLE_SRC.match(/tone:`auto`/g) || []).length} tone:auto controls`);
+  check("round 24: the pill's frame still lands on the old bar's geometry (the row IS the header row's)",
+    BUNDLE_SRC.split("pointer-events-auto mx-auto flex w-full max-w-[520px] items-center justify-end gap-1 px-2").length - 1 === 2,
+    "the top row and the bottom row still share one class string (round 17)");
+  check("round 24: the round-16 pill rule is overridden, not rewritten (its own block is untouched)",
+    /\.cw-dock\{\nwidth:max-content;\ngap:10px;\npadding:6px 10px;\nborder-radius:999px;/.test(CSS_SRC) &&
+      CSS_SRC.lastIndexOf(".cw-dock{") > CSS_SRC.indexOf(".cw-dock{\nwidth:max-content;") &&
+      (CSS_SRC.match(/\.cw-dock\{/g) || []).length === 5,
+    `${(CSS_SRC.match(/\.cw-dock\{/g) || []).length} .cw-dock{ rules, the override last`);
+
+  /* --- the seat: bottom-right, safe-area padded, nothing else there --------- */
+  const st = makeDom(
+    { [CARDS_KEY]: CARDS3o, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) },
+    { withLayout: true },
+  );
+  runBundle(st.window, st.errors);
+  await settle(st.window, 900);
+  const Wo = st.window, Do = Wo.document;
+  const oAll = (sel) => [...Do.querySelectorAll(sel)];
+  const oBtn = (re) => oAll("#root button").find((b) => re.test((b.getAttribute("aria-label") || "") + " " + (b.textContent || "").trim()));
+  const ptr = (type, x, y) => {
+    const e = new Wo.MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(e, "isPrimary", { value: true });
+    Object.defineProperty(e, "pointerId", { value: 1 });
+    return e;
+  };
+  const tap = (el) => { if (!el) return false; el.dispatchEvent(new Wo.MouseEvent("click", { bubbles: true })); return true; };
+  const text = () => textOf(Wo);
+  const seat0 = seatOf(Do);
+  check("round 24: the bar is one pill, anchored to the bottom edge and right-aligned",
+    /fixed inset-x-0 bottom-0 z-40/.test(seat0.barClass) && /justify-end/.test(seat0.rowClass) &&
+      /cw-dock/.test(seat0.pillClass) && !/top-0/.test(seat0.barClass),
+    `${seat0.barClass.slice(0, 46)} || ${seat0.pillClass}`);
+  check("round 24: its safe-area padding is the bottom inset, as the request asks",
+    /env\(safe-area-inset-bottom\)/.test(seat0.barStyle) && /padding-bottom/i.test(seat0.barStyle),
+    seat0.barStyle);
+  check("round 24: the bar holds the three old controls in the old order, and nothing else",
+    seat0.labels === OLD_ORDER && seat0.bar.querySelectorAll("button").length === 3,
+    `${seat0.labels} (${seat0.bar.querySelectorAll("button").length} buttons in the bottom bar)`);
+  check("round 24: the top of the screen is still empty (the bar is not duplicated there)",
+    (() => {
+      // the top container also *holds* the bottom bar (that is round 16's structure), so the row that
+      // must be empty is its first child - the row that held the wordmark until round 21
+      const top = oAll("#root div").find((d) => /inset-x-0 top-0 z-40/.test(d.className || ""));
+      const row = top?.firstElementChild;
+      // exactly one top-anchored bar may exist (the container) - a second one would BE the action bar
+      const topBars = oAll("#root div").filter((d) => /inset-x-0 top-0 z-40/.test(d.className || ""));
+      return topBars.length === 1 && !!top && !!row && row.querySelectorAll("button").length === 0
+        && (row.textContent || "").trim() === "";
+    })(), (() => {
+      const topBars = oAll("#root div").filter((d) => /inset-x-0 top-0 z-40/.test(d.className || ""));
+      const top = topBars[0];
+      return `${topBars.length} top-anchored bar(s); top row: ${top?.firstElementChild?.querySelectorAll("button").length ?? "?"} buttons, text “${(top?.firstElementChild?.textContent || "").trim()}”`;
+    })());
+  const SEAT_KEY = (s) => `${s.pillClass}|${s.rowClass}|${s.barClass}|${s.barStyle}`;
+
+  /* --- every screen: the same seat, booted fresh each time ------------------ */
+  const screens = [
+    ["wallet carousel", { [CARDS_KEY]: CARDS3o, [SETTINGS_KEY]: JSON.stringify({ view: "carousel", cover: true }) }],
+    ["wallet stack", { [CARDS_KEY]: CARDS3o, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) }],
+    ["cover hidden", { [CARDS_KEY]: CARDS3o, [SETTINGS_KEY]: JSON.stringify({ view: "carousel", cover: false }) }],
+    ["dark theme", { [CARDS_KEY]: CARDS3o, [SETTINGS_KEY]: JSON.stringify({ view: "carousel", appearance: "dark" }) }],
+    ["empty wallet", { [SETTINGS_KEY]: JSON.stringify({ view: "carousel", cover: true }) }],
+  ];
+  const seats = [];
+  for (const [name, store] of screens) {
+    const inst = makeDom(store, { withLayout: true });
+    runBundle(inst.window, inst.errors);
+    await settle(inst.window, 900);
+    const seat = seatOf(inst.window.document);
+    seats.push([name, seat]);
+    check(`round 24: ${name} - the same three controls in the same seat`,
+      seat.labels === OLD_ORDER && /fixed inset-x-0 bottom-0 z-40/.test(seat.barClass) &&
+        /env\(safe-area-inset-bottom\)/.test(seat.barStyle) && inst.errors.length === 0,
+      `${seat.labels} | ${seat.barClass.slice(0, 34)} | err=${inst.errors.length}`);
+    inst.dom.window.close?.();
+  }
+  check("round 24: the seat is identical across every screen (one class string, one anchor, one inset)",
+    new Set(seats.map(([, s]) => SEAT_KEY(s))).size === 1,
+    `${new Set(seats.map(([, s]) => SEAT_KEY(s))).size} distinct seat(s) across ${seats.length} screens`);
+
+  /* --- while surfaces are open, the bar is still mounted in the same seat --- */
+  const surfaces = [];
+  tap(oBtn(/^Search cards$/));
+  await settle(Wo, 800);
+  surfaces.push(["search open", seatOf(Do)]);
+  tap(oBtn(/^Close search$/));
+  await settle(Wo, 600);
+  tap(oBtn(/^More$/));
+  await settle(Wo, 500);
+  surfaces.push(["option menu open", seatOf(Do)]);
+  tap(oBtn(/^Settings$/));
+  await settle(Wo, 1000);
+  surfaces.push(["settings sheet open", seatOf(Do)]);
+  tap(oBtn(/^Customize cards$/));
+  await settle(Wo, 1000);
+  surfaces.push(["customize sheet open", seatOf(Do)]);
+  tap(oBtn(/^Done$/));
+  await settle(Wo, 800);
+  const openViewer = async () => {
+    for (let i = 0; i < 3 && !/WhatsApp/.test(text()); i += 1) {
+      const stage = oAll("#root div").find((d) => /perspective:\s*1200/.test(inlineStyle(d)));
+      if (!stage) return false;
+      stage.dispatchEvent(ptr("pointerdown", 195, 300));
+      await settle(Wo, 80);
+      Wo.dispatchEvent(ptr("pointerup", 195, 300));
+      await settle(Wo, 1700);
+    }
+    return /WhatsApp/.test(text());
+  };
+  const openedViewer = await openViewer();
+  surfaces.push(["card viewer open", seatOf(Do)]);
+  check("round 24: the card viewer opened for the walk-through (the last surface is real)",
+    openedViewer, openedViewer ? "viewer open" : "viewer never opened");
+  check("round 24: search, the option menu, both sheets and the viewer come and go without the bar ever leaving its seat",
+    surfaces.length === 5 && surfaces.every(([, s]) => s.labels === OLD_ORDER && SEAT_KEY(s) === SEAT_KEY(seat0)),
+    `${surfaces.length} surface(s): ` +
+      surfaces.map(([n, s]) => `${n}:${SEAT_KEY(s) === SEAT_KEY(seat0) ? "same seat" : "MOVED"}`).join(" | "));
+
+  /* --- the actions are unchanged ------------------------------------------- */
+  const pillNow = () => seatOf(Do).pill;
+  tap(pillNow().querySelector("button[aria-label='Add card']"));
+  await settle(Wo, 600);
+  check("round 24: the + control still opens its own menu (Add from gallery / Take a picture)",
+    /Add from gallery/.test(text()) && /Take a picture/.test(text()), text().slice(0, 60));
+  tap(pillNow().querySelector("button[aria-label='Add card']"));
+  await settle(Wo, 1400);
+  const menuAfterToggle = oAll("#root div").find((d) => /w-\[248px\]/.test(d.className || ""));
+  const menuFaded = !!menuAfterToggle && /opacity:\s*0\b/.test(menuAfterToggle.parentElement?.getAttribute("style") || "");
+  check("round 24: and tapping it again closes that menu (no stuck overlay)",
+    !menuAfterToggle || menuFaded, menuAfterToggle ? "menu playing its exit animation" : "menu node gone");
+  tap(pillNow().querySelector("button[aria-label='More']"));
+  await settle(Wo, 600);
+  check("round 24: the More control's menu still opens upward from the pill's right edge",
+    /ml-auto mb-1 w-\[248px\]/.test(BUNDLE_SRC) && /transformOrigin:`right bottom`/.test(BUNDLE_SRC) &&
+      /Settings/.test(text()),
+    "the 248px menu hangs upward, as round 17 placed it");
+  D.documentElement.dispatchEvent(new Wo.MouseEvent("pointerdown", { bubbles: true }));
+  await settle(Wo, 1200);
+  tap(pillNow().querySelector("button[aria-label='Search cards']"));
+  await settle(Wo, 900);
+  const searchMounted = !!Do.querySelector("#root input[placeholder='Search']");
+  check("round 24: the search control still opens the search screen",
+    searchMounted, searchMounted ? "search field mounted" : "no search field");
+  tap(oBtn(/^Close search$/));
+  await settle(Wo, 800);
+  check("round 24: the bar is still in its seat after all three actions were exercised",
+    seatOf(Do).labels === OLD_ORDER && SEAT_KEY(seatOf(Do)) === SEAT_KEY(seat0), seatOf(Do).labels);
+  check("round 24: no console errors across the action-bar walk-through", st.errors.length === 0,
+    st.errors.slice(0, 1).join("").slice(0, 160));
+}
+
+// ---------------------------------------------------------------------------
 // Test 7: Back-button / history instrumentation probe (informational)
 // ---------------------------------------------------------------------------
 const bundleSrc = fs.readFileSync(path.join(APP, "index.js"), "utf8");
