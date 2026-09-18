@@ -55,6 +55,16 @@
         "icon": "nfc",
         "action": "nfc",
         "when": "nfc"
+      },
+      {
+        "label": "Select from files",
+        "icon": "card",
+        "action": "gallery"
+      },
+      {
+        "label": "Add PDF document",
+        "icon": "card",
+        "action": "gallery"
       }
     ],
     "more": [
