@@ -399,3 +399,46 @@ round 19 does *not* claim.
   the sandbox token cannot write Pages settings - so `https://umarmajee8.github.io/Wallet-cards/` is a
   pending manual step (Settings → Pages → Deploy from a branch → `main` / `/site`). Nothing in the app
   depends on it.
+
+## Addendum (2026-09-18) - round 20: a visible Back control on the card preview; verdict unchanged
+
+**Verdict: ❌ NOT READY FOR CLIENT HANDOVER.** Still 0 CRITICAL open, **6 MAJOR device-unverified**, and
+RELEASE-1/2/3/4 + SECURITY-1 open. Round 20 adds no permission, no native code, no storage key and no
+blurred surface; what it does add is a way out of the one screen that had none.
+
+* **Build under test is now `CardWallet_back_button.apk`** - 11,668,989 bytes, SHA-256
+  `3a8edb49bf590f4657d453505258303d60a20c7b81bba25a6a6169fc24e824fa`. Payload inside it is byte-identical to
+  the reviewed tree (`repo_export/app/index.js` 499,369 bytes, `index.css` 37,259 bytes - asserted by
+  `apk_content_check.py` **83/83**, not assumed). Still **debug-signed with a throwaway local key**:
+  `adb uninstall com.arena.cardwallet` before installing, and never distribute it.
+* **Gate counts, current tree** (each run end-to-end after the change, not carried over):
+
+  | Layer | Tool | Now | Before |
+  |---|---|---|---|
+  | Behaviour | `qa_feature_suite.mjs` | **279/279** (group "36 back affordance" = 20) | 259/259 |
+  | Regression | `smoke_test_webview.mjs` | **255/255** | 241/241 |
+  | Material / perf | `liquid_glass_audit.py` | **105/105** | 105/105 |
+  | Payload | `apk_content_check.py` | **83/83** | 78/78 |
+  | Package | `verify_release.py` | 28/29 (akeela FAIL = deliberate debug cert) | 28/29 |
+  | Static style | `animation_audit.py` | 10 checks / 1 pre-existing warning | same |
+  | Reproducibility | `replay_chain.py` | **not runnable in this checkout** - the pristine seed bundle is not in the repo (`app/index.stock.js`, `/tmp/index.stock.js` and the `eb98ba0` ref are all absent) | through patch 34 |
+
+* **What round 20 is.** A 44x44 chevron disc, top-left inside `env(safe-area-inset-top)`, rendered after the
+  card stage and before the pills row of the full-screen preview (`jd`), calling the preview's own close path
+  (`te()`), so the chevron, the backdrop tap and the system Back key are one behaviour. Plus the two Back-key
+  edits: the preview state `o` joins patch 26's gate (so opening the preview pushes its one history entry and
+  Back **closes the screen instead of finishing the activity**), and the popstate handler clears its `pushed`
+  flag before shutting, which (a) stops a Back-close from swallowing the *next* Back press - round-19 build:
+  Settings -> Back -> Settings -> Back did nothing on its first press - and (b) makes a sheet opened over the
+  preview (long-press -> the editor, z-60) close first, the preview second.
+* **What it is not.** Not a change to the wallet chrome (the dock, the header row and the deck are untouched),
+  not a new material (the disc reuses the Save pill's flat `rgba(255,255,255,0.16)`; glyph contrast 13.1:1),
+  and not a persisted preference - the control exists only while the preview is on screen. The app's oldest
+  open question is untouched: **AB2** in `docs/DEVICE_TEST_PLAN.md` is still the only way to prove Android's
+  Back key/gesture really reaches `popstate` in this Capacitor shell.
+* **Negative control for this round.** The two suites run against the pre-patch bundle: smoke **243/255**
+  (exactly the 12 feature checks fail; the two that pass are the "wallet stays clean" and the editor-peel
+  regression guards) and QA group 36 **8/20**.
+* **Device work.** `docs/DEVICE_TEST_PLAN.md` section **AB** (7 rows) - AB1 (the disc is drawn and hittable
+  clear of the status bar/notch, including over a portrait card) and AB2 (the Back key/gesture closes the
+  preview instead of the app) are handover gates.

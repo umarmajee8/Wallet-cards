@@ -540,6 +540,29 @@ Record per row: device, Android + WebView version, result. Two failures are prod
 (the switch does not actually gate the controls on a real screen) and **AA3** (the gate stays open after
 Settings closes, or opens already-on, which is the exact behaviour that was asked to be impossible).
 
+## AB. Round 20 - the card preview's Back control (patch 35)  ⚠ the control's *existence* is device-only
+
+jsdom proves the behaviour (20 QA checks + 14 smoke checks): the button is there while the preview is
+open, it is 44×44 and inside the safe area, tapping it closes the preview, the preview pushes exactly
+one history entry, `history.back()` closes it, and no stored card changes. What jsdom cannot prove is
+that a **finger finds it** and that Android's **Back key/gesture actually reaches `popstate`** in this
+Capacitor shell - that second question is the same one patch 26 has carried since round 14, and it is
+what decides whether this screen used to exit the app for real. **AB1 and AB2 are handover gates.**
+
+| # | Do this | Expect |
+|---|---------|--------|
+| AB1 | Tap a card in the wallet (both layouts: Carousel pouch and Stack) to open the full-screen preview on a real screen, in light and dark theme. | A 44 px dark disc with a white chevron-back sits in the **top-left**, clear of the status bar and of the notch/cutout (it is offset by `env(safe-area-inset-top)`), never under the card, never dimmed to invisibility by the preview's near-opaque backdrop. On a portrait card (a CNIC photo) it must still be visible and tappable above the card's top-left corner. |
+| AB2 | With the preview open, press the **system Back key** (and on Android 13+ the **predictive-back gesture** from the screen edge). | The preview closes and the wallet is exactly where it was - front card unchanged, no reload, no toast. **The app must not exit.** Repeat from Settings, the card editor and the long-press sheet: each Back closes one surface at a time, topmost first. |
+| AB3 | Tap the chevron. Then reopen and tap the empty backdrop. Then reopen and swipe the card down. Compare the three. | One behaviour, three routes: the same close animation, the same resting deck, no second close, no flicker of a re-opened sheet, and the front card is the one that was open. |
+| AB4 | Open the preview → chevron → immediately open it again → chevron, 10× in a row; then open the preview, press Back, and press Back **once more** on the wallet. | No accumulating history entries: Back inside the wallet does nothing (it must not close the wallet or blank the deck), and the app never ends up with a stale entry that costs a second Back press to leave. If the app exits on the second Back at the wallet, that is normal Android behaviour, not a defect. |
+| AB5 | Open the preview, then rotate the phone (or fold/unfold) mid-view; then rotate with the preview closed. | The control is drawn once, in the same place, after the re-create - no duplicate button, no button stranded inside the rotated card. The preview either survives the rotation or closes cleanly; both are acceptable, a half-drawn disc is not. |
+| AB6 | TalkBack on: sweep to the top-left of the preview screen; then a fat-finger test with the thumb while holding the phone one-handed. | The control is announced as a **button, "Back"**, is reachable by swipe before the WhatsApp/Save pills, and the glyph itself is not announced separately. A thumb should hit it without looking - if the 44 px target feels small in one-handed use, that is a finding to report rather than a silent change. |
+| AB7 | Frame pacing on the lowest-spec phone: open the preview 5× and watch the disc's entrance; then open it on Android 6-9 (WebView without `backdrop-filter`). | The disc fades/slides in with the pills and costs nothing measurable (no `backdrop-filter` on it, only `opacity`/`y`), and on an old WebView it looks identical to the new one - this control shares the Save pill's flat fill, not the glass tiers. |
+
+Record per row: device, Android + WebView version, result. Two failures are product-blocking: **AB1**
+(a way out that cannot be seen or hit is not a way out) and **AB2** (the Back key still finishing the
+activity from the preview, which is the defect this round exists to fix).
+
 ## Sign-off
 
 The build may only be called production-ready once **A–Z are green** on at least

@@ -1727,6 +1727,179 @@ const CARD_FIELDS = ["Card name", "Card number", "MM/YY", "Name on the card"];
     b2.close();
   }
 
+  /* ---- 36. the preview's own way out (round 20, patch35) ----------------- */
+  {
+    const g = "36 back affordance";
+    // The client's report was a screenshot of the full-screen card preview with one line:
+    // "Yehn pr back ka option nhi ha app meh add kro". This group answers the two questions the
+    // client actually has - can I leave this screen, and does the phone's own Back button leave
+    // it too instead of the app - plus the two the handover needs (nothing else moved, no data
+    // is touched by the exit).
+    const PV = JSON.stringify(sample(3));
+    const openPreview = async (w) => {
+      press(w, deckStage(w), "pointerdown");
+      await settle(w, 80);
+      press(w, deckStage(w), "pointerup");
+      await settle(w, 1500);
+      return /WhatsApp/.test(text(w));
+    };
+    const backBtn = (w) => byLabel(w, "Back");
+    const wcag = (fg, bg) => {
+      const L = (c) => {
+        const s = c.map((v) => v / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+        return 0.2126 * s[0] + 0.7152 * s[1] + 0.0722 * s[2];
+      };
+      const [a, b] = [L(fg), L(bg)].sort((x, y) => y - x);
+      return (a + 0.05) / (b + 0.05);
+    };
+    const over = (fg, a, bg) => fg.map((v, i) => v * a + bg[i] * (1 - a));
+
+    const b = boot({ [CARDS_KEY]: PV, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) });
+    await settle(b.w, 900);
+    check(g, "the wallet at rest shows no Back control (it belongs to the screen you can leave)",
+      !backBtn(b.w) && !/WhatsApp/.test(text(b.w)), backBtn(b.w) ? "a Back button is on the wallet" : "wallet is clean");
+
+    const restCount = all(b.w, "#root button[aria-label=Back]").length;
+    const opened = await openPreview(b.w);
+    const back = backBtn(b.w);
+    const backCounts = { rest: restCount, open: all(b.w, "#root button[aria-label=Back]").length };
+    check(g, "tapping a card opens the preview (the screen from the screenshot)", opened,
+      text(b.w).slice(0, 60));
+    check(g, "the preview now has a visible way out (patch35)", !!back,
+      back ? (back.className || "").slice(0, 56) : "no button[aria-label=Back]");
+    check(g, "it is a 44x44 hit target, labelled for TalkBack, with the glyph kept decorative",
+      !!back && /h-11/.test(back.className || "") && /w-11/.test(back.className || "")
+      && back.querySelector("svg")?.getAttribute("aria-hidden") === "true"
+      && /^M14\.8/.test(back.querySelector("svg path")?.getAttribute("d") || ""),
+      back ? `${(back.className || "").slice(0, 34)} | ${back.querySelector("svg path")?.getAttribute("d") || "-"}` : "-");
+    {
+      const st = stl(back);
+      const kids = [...(back?.parentElement?.children || [])];
+      const cardBox = kids.find((k) => /touch-none/.test(k.className || ""));
+      check(g, "it sits top-left inside the safe area and paints above the card",
+        /safe-area-inset-top/.test(st) && /left:\s*16px/.test(st)
+        && !!cardBox && kids.indexOf(back) > kids.indexOf(cardBox),
+        st.slice(0, 70) || "-");
+      // legibility measured the same way the handover measures every other surface: the disc's
+      // fill composited over what is actually behind it (the preview is #09090b, both themes)
+      const disc = over([255, 255, 255], 0.16, [9, 9, 11]);
+      check(g, "the glyph stays legible on the disc (>= 4.5:1, WCAG AA)",
+        wcag([255, 255, 255], disc) >= 4.5,
+        `white on rgb(${disc.map((v) => Math.round(v)).join(",")}) = ${wcag([255, 255, 255], disc).toFixed(2)}:1`);
+    }
+
+    const cardsBefore = JSON.stringify(readCards(b.w));
+    back?.dispatchEvent(new b.w.MouseEvent("click", { bubbles: true, cancelable: true }));
+    await settle(b.w, 900);
+    check(g, "tapping it closes the preview and the deck is still there",
+      !/WhatsApp/.test(text(b.w)) && all(b.w, "#root img").length >= 3 && b.errors.length === 0,
+      `open=${/WhatsApp/.test(text(b.w))} imgs=${all(b.w, "#root img").length} errs=${b.errors.length}`);
+    // vacuous-pass guard: with no control there is nothing to click, so the check has to
+    // require that the control existed and that the click is what closed the preview
+    check(g, "the control - not the backdrop - is what closed it, and it touched no stored data",
+      !!back && !/WhatsApp/.test(text(b.w)) && JSON.stringify(readCards(b.w)) === cardsBefore,
+      `existed=${!!back} closed=${!/WhatsApp/.test(text(b.w))} ` +
+      `cards byte-equal=${JSON.stringify(readCards(b.w)) === cardsBefore}`);
+    check(g, "the ask was this one screen: exactly one Back control while it is open, none at rest",
+      all(b.w, "#root button[aria-label=Back]").length === 0 && backCounts.rest === 0,
+      `${backCounts.open} while open (wanted 1), ${all(b.w, "#root button[aria-label=Back]").length} after closing, ` +
+      `${backCounts.rest} at rest`);
+
+    // the half that used to exit the app: the phone's own Back key
+    const b2 = boot({ [CARDS_KEY]: PV, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) });
+    await settle(b2.w, 900);
+    const h0 = b2.w.history.length;
+    const opened2 = await openPreview(b2.w);
+    const h1 = b2.w.history.length;
+    check(g, "the open preview pushes exactly one history entry",
+      opened2 && h1 === h0 + 1, `history ${h0} -> ${h1}`);
+    b2.w.history.back();
+    await settle(b2.w, 900);
+    check(g, "Android Back closes the preview instead of finishing the activity",
+      !/WhatsApp/.test(text(b2.w)) && /QA Card 1/.test(text(b2.w)) && b2.errors.length === 0,
+      text(b2.w).slice(0, 56));
+    const h2 = b2.w.history.length;
+    b2.w.history.back();
+    await settle(b2.w, 700);
+    check(g, "one entry per surface: the wallet is not swept away by a second Back",
+      /QA Card 1/.test(text(b2.w)) && b2.errors.length === 0 && h2 <= h1,
+      `history ${h1} -> ${b2.w.history.length}, wallet text ok=${/QA Card 1/.test(text(b2.w))}`);
+    b2.close();
+
+    check(g, "the fix is in the bundle: the preview is in the Back gate and the effect watches it",
+      /op=\(\)=>!!\(f\|\|v\|\|T\|\|m\|\|c\|\|D\|\|k\|\|b\|\|C\|\|o\)/.test(CODE)
+      && /if\(o\)\{ae\.current=!1,s\(null\);return\}/.test(CODE)
+      && /\[f,v,T,m,c,D,k,b,C,o\]\);/.test(CODE),
+      "gate + shut branch + dependency list");
+    check(g, "the control adds no glass and animates no layout property",
+      (() => {
+        const i = CODE.indexOf('"data-cwb"');
+        const snip = i < 0 ? "" : CODE.slice(i, i + 900);
+        const flat = snip.slice(0, snip.indexOf("className:`pointer-events-none"));
+        return !!flat && !/backdrop-filter|filter:/.test(flat)
+          && (flat.match(/(?:initial|animate|exit):\{[^}]*\}/g) || [])
+            .every((blk) => !/(width|height|top|left|right|bottom|margin|padding|fontSize|borderRadius):/.test(blk));
+      })(),
+      "the preview's disc reuses the Save pill's flat fill");
+    check(g, "the wallet chrome is untouched: the dock still carries the three controls and the wordmark owns the top row",
+      (() => {
+        const dock = all(b.w, "#root .cw-dock")[0];
+        const row = all(b.w, "#root div").find((d) => /inset-x-0 top-0 z-40/.test(d.className || ""))?.firstElementChild;
+        return !!dock && [...dock.querySelectorAll("button")].length === 3
+          && !!row && /^Wallet$/.test((row.textContent || "").trim()) && row.querySelectorAll("button").length === 0;
+      })(),
+      `${all(b.w, "#root .cw-dock button").length} dock control(s)`);
+    b.close();
+
+    // Two surfaces can be open at once: long-pressing the previewed card opens the editor ON TOP of
+    // the preview. Back has to peel them off one at a time - and a Back-close must not poison the
+    // next Back press (the round-19 build swallowed it: Settings -> Back -> Settings -> Back did
+    // nothing on the first press, which is the other reason a user reports "back kaam nahi karta").
+    const b3 = boot({ [CARDS_KEY]: PV, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) });
+    await settle(b3.w, 900);
+    const pvHist0 = b3.w.history.length;
+    await openPreview(b3.w);
+    await longPress(b3.w, 650, all(b3.w, "#root img").pop());
+    const editorUp = /Card details/.test(text(b3.w)) && /WhatsApp/.test(text(b3.w));
+    check(g, "a sheet can open over the preview (long-press -> editor) and both ride one history entry",
+      editorUp && b3.w.history.length === pvHist0 + 1 && b3.errors.length === 0,
+      `editor=${editorUp} history ${pvHist0} -> ${b3.w.history.length} errs=${b3.errors.length}`);
+    b3.w.history.back();
+    await settle(b3.w, 900);
+    check(g, "Back peels the top surface only: the editor closes, the preview stays",
+      !/Card details/.test(text(b3.w)) && /WhatsApp/.test(text(b3.w)) && b3.errors.length === 0,
+      text(b3.w).slice(0, 60));
+    b3.w.history.back();
+    await settle(b3.w, 900);
+    check(g, "and the next Back closes the preview itself - the nested case never falls through to the activity",
+      !/WhatsApp/.test(text(b3.w)) && /QA Card 1/.test(text(b3.w)) && b3.errors.length === 0,
+      text(b3.w).slice(0, 60));
+    b3.close();
+
+    const b4 = boot({ [CARDS_KEY]: PV, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) });
+    await settle(b4.w, 800);
+    const openSettings4 = async (w) => {
+      await click(w, byLabel(w, "More"), 300);
+      await click(w, anyBtn(w, /^Settings$/), 700);
+      return /Done/.test(text(w));
+    };
+    const op1 = await openSettings4(b4.w);
+    b4.w.history.back();
+    await settle(b4.w, 800);
+    const cl1 = !/Done/.test(text(b4.w));
+    const op2 = await openSettings4(b4.w);
+    b4.w.history.back();
+    await settle(b4.w, 800);
+    const cl2 = !/Done/.test(text(b4.w));
+    check(g, "a Back-close does not arm a swallow: the next sheet closes on its first Back too",
+      op1 && cl1 && op2 && cl2 && b4.errors.length === 0,
+      `1st open/close ${op1}/${cl1}, 2nd ${op2}/${cl2}`);
+    b4.close();
+
+    check(g, "the history accounting matches the browser: the user's Back clears `pushed` before anything shuts",
+      /if\(op\(\)\)\{st\.pushed=0;shut\(\)\}/.test(CODE), "patch26's popstate handler");
+  }
+
   /* ---- report ------------------------------------------------------------ */
   const byGroup = {};
   for (const r of results) { (byGroup[r.group] ||= { pass: 0, fail: 0, fails: [] }); byGroup[r.group][r.ok ? "pass" : "fail"]++; if (!r.ok) byGroup[r.group].fails.push(r); }

@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 # Default is the newest artifact this repo ships; pass a path to check another one. Pointing this at a
 # stale APK is how round 17's markers "failed" while the tree was fine, so the file in use is printed below.
-APK = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "CardWallet_custom_gate.apk")
+APK = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "CardWallet_back_button.apk")
 JS_ENTRY = "assets/public/assets/index-DfWhHAzK.js"
 CSS_ENTRY = "assets/public/assets/index-BLmxUz06.css"
 
@@ -79,6 +79,16 @@ MUST = [
     ("round 19  the gate module is exported on window exactly once", "window.__cwCust = {"),
     ("round 19  the gate state is never written to storage (a stale 'on' cannot survive a launch)",
      'var ATTR = "data-cw-custom";'),
+    ("round 20  the card preview carries a visible Back control (patch35)",
+     '"data-cwb":`back`,"aria-label":`Back`'),
+    ("round 20  it is a 44px target pinned inside the top safe area",
+     "top:`calc(env(safe-area-inset-top) + 10px)`,left:16"),
+    ("round 20  the system Back key closes the preview instead of the activity (patch26's gate)",
+     "op=()=>!!(f||v||T||m||c||D||k||b||C||o)"),
+    ("round 20  and the Back effect re-runs when the preview opens",
+     "},[f,v,T,m,c,D,k,b,C,o]);"),
+    ("round 20  the user's Back clears the pushed flag, so the next sheet still closes on its first Back",
+     "if(op()){st.pushed=0;shut()}sync()};"),
     ("carry    NFC and auto-detect stay pinned off at load", "n.autoDetect=!1,n.nfc=!1"),
     ("carry    the Wallet wordmark is the header's own label", "children:`Wallet`"),
 ]

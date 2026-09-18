@@ -1926,6 +1926,177 @@ check("back: it consumes the topmost surface in a fixed order and never the wall
   "shut() order not found");
 
 // ---------------------------------------------------------------------------
+// Test 7b: the card preview's own way out (patch35)
+//
+// The client's report came with a screenshot of the full-screen preview - the
+// screen with the WhatsApp and Save pills - and one line: "Yehn pr back ka
+// option nhi ha app meh add kro". Both halves of that are one feature and are
+// checked together here: the visible control, and the history entry that makes
+// the system Back key close this screen instead of finishing the activity.
+// ---------------------------------------------------------------------------
+{
+  const CARDS_PV = JSON.stringify([
+    { id: "v1", src: "cards/one.jpg", title: "Victor One", subtitle: "1", fields: [] },
+    { id: "v2", src: "cards/two.jpg", title: "Whiskey Two", subtitle: "2", fields: [] },
+    { id: "v3", src: "cards/three.jpg", title: "Xray Three", subtitle: "3", fields: [] },
+  ]);
+  const styleOf = (el) => inlineStyle(el);
+  const inst = makeDom(
+    { [CARDS_KEY]: CARDS_PV, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) },
+    { withLayout: true },
+  );
+  runBundle(inst.window, inst.errors);
+  await settle(inst.window, 900);
+  const Wv = inst.window, Dv = Wv.document;
+  const ptr = (type, x, y) => {
+    const e = new Wv.MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(e, "isPrimary", { value: true });
+    Object.defineProperty(e, "pointerId", { value: 1 });
+    return e;
+  };
+  const vBtn = (l) => [...Dv.querySelectorAll("button")].find((b) => (b.getAttribute("aria-label") || "").trim() === l);
+  const pvText = () => Dv.getElementById("root").textContent || "";
+  const pvOpen = () => /WhatsApp/.test(pvText());
+
+  check("back: the wallet itself has no Back control - it belongs to the screen you can leave",
+    !vBtn("Back") && !pvOpen(), vBtn("Back") ? "a Back button is on the wallet" : "wallet is clean");
+
+  const stage = [...Dv.querySelectorAll("#root div")].find((d) => /perspective:\s*1200/.test(styleOf(d)));
+  stage?.dispatchEvent(ptr("pointerdown", 195, 300));
+  await settle(Wv, 80);
+  Wv.dispatchEvent(ptr("pointerup", 195, 300));
+  await settle(Wv, 1600);
+
+  const back = vBtn("Back");
+  check("back: the preview carries a visible Back control (patch35)", pvOpen() && !!back,
+    back ? back.className.slice(0, 64) : "no button[aria-label=Back] on the preview");
+  check("back: the control is a 44x44 tap target with a labelled button and a decorative glyph",
+    !!back && /h-11/.test(back.className || "") && /w-11/.test(back.className || "")
+    && (back.querySelector("svg")?.getAttribute("aria-hidden") === "true")
+    && /^M14\.8/.test(back.querySelector("svg path")?.getAttribute("d") || ""),
+    back ? `${(back.className || "").slice(0, 40)} ${back.querySelector("svg path")?.getAttribute("d") || "-"}` : "-");
+  const backStyle = styleOf(back);
+  check("back: it is pinned top-left inside the safe area, and painted above the card",
+    /safe-area-inset-top/.test(backStyle) && /left:\s*16px/.test(backStyle)
+    && (() => {
+      const root = back?.parentElement;
+      const kids = [...(root?.children || [])];
+      const cardBox = kids.find((k) => /touch-none/.test(k.className || ""));
+      return !!cardBox && kids.indexOf(back) > kids.indexOf(cardBox);
+    })(),
+    backStyle.slice(0, 74));
+
+  const cardsBefore = Wv.localStorage.getItem(CARDS_KEY);
+  back?.dispatchEvent(new Wv.MouseEvent("click", { bubbles: true, cancelable: true }));
+  await settle(Wv, 900);
+  check("back: tapping it closes the preview and leaves the deck in place",
+    !pvOpen() && Dv.querySelectorAll("#root img").length >= 3 && inst.errors.length === 0,
+    `open=${pvOpen()} imgs=${Dv.querySelectorAll("#root img").length} errs=${inst.errors.length}`);
+  // vacuous-pass guard: with no control there is nothing to click, so this check has to
+  // require that the control existed and that the click is what closed the preview
+  check("back: the control - not the backdrop - is what closed it, and it touched no stored data",
+    !!back && !pvOpen() && (Wv.localStorage.getItem(CARDS_KEY) || "") === cardsBefore,
+    `existed=${!!back} closed=${!pvOpen()} cards byte-equal=${(Wv.localStorage.getItem(CARDS_KEY) || "") === cardsBefore}`);
+
+  // the history contract - the half that used to exit the app
+  const pv2 = makeDom(
+    { [CARDS_KEY]: CARDS_PV, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) },
+    { withLayout: true },
+  );
+  runBundle(pv2.window, pv2.errors);
+  await settle(pv2.window, 900);
+  const W2 = pv2.window, D2 = W2.document;
+  const ptr2 = (type, x, y) => {
+    const e = new W2.MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(e, "isPrimary", { value: true });
+    Object.defineProperty(e, "pointerId", { value: 1 });
+    return e;
+  };
+  const h0 = W2.history.length;
+  const stage2 = [...D2.querySelectorAll("#root div")].find((d) => /perspective:\s*1200/.test(styleOf(d)));
+  stage2?.dispatchEvent(ptr2("pointerdown", 195, 300));
+  await settle(W2, 80);
+  W2.dispatchEvent(ptr2("pointerup", 195, 300));
+  await settle(W2, 1600);
+  check("back: the preview takes part in the history contract (one entry per open surface)",
+    /WhatsApp/.test(D2.getElementById("root").textContent || "") && W2.history.length === h0 + 1,
+    `history ${h0} -> ${W2.history.length}`);
+  W2.history.back();
+  await settle(W2, 900);
+  check("back: the system Back key now closes the preview instead of killing the app",
+    !/WhatsApp/.test(D2.getElementById("root").textContent || "")
+    && /Victor One/.test(D2.getElementById("root").textContent || "")
+    && pv2.errors.length === 0,
+    (D2.getElementById("root").textContent || "").slice(0, 54));
+
+  // source guards: the two properties the entry above cannot show
+  const SNIP = bundleSrc.slice(bundleSrc.indexOf('"data-cwb"'), bundleSrc.indexOf('"data-cwb"') + 900);
+  const pvFlat = SNIP.slice(0, SNIP.indexOf("className:`pointer-events-none"));
+  check("back: patch35 adds no glass and animates nothing but opacity and y",
+    !!SNIP && !/backdrop-filter|backdropFilter|filter:/.test(pvFlat)
+    && (pvFlat.match(/(?:initial|animate|exit):\{[^}]*\}/g) || []).every((b) => !/(width|height|top|left|bottom|right|margin|padding|fontSize|borderRadius):/.test(b)),
+    `${(pvFlat.match(/(?:initial|animate|exit):\{[^}]*\}/g) || []).length} motion block(s), no blur`);
+  check("back: the control is inside the preview component, not the wallet",
+    bundleSrc.split('"data-cwb"').length - 1 === 1
+    && bundleSrc.indexOf("function jd({") < bundleSrc.indexOf('"data-cwb"'),
+    `${bundleSrc.split('"data-cwb"').length - 1} use(s) in the bundle`);
+
+  // the nested case: long-pressing the previewed card opens the editor ON TOP of the preview, so
+  // Back has to peel them off one at a time instead of falling through to the activity
+  const h2 = W2.history.length;
+  stage2?.dispatchEvent(ptr2("pointerdown", 195, 300));
+  await settle(W2, 80);
+  W2.dispatchEvent(ptr2("pointerup", 195, 300));
+  await settle(W2, 1500);
+  const pvImg = [...D2.querySelectorAll("#root img")].pop();
+  pvImg?.dispatchEvent(ptr2("pointerdown", 195, 300));
+  await settle(W2, 700);
+  W2.dispatchEvent(ptr2("pointerup", 195, 300));
+  await settle(W2, 600);
+  const h3 = W2.history.length;
+  const pvText2 = () => D2.getElementById("root").textContent || "";
+  const pvOn2 = () => /WhatsApp/.test(pvText2());
+  // the two stacked surfaces ride ONE entry: the re-opened preview pushed (truncating the entry the
+  // Back-close had left behind), and the editor on top of it added nothing. What that buys the user
+  // is the two checks below - two surfaces, two Back presses, no fall-through to the activity.
+  check("back: a sheet opened over the preview (long-press -> editor) adds no second history entry",
+    pvOn2() && /Card details/.test(pvText2()) && h3 === h2,
+    `editor=${/Card details/.test(pvText2())} history ${h2} -> ${h3}`);
+  W2.history.back();
+  await settle(W2, 900);
+  check("back: Back peels the editor and leaves the preview standing",
+    pvOn2() && !/Card details/.test(pvText2()) && pv2.errors.length === 0, pvText2().slice(0, 54));
+  W2.history.back();
+  await settle(W2, 900);
+  check("back: the next Back closes the preview - the nested case never reaches the activity",
+    !pvOn2() && /Victor One/.test(pvText2()) && pv2.errors.length === 0, pvText2().slice(0, 54));
+
+  // ...and the swallow it used to arm: after a Back-close, the next sheet must still close on its
+  // first Back press (Settings -> Back -> Settings -> Back used to do nothing on the first press)
+  const pv3 = makeDom(
+    { [CARDS_KEY]: CARDS_PV, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) },
+    { withLayout: true },
+  );
+  runBundle(pv3.window, pv3.errors);
+  await settle(pv3.window, 900);
+  const W3 = pv3.window, D3 = W3.document;
+  const b3 = (l) => [...D3.querySelectorAll("#root button")].find((x) => ((x.getAttribute("aria-label") || x.textContent || "").trim()) === l);
+  const click3 = async (el, ms) => { el?.dispatchEvent(new W3.MouseEvent("click", { bubbles: true, cancelable: true })); await settle(W3, ms); return !!el; };
+  const settingsOpen = () => /Done/.test(D3.getElementById("root").textContent || "");
+  const openSettings3 = async () => { await click3(b3("More"), 350); await click3(b3("Settings"), 750); return settingsOpen(); };
+  const s1 = await openSettings3();
+  W3.history.back();
+  await settle(W3, 850);
+  const c1 = !settingsOpen();
+  const s2 = await openSettings3();
+  W3.history.back();
+  await settle(W3, 850);
+  const c2 = !settingsOpen();
+  check("back: a Back-close does not arm a swallow - the next sheet closes on its first Back too",
+    s1 && c1 && s2 && c2 && pv3.errors.length === 0, `1st ${s1}/${c1}, 2nd ${s2}/${c2}`);
+}
+
+// ---------------------------------------------------------------------------
 const width = Math.max(...results.map((r) => r.name.length)) + 2;
 console.log();
 for (const r of results) {

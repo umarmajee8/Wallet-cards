@@ -1318,3 +1318,78 @@ na blurred surface - lekin yeh pehla control ha jo **UI ko chupata ha**, is liye
 agar kisi device par switch on hone par bhi controls na aayen, ya off par kaam karte rahen, to gate khuli
 hawa ha. Yeh **UX guard ha, security control nahi** - card data `localStorage` me waisa hi ha asha ta
 pehle tha, aur copy me kabhi "protected" nahi likha gaya.
+
+## 24. Round 20 - card preview par Back ka control, aur Back key bhi ab usay band karta ha (patch 35), 2026-09-18
+
+**Kya manga gaya:** ek screenshot jo poori screen wali card preview dikhata ha (wohi screen jis me neeche
+**WhatsApp** aur **Save** pills hain) aur ek line: *"Yehn pr back ka option nhi ha app meh add kro"*.
+
+**Do cheezen nikleen, ek hi screen par.**
+
+1. **Nikalne ka koi nazar aane wala rasta nahi tha.** App ki baqi har surface apna close khud dikhati ha -
+   Settings aur editor par *Done*, long-press sheet aur crop sheet par *Cancel* - lekin preview sirf khali
+   backdrop par tap karne se (ya neeche swipe karne se) band hoti thi. Yeh "pata hai to pata hai" wali
+   baat ha, aur jis screen ka poora maqsad card dikhana ho, us par portrait card ke sath backdrop ki patli
+   si jagah bachti ha.
+2. **Back key bhi isay band nahi karta tha.** Patch 26 ne history contract banaya tha (har khuli surface
+   par ek `pushState`, `popstate` sab se upar wali band karta ha) magar uski gate list
+   `f v T m c D k b C` ha aur preview ka state **`o` us me shamil hi nahi** tha. Natija: preview khuli ho
+   to koi history entry push nahi hoti, Back ek aam navigation ban jata ha jise pop karne ke liye kuch
+   nahi hota, aur **activity finish ho jati ha - app band, aur jo card saamne tha wo bhi gaya**. Yeh
+   handover report ke QA-1 wali class ka woh akela surface tha jo round 14 me reh gaya tha.
+
+**Fix - patch 35, teen anchored edits + ek control.**
+
+* `op=()=>!!(f||v||T||m||c||D||k||b||C||o)` - preview bhi ab gate me ha.
+* `shut()` me `if(o){ae.current=!1,s(null);return}` - bilkul `jd` ke apne `onClose` ka mirror (aur
+  z-order me sab se aakhir, kyunke preview `z-50` par ha - uske upar jo bhi ho sakta ha, pehle handle
+  ho chuka hota ha).
+* effect ki dependency list me `o` - iske baghair listener purana `null` pakre rehta aur kuch bhi na hota.
+* popstate handler me `st.pushed=0` - jab **user** ka Back kisi bhi surface ko band karta tha, browser ki entry
+  to pehle hi khatam ho chuki hoti thi magar patch 26 phir bhi `ign` arm kar ke dobara `history.back()` bulata
+  tha. Natija: **agla Back nigal jata tha** - round-19 build par measured: Settings -> Back -> Settings ->
+  Back **kuch nahi karta**, dusra press band karta ha. Ab flag browser se match karta ha, aur `sync()` sirf
+  tab nayi entry push karta ha jab koi surface abhi bhi khuli ho - isi wajah se preview ke upar khulne wala
+  surface (long-press se editor) ek ek kar ke band hota ha, activity tak kabhi nahi girta.
+* preview me **44x44 disc**: top-left, `top: calc(env(safe-area-inset-top) + 10px)`, chevron glyph,
+  `aria-label="Back"`, card stage ke **baad** render (taake portrait card uske upar paint na kar sake),
+  pills row se **pehle** insert (ek hi unambiguous anchor). Woh `te()` call karta ha - wahi cheez jo
+  backdrop tap karti ha - is liye chevron, backdrop aur hardware Back ab **ek hi behaviour** hain, aur
+  `stopPropagation` ek tap ko do bar band hone se rokta ha. Motion sirf `opacity`/`y` ha aur **koi naya
+  glass nahi**: fill wahi ha jo bagal wali Save pill ki ha (`rgba(255,255,255,0.16)` preview ke `#09090b`
+  par - glyph ka contrast **13.1:1**).
+
+**Numbers.** Bundle 498,509 -> **499,369 B** (499,197 characters) aur **stylesheet bilkul chhua nahi gaya**
+(37,259 B) - koi naya token nahi, is liye 4-selector blur budget aur round 15/17/19 ke tamam CSS rules
+structurally wahi han.
+
+**Gates (sab isi tree par).**
+
+| Gate | Pehle | Ab |
+|---|---|---|
+| `smoke_test_webview.mjs` | 241/241 | **255/255** (14 naye) |
+| `qa_feature_suite.mjs` | 259/259 | **279/279** (naya group "36 back affordance" = 20) |
+| `apk_content_check.py` | 78/78 | **83/83** (`CardWallet_back_button.apk` ke andar se) |
+| `liquid_glass_audit.py` | 105/105 | **105/105** (badla nahi) |
+| `animation_audit.py` | 10 checks / 1 warning | 10 checks / 1 warning (purana wala) |
+| `verify_release.py` | 28/29 | **28/29** (akeela FAIL jaan boojh kar: debug cert) |
+
+**Negative control.** Dono suites ko pre-patch bundle (`git show HEAD:repo_export/app/index.js`) par chalaya:
+smoke **243/255** - theek wohi 12 naye checks fail hote hain - aur QA group 36 **8/20**. **Imandari se likhi
+hui had:** `replay_chain.py` **is checkout me chala hi nahi ja sakta** kyunke pristine seed bundle repo me
+maujood nahi (na `repo_export/app/index.stock.js`, na `/tmp/index.stock.js`, na git ref `eb98ba0`) - is liye
+"chain replay IDENTICAL" ka dawa nahi kiya gaya. Jo verify hua wo yeh: patch 35 dobara chalane par no-op ha
+(`already applied`), har patch ka apna `--check` pass karta ha, aur bundle `node --check` pass karta ha.
+
+**Artifact:** `CardWallet_back_button.apk` - **11,668,989 B**, sha256
+`3a8edb49bf590f4657d453505258303d60a20c7b81bba25a6a6169fc24e824fa`. Debug-signed (throwaway key):
+production keystore is checkout me nahi, is liye release-signed build abhi baqi ha. `allowBackup=false`,
+entries 4-byte aligned, 28/29 verified. Install se pehle `adb uninstall com.arena.cardwallet` (signature
+badalti ha). `site/index.html` ka download block ab isi file par point karta ha.
+
+**Handover:** verdict **wahi - NOT READY FOR CLIENT HANDOVER**. Round 20 naya risk add nahi karta (na
+permission, na native code, na storage key) lekin naya device section **AB** (7 rows) verify karna zaroori
+ha, aur do rows handover gates hain: **AB1** (disc asli screen par nazar aaye aur ungli se lage - jo rasta
+dikhayi na de, wo rasta nahi) aur **AB2** (hardware Back key/gesture waqai `popstate` tak pohnchti ha is
+Capacitor shell me). AB2 wahi sawal ha jo patch 26 round 14 se apne sath le kar chal raha ha - sirf ab uske
+sath ek nazar aane wala control bhi maujood ha.

@@ -568,10 +568,63 @@ This repo contains the patched source for the CardWallet app.
     6-9). **AA1** and **AA3** are handover gates: a customization switch that does not actually reveal the
     controls, or that lets edits through while off, is worse than no switch.
 
+24. **Round 20 - the card preview gets a visible Back control, and the Back key finally closes it**
+   (patch 35), 2026-09-18.
+  - **The ask, verbatim:** *"Yehn pr back ka option nhi ha app meh add kro"*, with a screenshot of the
+    full-screen card preview - the one with the WhatsApp and Save pills.
+  - **Two defects, one screen.** (a) It was the only surface in the app with **no visible way out**:
+    Settings and the editor have Done, the long-press sheet and the crop sheet have Cancel, the preview
+    had nothing but the invisible knowledge that tapping the empty backdrop (or swiping down) dismisses
+    it. (b) Worse, **the system Back key did not close it either**: patch 26 built the history contract
+    (one `pushState` per open surface, `popstate` closes the topmost) but its gate list is
+    `f v T m c D k b C` and the preview's state `o` is not in it, so Back produced a plain navigation
+    with nothing to pop and the activity finished - the app exited and the screen the user was reading
+    was gone. Same defect class as QA-1 in `docs/QA_HANDOVER_REPORT.md`, on the one surface that pass
+    missed; the fix is four anchored edits (`op()` gains `||o`, `shut()` gains
+    `if(o){ae.current=!1,s(null);return}` - the mirror of `jd`'s own `onClose` - and the effect's
+    dependency list gains `o` - without it the listener keeps a stale `null` - and the popstate handler
+    clears `pushed` before shutting, because the user's Back has *already* consumed the entry; that second
+    half also stops a Back-close from swallowing the **next** Back press (round-19 build: Settings → Back →
+    Settings → Back does nothing on the first press) and lets a sheet opened over the preview close first.)
+  - **The control.** A 44x44 disc, top-left, `top: calc(env(safe-area-inset-top) + 10px)`, chevron
+    glyph, `aria-label="Back"`, inserted *after* the card stage so a tall portrait card can never paint
+    over it, and *before* the pills row so the patch has one unambiguous anchor. It calls the preview's
+    own close path (`te()`), i.e. exactly what a backdrop tap does - so the chevron, the backdrop and
+    the hardware Back key are now one behaviour, and `stopPropagation` keeps a single tap from closing
+    twice. It animates `opacity`/`y` only and adds **no** glass: the fill is literally the Save pill's
+    `rgba(255,255,255,0.16)` over the preview's `#09090b`, which measures **13.1:1** for the glyph.
+  - **Numbers.** Bundle 498,509 → **499,369 bytes** (499,197 characters) and the **stylesheet is
+    untouched** (37,259 bytes) - a patch that needed no new token, so the four-selector blur budget and
+    every round-15/17/19 CSS rule are structurally unaffected.
+  - **Gates.** web smoke **241 → 255**, QA feature suite **259 → 279** (new group "36 back affordance",
+    20 checks: the control, its geometry, the close, the data being untouched, one history entry per
+    open, Back closing the preview instead of the activity, a second Back not sweeping the wallet away,
+    **a sheet opened over the preview closing first and the preview second** (long-press → editor), the
+    swallowed-Back regression, plus the source guards), `apk_content_check.py` **78 → 83** (read out of
+    the APK, not the tree - the control, its safe-area placement, the gate, the dependency list and the
+    history accounting), `liquid_glass_audit.py`
+    **105/105** and `animation_audit.py` **10 checks / 1 pre-existing warning** unchanged,
+    `verify_release.py` **28/29** (the single deliberate failure is the debug certificate).
+  - **Negative control.** The two suites run against the pre-patch bundle (`git show HEAD:repo_export/app/index.js`):
+    smoke **243/255** - exactly the 12 feature checks fail - and QA group 36 **8/20**. Honest limit: `replay_chain.py`
+    **cannot be run in this checkout** - the pristine seed bundle is not in the repo (`app/index.stock.js`,
+    `/tmp/index.stock.js` and the `eb98ba0` fallback ref are all absent), so the chain-level claim is
+    "each patch's own `--check`/idempotency holds, patch 35 applied twice is a no-op" rather than
+    "replayed byte-identical", and it is written that way rather than quietly left implied.
+  - **Device work.** `docs/DEVICE_TEST_PLAN.md` section **AB** (7 rows). **AB1** (the disc is drawn and
+    tappable on a real screen, clear of the status bar) and **AB2** (the hardware Back key reaches
+    `popstate` at all in this Capacitor shell) are handover gates - AB2 is the same open question patch
+    26 has carried since round 14, only now with a visible control beside it.
+  - **Artifact.** `CardWallet_back_button.apk` - **11,668,989 bytes**, sha256
+    `3a8edb49bf590f4657d453505258303d60a20c7b81bba25a6a6169fc24e824fa`. Debug-signed with a throwaway
+    key (the production keystore is gitignored and not present in this checkout, so no release-signed
+    build was produced), `allowBackup=false`, aligned, verified 28/29. Uninstall
+    `com.arena.cardwallet` before installing it over any earlier build.
+
 ## Structure
 - `app/` - the web bundle that runs inside the Android WebView (Capacitor-based hybrid app): `index.html`, the compiled/minified `index.js`, `index.css`, and icons.
 - `android/AndroidManifest.xml` - the app's Android manifest.
-- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch30), plus
+- `patches/` - Python scripts that patch the minified `index.js` (patch1 -> patch35), plus
   the readable sources of the settings sheet - `patch19_settings.src.js`,
   `patch22_settings.src.js` and `patch24_settings.src.js`, each minified by its own script (one
   flat node per line, no comments; the newest one owns the span and the older two report it as
@@ -629,8 +682,13 @@ shipping quietly. patch 8 also runs `node --check` over its own output.
 
 - `signing/` - production keystore + password (gitignored, never committed).
 - `CardWallet_no_pouch.apk` - previous signed build (pouch changes only).
+- `../CardWallet_back_button.apk` - **current build** (round 20, debug-signed): the preview's Back
+  control and the Back-key fix. This is the file `site/index.html` links to.
+- `../CardWallet_custom_gate.apk` - the round-19 build the site linked to before round 20.
 - `../CardWallet_no_autodetect.apk` - superseded debug-signed build (do not ship).
-- `../CardWallet_release.apk` - current production release-signed APK.
+- `../CardWallet_release.apk` - the release-signed build of the round-14 tree. The production keystore
+  lives outside this checkout, so nothing newer than it can be release-signed here; a release build of
+  the current tree is still outstanding (see `../docs/RELEASE.md`).
 
 ## Build notes
 
