@@ -336,7 +336,11 @@ def main() -> int:
         )
     # `auto` leans on the tokens patch7 wires up; an older patch7 would silently
     # render a literal black disc that vanishes on the dark theme.
-    if any((o.get("tone") or default_tone) == "auto" for o in cfg["options"]) and "`var(--solid)`" not in data:
+    # `auto` leans on the token patch 7 wires into the button component. Round 15 (patch 30) re-pointed
+    # the disc's fill from `--solid` to the Liquid Glass token, so the needle has to accept either or a
+    # current tree reports a false "re-run patch7" (it did, from round 15 until round 22).
+    auto_tokens = ("`var(--solid)`", "`var(--lg-solid-glass)`")
+    if any((o.get("tone") or default_tone) == "auto" for o in cfg["options"]) and not any(t in data for t in auto_tokens):
         raise SystemExit(
             "tone 'auto' needs the theme tokens patch7 wires into the button component -\n"
             "                 re-run patch7_header_black.py (it migrates its own older output)"

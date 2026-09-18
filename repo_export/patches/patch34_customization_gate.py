@@ -40,17 +40,39 @@ BLOCK_CSS = "/* ================================================================
 HIDE_RULE = 'html[data-cw-custom="off"] .cw-cust-body{display:none}'
 
 
-def sync_appended(code, mark, src, label):
+def block_span(code: str, mark: str):
+    """(start, end) of the comment block that *owns* `mark` - the `/*` that opens the comment
+    containing it, up to the next banner - or None when the mark is absent.
+
+    The naive `rindex("/*", 0, i)` is wrong whenever the mark is the banner itself (patch 34's
+    BLOCK_CSS starts with `/* ====...`): searching strictly before `i` then lands on the *previous*
+    block's comment, and a re-sync would rewrite the round-18 block with round-19 text. So the
+    opening is taken at `i` when the mark starts a comment, and the `*/` test refuses a `/*` whose
+    comment is already closed before the mark.
+    """
     i = code.find(mark)
     if i < 0:
         return None
-    start = code.rindex("/*", 0, i)
+    start = code.rindex("/*", 0, i + 2) if code[i:i + 2] == "/*" else code.rindex("/*", 0, i)
+    if "*/" in code[start:i]:
+        return None
+    nxt = re.compile(r"\n/\* ={20,}").search(code, i + 2)
+    return start, (nxt.start() if nxt else len(code))
+
+
+def sync_appended(code, mark, src, label):
+    # A block owns its text up to the *next* block banner, not to EOF: round 19 appended after round
+    # 18 and round 22 after both, so re-syncing an older patch must not take the newer rounds with it.
+    span = block_span(code, mark)
+    if span is None:
+        return None
+    start, end = span
     want = src.strip("\n")
-    if code[start:].strip("\n") == want:
+    if code[start:end].strip("\n") == want:
         print(f"  DONE  {label} is current")
         return code
     print(f"  ok    {label} was stale in the tree - re-synced from the reviewed source")
-    return code[:start].rstrip("\n") + "\n" + want + "\n"
+    return code[:start].rstrip("\n") + "\n" + want + "\n" + code[end:]
 
 
 def apply_js(code):

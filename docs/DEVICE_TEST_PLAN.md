@@ -10,10 +10,13 @@ SHA-256: `63dbd8b1929fdbcb673a19ebab585c0c723ae41518188ff437e84da0c2233e9a`
 Signer cert SHA-256: `86383a7f13662e8b55885cb5331341f8db964ad065da074cc360082a3e436726`
 
 **Currently on device:** the rounds since §M ship as debug-signed builds because no release
-keystore is available here - the newest is `CardWallet_cover_colour.apk` (2026-09-05, rounds
-§N-§Q: stack eject, carousel settle, inert bands + per-card pouch colour, cover colour +
-NFC/appearance defaults + header wordmark). Same debug key throughout, so `adb install -r`
-keeps the app's data; §Q's rows are the ones that matter for this build.
+keystore is available here - the newest is `CardWallet_bottom_centered.apk` (2026-09-17, rounds
+§N-§AF: stack eject, carousel settle, inert bands + per-card pouch colour, cover colour +
+NFC/appearance defaults + header wordmark, no header wordmark (round 21), the overflow menu
+following the theme (round 22), the card viewer's empty bands taking no touches (round 23), and -
+round 24 - **the bottom-right action bar carrying the old header bar's own spacing**). Note the
+signature: this build's throwaway debug key was generated fresh (the sandbox lost the previous one), so
+`adb uninstall com.arena.cardwallet` first; §AE's and §AF's rows are the ones that matter for it.
 
 ## 0. Install
 
@@ -306,8 +309,8 @@ NFC had to stay off, the app had to open light, and the header had to say **Wall
 | Q4 | Settings -> Pouch -> **Wallet & cover** off, then on again, and open a card | Off: the photo is visible with no panel. On: the coloured panel folds back. No flicker, and the fold animation should feel no heavier than before (it is now cheaper: no blur to composite) |
 | Q5 | Kill the app, set the **phone** to dark mode, reopen | The app opens **light** (default is Light now, not System). Settings -> Appearance shows **Light** selected. Tap System -> it follows the phone (dark at night); tap Dark -> always dark; kill and reopen: your choice is kept, it is not forced back to Light |
 | Q6 | Open the **+ menu**, then Settings | No "Tap a bank card" entry anywhere, and no "Read cards over NFC" row in Settings - even on this existing install that used to have NFC on. If you want NFC back later, that is a new patch, not a toggle |
-| Q7 | Look at the top-left of the header (light and dark theme, and with the notch/status bar) | "Wallet" is large and bold in the iOS-style system font, black in light theme, near-white in dark theme, never overlapping the +/search/menu icons or the status bar |
-| Q8 | Scroll/drag near the header while the wordmark is there | The wordmark is not a touch target - dragging that starts over it behaves exactly like dragging in dead space (patch 15's rule still holds) |
+| Q7 | ~~Look at the top-left of the header~~ **Round 21 supersedes this row: the wordmark is removed on request.** Instead check the same corner for leftovers (light and dark, with the notch/status bar) | The top-left is **empty** - no clipped text, no thin strip, no shadow, nothing tappable. The status bar and the SafeArea are untouched, and the +/search/menu controls are where round 16 put them (the bottom dock, unchanged) |
+| Q8 | Scroll/drag starting in the empty top-left corner the wordmark used to occupy | Nothing happens and nothing is opened - the corner is dead space exactly as before, and the drag does not move the dock (patch 15's rule still holds; the label was `pointer-events:none`, and its row is now empty) |
 
 If Q5 comes back showing dark-on-reopen, the migrated value was overwritten by a stored
 choice - say so and include whether Appearance was ever touched on that device.
@@ -426,7 +429,7 @@ maps to a finding in `docs/QA_HANDOVER_REPORT.md`.
 | V9 | Rotate portrait ↔ landscape with a card editor open and a photo mid-crop | The activity is not recreated (`configChanges` covers orientation), the edit is still there, and the landscape layout uses its own geometry | QA §20 |
 | V10 | Tap into the Card number / Notes field with the keyboard up | The focused field stays visible above the keyboard, the sheet scrolls, and Save is still reachable. If the keyboard covers it, that is RELEASE-4 (no `windowSoftInputMode`) | QA §18 - needs the manifest attribute added in the native project |
 | V11 | Drag every slider full-range for ~30 s, then leave the wallet on Screen | No jank, no catch-up burst after release, no battery/thermal drama; `adb shell dumpsys meminfo com.arena.cardwallet` before/after a 20-card session should be flat | QA §21/§16 - PERFORMANCE-1/2 measured the JS side only |
-| V12 | Blur and type check: Settings sheet over the wallet, `Wallet` wordmark, headings | Glass reads as glass (not a flat panel), no banding, headings visibly bolder than body, no text touching a card edge | QA §14 - judgement calls excluded by rule here |
+| V12 | Blur and type check: Settings sheet over the wallet, headings, dock labels | Glass reads as glass (not a flat panel), no banding, headings visibly bolder than body, no text touching a card edge | QA §14 - judgement calls excluded by rule here. (The `Wallet` wordmark left this list in round 21 - it is not on screen any more) |
 | V13 | Delete a **middle** card and the **last** card by swiping the deck, and long-press vs tap on a blurred cover | Exactly one card goes, the deck re-centres, remaining ids untouched | QA §6 - synthetic drags through the spring physics are not honest in jsdom |
 | V14 | TalkBack on: focus the create button, a slider, a card | Each announces its label and value; sliders are adjustable with volume keys or the TalkBack gesture | QA §14, MINOR-4 (zoom lock) |
 
@@ -540,6 +543,112 @@ Record per row: device, Android + WebView version, result. Two failures are prod
 (the switch does not actually gate the controls on a real screen) and **AA3** (the gate stays open after
 Settings closes, or opens already-on, which is the exact behaviour that was asked to be impossible).
 
+## AB. Round 20 - a gesture never leaves the cards off-centre (patch 35)  ⚠ this is the report itself, on the two views
+
+The race is fixed and pinned in jsdom (smoke Test 6f/6h: a finger held still for 900 ms moves the row
+**0.00 px**, a stolen stream comes back to a slot, a cancel opens nothing). What jsdom cannot show is the
+one thing the report is about: **real touch delivery** - when Android hands a gesture to the system, when
+it cancels a pointer stream, and how a glide looks while a thumb is still on the glass. Use **3+ cards**
+and a **Stack/Carousel** wallet; do this section on the lowest-spec phone you have. **AB1 and AB2 are
+handover gates.**
+
+| # | Do this | Expect |
+|---|---------|--------|
+| AB1 | Carousel, 4+ cards. Swipe one card to the side and **stop with your finger still on the screen** for a full second, then continue the swipe and release. Repeat 10 times, fast and slow, left and right. | While your finger is down the row **does not move on its own** - not one pixel, no snap under the thumb, no horizontal jump when you start moving again. On release it settles onto a card slot, centred, with the same motion as always. A single sideways jolt while a finger is down is the defect this round closes. |
+| AB2 | Carousel and Stack. Swipe **up from the very bottom edge**, so Android's own gesture (home/recents) takes over: the app goes to the background mid-swipe. Come back to the app. | The row/deck is **centred on a card** immediately - no half-shifted fan, no card clipped by the screen edge - and the next swipe works normally. Do it 10 times: the state must never survive the trip to the background. |
+| AB3 | Stack, 4+ cards. Flick repeatedly until you hit a card the deck does not expect, then **pull the notification shade down** mid-swipe and put it back. | The deck snaps back onto a card and keeps answering swipes and taps. It must never rest between two cards (cards visibly overlapping off-grid), and it must not stop following a tap-to-open. |
+| AB4 | Both views. Rotate the phone **during** a drag, and rotate right after a flick settles. | No crash, no card left at a diagonal/fractional offset, and the row/deck is centred after the re-layout. The geometry is rebuilt on rotate; the offset must not be carried over as a stale pixel value. |
+| AB5 | Stack. Start a swipe and cancel it: press, drag 30-50 px, then pull in from the screen's edge (or trigger any system gesture that cancels the touch) so the touch is cancelled, **with no finger movement after the cancel**. | **Nothing opens.** A cancelled gesture must never open the card under the finger, must not lift a card, and must not leave the deck shifted. Repeat with the phone's own back-gesture, with a hardware Back press mid-drag, and by locking the screen mid-drag. |
+| AB6 | Stack. Press and hold a card for ~0.6 s without moving, twice: once normally, once while a system gesture steals the touch (pull down the shade right after pressing). | The deliberate long press still opens the card's details. The *stolen* one must not: a 480 ms hold whose touch was cancelled is not a long press, and no sheet may appear while the shade is down. |
+| AB7 | Both views, 3 cards and then 12 cards. Rapid flicks: 5-6 flicks as fast as you can in one direction, then reverse without stopping. | Cards stay centred and stacked (the fan keeps its pitch), no card ends up half off-screen, and the final resting position is a whole card slot in both directions. With 12 cards the same holds at the ends of the deck (the first and last card must not pull past the edge and stay there). |
+| AB8 | Frame pacing: on the oldest phone, do 20 normal swipes in the carousel and 20 in the stack while watching for hitches; then try TalkBack on (swipe with two fingers) and a stylus/finger combination. | The recovery is a 280 ms tween on the spring the app already uses, so an ordinary swipe must feel exactly as it did before this round - if anything feels slower, or a swipe now "sticks" for a moment before moving, that is a defect to file. Nothing in this round adds a listener that runs per frame; a second finger or a stylus must not move the row while the first finger owns it. |
+
+Record per row: device, Android + WebView version, result. Two failures are product-blocking: **AB1**
+(cards shifting sideways while a finger is on the glass - the report verbatim) and **AB2** (a backgrounded
+swipe leaving the row off-centre, which is the exact state patch 14 was written for and round 20 replaced
+with a signal-driven recovery).
+
+## AC. Round 21 - the header wordmark is gone (patch 36)  ⚠ the removal itself
+
+The client asked for the top-left "Wallet" label to be removed: *"just remove that text element, don't
+leave empty spacing or misalign the remaining icons after removal."* The label was the only child of the
+header row, so the interesting question on a phone is what is left **behind** it - a stale strip, a
+tappable dead zone, or a shifted deck. jsdom cannot answer any of that (it has no layout, no SafeArea, no
+compositor); smoke pins the DOM and the byte-level gates pin the bundle, so this section is the third leg.
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| AC1 | Fresh install, wallet with 3+ cards. Look at the top-left corner where "Wallet" used to be, in **light and dark** theme, with and without a notch cutout. | The corner is **completely empty**. No clipped glyph, no ghost, no hairline. Nothing has taken the label's place. |
+| AC2 | Same screen: compare the deck's position against the previous build (`CardWallet_gesture_fixed.apk`), or against the screenshots in `docs/`. | The deck sits **exactly** where it did - the round-16/17 reserves (safe-area + 58 px top, safe-area + 62 px bottom) are untouched, so removing the label moved nothing. If the cards appear ~29 px lower/higher, the patch was applied twice or the reserve was edited - file it. |
+| AC3 | Tap, long-press, and drag **starting in that empty corner**; also open the option menu and tap the corner to dismiss it. | Nothing happens and no card opens (the corner was already `pointer-events:none`, and its row is empty), and the menu still closes on an outside tap - the container that owns `ref:d` is unchanged. |
+| AC4 | With the menu open, check the dock: Create / Search / More. | All three controls are exactly where they were (bottom dock, right-aligned on the wallet column's x), same labels, same order, same spacing. Nothing was dragged up into the header to fill the gap. |
+| AC5 | Put a card away and reopen the app; open Create / Search / the option menu; switch Carousel <-> Stack. | Nothing in the app regressed: no console errors, no empty view, no stray "Wallet" text anywhere on the wallet screen (the empty state still says "Wallet is empty" - that is a different string and must stay). |
+
+Record per row: device, Android + WebView version, result. None of AC1-AC5 is a handover gate on its own
+(round 20's AB1/AB2 still are), but AC2 and AC3 are the two the patch could plausibly get wrong.
+
+## AD. Round 22 - the overflow menu follows the theme (patch 37)  ⚠ the report itself, in the two themes
+
+The report: in **Light** mode the dropdown ("Settings" / "Delete all cards") stayed near-black while the
+rest of the app went light. It is token-bound now, and jsdom can only prove the *declaration* (it does not
+resolve `var()`), so the rendered result is this section's job. Use **Settings -> Appearance** to switch
+Light / System / Dark; the menu is opened from the dock's right-hand control (the hamburger).
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| AD1 | Appearance = **Light**, open the menu over the wallet. Compare against the screenshot in the report. | The panel is **white** with a hairline and a soft shadow, the rows and their icons are **near-black**, "Delete all cards" stays red. It matches the Settings sheet behind it - no black slab, no white-on-white text. |
+| AD2 | Appearance = **Dark**, open the menu. | The panel is the same dark sheet as Settings (`#1c1c1e`-ish, not pure black), rows and icons **near-white**, red destructive row still red. Nothing from the light theme leaks. |
+| AD3 | Appearance = **System**, then toggle the **phone's** dark mode while the app is open, and reopen the menu each time. | The menu follows the phone both ways. (The menu is not re-rendered while it is open - if the phone flips with the menu open, closing and reopening it must show the new theme; a stale panel *while open* would be a defect to file.) |
+| AD4 | Tap the rows, and dismiss by tapping outside. | "Settings" opens the sheet, "Delete all cards" shows its confirm sheet, and an outside tap still closes the menu - the dismissal path (`ref:d`) and the anchors were untouched this round. |
+| AD5 | Hold the phone at an angle in bright light, both themes, and read the panel over a bright card. | Text stays legible, the shadow reads as depth (not a black smear on white / a lost edge on black), and the panel edge does not disappear into the wallet background. |
+
+Record per row: device, Android + WebView version, result, and (for AD1/AD2) a screenshot - this round is a
+visual report, so the screenshot is the evidence. None of AD1-AD5 is a handover gate on its own; round 20's
+**AB1**/**AB2** still are.
+
+## AE. Round 23 - the viewer's empty bands take no touches (patch 38)  ⚠ the report itself, on the opened card
+
+The report framed two regions in red on the card preview screen: everything **above** the card (up to the
+header) and the strip **between** the card and the WhatsApp/Save buttons. Both should be dead - no tap, no
+long-press, no drag, no scroll - while the two buttons and the card itself keep working. jsdom can prove
+the declarations and the event plumbing (the bands are one marked shield, a band tap no longer dismisses,
+the card's handlers are intact); it cannot prove what the WebView does with a finger, which is this
+section's job. The bands are deliberately inert *and opaque to touches*: the shield still swallows the
+touch, so the Create/Search/More buttons behind the overlay can never be pressed through it.
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| AE1 | Open a card (tap it), then **tap** the empty space above the card (where the header used to be) and the strip between the card and the buttons. | Nothing happens. The card does **not** close, nothing opens, no ripple. (Before this build both taps dismissed the preview - that is the bug in the report.) Do it in Light and in Dark. |
+| AE2 | On the same screen, **drag** up and down in each empty band, a short flick and a long drag, top and bottom. | The bands do not move anything: the page behind does not scroll or rubber-band, the card does not zoom or pan, the app does not pull-to-refresh or double-tap-zoom. The card appears frozen in the frame. |
+| AE3 | Tap **WhatsApp** and **Save**. | Both still work exactly as before (share sheet / saved-to-gallery toast). They are the only live controls on the screen, and their tap targets are unchanged. |
+| AE4 | Now use the **card**: double-tap it, pinch-zoom it, drag it while zoomed, long-press it, swipe it **down**. | Everything behaves as before: double-tap flips it to the back (or shows "No back side yet"), pinch/drag pans a zoomed card, long-press opens Details, and a downward swipe still closes the viewer. The fix must not have frozen the preview. |
+| AE5 | Close the viewer, then reopen a card and close it with the **Android Back** gesture/button. | Back closes the viewer (patch 26's history contract) - the bands were never the only way out. Also confirm the Android back gesture from the wallet itself still exits the app as before. |
+
+Record per row: device, Android + WebView version, result. **AE2** is the row that needs care - the
+browser's own pan/scroll behaviour is exactly what the report was about, and it is the one thing jsdom can
+never see. Screenshots of the two bands (AE1, before/after) are the evidence for the report. None of
+AE1-AE5 is a handover gate on its own; round 20's **AB1**/**AB2** still are.
+
+## AF. Round 24 - the action bar's seat and spacing (patch 39)  ⚠ the report itself, on the bottom edge
+
+The request: the top-right bar ("+", Search, More) moved to the bottom-right, floating, safe-area padded,
+same actions, same seat on every screen. The move shipped in rounds 16-17 and this build adds the old
+bar's own inner spacing (4px between the controls, 8px inside the pill). jsdom can prove the classes, the
+anchors, the insets and the mount across screens; it cannot see the real gesture bar, the real bottom edge
+or how the pill reads over a moving deck - that is this section.
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| AF1 | On the main wallet screen, look at the bottom-right: the pill with **+**, search and menu. | It floats above the cards, right-aligned, clear of the gesture bar / home indicator (safe-area inset respected). Nothing is cut off, and no control sits under the system gesture area. |
+| AF2 | Compare against the old top-right bar screenshots (and, if you have it, the round-15 build). | Same three controls in the same order, same 36px boxes, same icon sizes, tighter spacing between them than the previous round-24 build (4px instead of 10px) - the measurement is in the patch notes. |
+| AF3 | Tap **+**, then **Search**, then the **menu**; open Settings from the menu and close it; delete-all confirm and cancel. | Every action behaves exactly as before. The pill does not move, jump or resize while its menus open and close (the menu still opens *upward* from the pill's right edge). |
+| AF4 | Open a card (viewer), then open Settings, then a search - watch the pill each time. | The pill keeps its exact seat behind those overlays (it is not re-anchored, not duplicated, and the top of the screen stays empty). Close each surface and confirm nothing moved. |
+| AF5 | A small phone (≤5"), landscape, and a phone with a notch/home-indicator. | The pill is reachable one-handed in portrait, stays inside the screen in landscape, and clears the cutouts in both orientations. Nothing overlaps the cards' bottom row. |
+
+Record per row: device, Android + WebView version, result, and one photo of the bottom-right corner per
+device. **AF1** and **AF5** are the rows the browser cannot judge. None of AF1-AF5 is a handover gate on
+its own; round 20's **AB1**/**AB2** still are.
+
 ## Sign-off
 
 The build may only be called production-ready once **A–Z are green** on at least
@@ -550,12 +659,16 @@ signing, NFC, the soft keyboard, rotation rendering and every smoothness/judgeme
 call). Record device model, Android version and result per row, and file anything
 that fails with the section id (e.g. "F3 fails: Back exits the app with Settings
 open"). The Android UI-testable layer is complete and green: `qa_feature_suite.mjs`
-231/231 (group 33 covers the Liquid Glass material, the round-16 footer dock and the round-17 blur
-budget; group 34 the lock and the backup file, including a Node re-derivation of the PIN digest and an
-AES-GCM round-trip of a real `.cwbak`), `smoke_test_webview.mjs` 239/239, `liquid_glass_audit.py` 96/96
-(tier rules, the cost model, the WCAG contrast engine and the round-18 gate's opacity/token rules),
-`verify_release.py` 28/29 with the only FAIL being the deliberate debug signature, and
-`apk_content_check.py` 70/70 against the APK itself (the four-blurred-selector budget plus the round-18
-copy, store key, crypto markers and the gate's opacity - all read out of the shipped entries, not the tree). The jsdom suites need `jsdom@27` + `cssstyle@4.6.0`; on other pairings 11 checks
+323/323 (group 33 covers the Liquid Glass material, the round-16 footer dock, the round-17 blur
+budget and the round-22 themed menu; group 34 the lock and the backup file, including a Node
+re-derivation of the PIN digest and an AES-GCM round-trip of a real `.cwbak`; group 36 the round-20
+gesture recovery on both views; group 37 the round-23 inert bands around the card viewer; group 38 the round-24 action bar's
+seat and metrics),
+`smoke_test_webview.mjs` 308/308, `liquid_glass_audit.py` 117/117
+(tier rules, the cost model, the WCAG contrast engine, the round-18 gate's opacity/token rules and
+the round-22 menu contrast), `verify_release.py` 28/29 with the only FAIL being the deliberate debug
+signature, and `apk_content_check.py` 94/94 against `CardWallet_bottom_centered.apk` (the
+four-blurred-selector budget plus the round-18 copy, store key, crypto markers, the gate's opacity and
+round 24's action-bar metrics - all read out of the shipped entries, not the tree). The jsdom suites need `jsdom@27` + `cssstyle@4.6.0`; on other pairings 11 checks
 fail on *any* bundle because cssstyle does not serialise `backdrop-filter` into the `style` attribute - the
 suite reads those through `inlineStyle()` (see README, round 17).

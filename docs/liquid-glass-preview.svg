@@ -5,7 +5,7 @@
 </defs>
 <rect width="900" height="560" fill="#f2f2f5"/>
 <text x="24" y="34" font-family="-apple-system,Helvetica,Arial" font-size="15" font-weight="700" fill="#111113">Liquid Glass - simulated composite from the real tokens (not a screenshot)</text>
-<text x="24" y="54" font-family="-apple-system,Helvetica,Arial" font-size="11" fill="#8e8e93">round 16: Create / Search / More sit in one glass dock at the bottom, the wordmark keeps the top-left, and the disc inside the dock does not blur again. The sheet blurs at 14px and the scrim not at all - that is the round-17 lag fix</text>
+<text x="24" y="54" font-family="-apple-system,Helvetica,Arial" font-size="11" fill="#8e8e93">round 16: Create / Search / More sit in one glass dock at the bottom (round 21 removed the top-left wordmark, so the top of the frame is empty), and the disc inside the dock does not blur again. The sheet blurs at 14px and the scrim not at all - that is the round-17 lag fix</text>
 <g transform="translate(24,84)">
 <text x="0" y="-8" font-family="-apple-system,Helvetica,Arial" font-size="11" fill="#8a8a8e">LIGHT theme - sheet over bright artwork</text>
 <rect width="400" height="200" rx="22" fill="#ffffff"/>
@@ -30,7 +30,6 @@
 <circle cx="272.79999999999995" cy="98.0" r="9" fill="#fff" stroke="#3c3c43" stroke-opacity="0.14"/>
 <rect x="18" y="120.0" width="74" height="24" rx="12" fill="#ffffff" fill-opacity="0.55" stroke="#3c3c43" stroke-opacity="0.14"/>
 <text x="55" y="136.0" text-anchor="middle" font-family="-apple-system,Helvetica,Arial" font-size="12" font-weight="600" fill="#111113">Stack</text>
-<text x="14" y="26" font-family="-apple-system,Helvetica,Arial" font-size="26" font-weight="800" letter-spacing="-.6" fill="#111113">Wallet</text>
 <rect x="240" y="142" width="148" height="48" rx="24" fill="#fcfcfe" fill-opacity="0.8" stroke="#3c3c43" stroke-opacity="0.14"/>
 <rect x="240" y="142" width="148" height="24" rx="24" fill="url(#sheenlight)"/>
 <circle cx="268" cy="166.0" r="18" fill="#111113" fill-opacity="0.8"/>
@@ -63,7 +62,6 @@
 <circle cx="272.79999999999995" cy="98.0" r="9" fill="#fff" stroke="#3c3c43" stroke-opacity="0.14"/>
 <rect x="18" y="120.0" width="74" height="24" rx="12" fill="#ffffff" fill-opacity="0.55" stroke="#3c3c43" stroke-opacity="0.14"/>
 <text x="55" y="136.0" text-anchor="middle" font-family="-apple-system,Helvetica,Arial" font-size="12" font-weight="600" fill="#111113">Stack</text>
-<text x="14" y="26" font-family="-apple-system,Helvetica,Arial" font-size="26" font-weight="800" letter-spacing="-.6" fill="#111113">Wallet</text>
 <rect x="240" y="142" width="148" height="48" rx="24" fill="#fcfcfe" fill-opacity="0.8" stroke="#3c3c43" stroke-opacity="0.14"/>
 <rect x="240" y="142" width="148" height="24" rx="24" fill="url(#sheenlight)"/>
 <circle cx="268" cy="166.0" r="18" fill="#111113" fill-opacity="0.8"/>
@@ -96,7 +94,6 @@
 <circle cx="272.79999999999995" cy="98.0" r="9" fill="#fff" stroke="#3c3c43" stroke-opacity="0.14"/>
 <rect x="18" y="120.0" width="74" height="24" rx="12" fill="#ffffff" fill-opacity="0.55" stroke="#3c3c43" stroke-opacity="0.14"/>
 <text x="55" y="136.0" text-anchor="middle" font-family="-apple-system,Helvetica,Arial" font-size="12" font-weight="600" fill="#111113">Stack</text>
-<text x="14" y="26" font-family="-apple-system,Helvetica,Arial" font-size="26" font-weight="800" letter-spacing="-.6" fill="#111113">Wallet</text>
 <rect x="240" y="142" width="148" height="48" rx="24" fill="#fcfcfe" fill-opacity="0.8" stroke="#3c3c43" stroke-opacity="0.14"/>
 <rect x="240" y="142" width="148" height="24" rx="24" fill="url(#sheendark)"/>
 <circle cx="268" cy="166.0" r="18" fill="#111113" fill-opacity="0.8"/>
@@ -129,7 +126,6 @@
 <circle cx="272.79999999999995" cy="98.0" r="9" fill="#fff" stroke="#3c3c43" stroke-opacity="0.14"/>
 <rect x="18" y="120.0" width="74" height="24" rx="12" fill="#ffffff" fill-opacity="0.55" stroke="#3c3c43" stroke-opacity="0.14"/>
 <text x="55" y="136.0" text-anchor="middle" font-family="-apple-system,Helvetica,Arial" font-size="12" font-weight="600" fill="#111113">Stack</text>
-<text x="14" y="26" font-family="-apple-system,Helvetica,Arial" font-size="26" font-weight="800" letter-spacing="-.6" fill="#111113">Wallet</text>
 <rect x="240" y="142" width="148" height="48" rx="24" fill="#fcfcfe" fill-opacity="0.8" stroke="#3c3c43" stroke-opacity="0.14"/>
 <rect x="240" y="142" width="148" height="24" rx="24" fill="url(#sheendark)"/>
 <circle cx="268" cy="166.0" r="18" fill="#111113" fill-opacity="0.8"/>

@@ -268,8 +268,12 @@ check("the glass sits on the pill, not on the row (a full-column bar would blur 
       and re.search(r"className:`cw-dock[^`]*max-w-\[520px\]", JS) is None, "-")
 check("the deck reserves the dock's height, safe area included",
       "paddingBottom:`calc(env(safe-area-inset-bottom) + 62px)`" in JS, "-")
-check("the wallet bar keeps the wordmark alone (nothing but the deck sits at the top now)",
-      JS.count("children:`Wallet`") == 1 and "inset-x-0 bottom-0 z-40" in JS, "-")
+# round 21: the client asked for the top-left "Wallet" label to go. The row it lived in stays (it is
+# the dock row's geometry twin, and `ref:d` on its container is what closes the menu on an outside
+# tap); what must be true now is that no label text renders and the marker says so.
+check("the wallet bar carries no label: the wordmark is gone, the dock is the only floating chrome",
+      JS.count("children:`Wallet`") == 0 and "/*cardwallet:no-wordmark*/" in JS
+      and "inset-x-0 bottom-0 z-40" in JS, "-")
 
 check("the deck is untouched: no lg class on the card path",
       not re.search(r"cw-lg-(primary|fab|pouch|preview|ctl)[^`]*`(?:[^`]*\bcw-card\b)", JS)
@@ -299,7 +303,7 @@ SUITES = [
     ("light", "--lg-tint", "--lg-ink", "sheet body text"),
     ("light", "--lg-tint", "--lg-sub", "sheet read-outs / captions"),
     ("light", "--lg-tint-2", "--lg-ink", "pouch tray body text"),
-    ("light", "--lg-tint-2", "--lg-ink", "dock control label (wordmark row is ink)"),
+    ("light", "--lg-tint-2", "--lg-ink", "dock control label (the header row is ink)"),
     ("light", "--lg-tint-3", "--lg-ink", "chip label on glass (nested)", True),
     ("light", "--lg-solid-glass", "--on-solid", "glyph on the create disc (in the dock)"),
     ("dark", "--lg-tint", "--lg-ink", "sheet body text"),
@@ -335,6 +339,81 @@ for row in SUITES:
           worst >= limit,
           f"worst {worst:.2f}:1 (tint a={tc[3]} over {worst_bg})")
 
+# ------------------------------------------------------- round 22: the themed overflow menu
+# The panel patch 7 painted `#0b0b0d` for its light-theme mock (an explicit choice when the app had no
+# dark theme) was the last surface that ignored the theme - the client reported it. It is tokens now, so
+# it is opacity-free text on the sheet: measure ink AND the destructive red, in both themes.
+for scope, label, ink, bg in (
+    ("light", "menu row text on the light sheet", "--ink", "--sheet"),
+    ("dark", "menu row text on the dark sheet", "--ink", "--sheet"),
+):
+    sel = "html.dark" if scope == "dark" else ":root"
+    t, b = parse_color(var(ink, sel)), parse_color(var(bg, sel))
+    r = ratio((t[0], t[1], t[2]), (b[0], b[1], b[2]))
+    worst_rows.append((scope, label, round(r, 2), None))
+    check(f"contrast {scope}/{label} >= {MIN_TEXT}:1", r >= MIN_TEXT, f"{r:.2f}:1")
+# The destructive row wears the app's `--danger` (system red in both themes, exactly as the vault's
+# error text already did), so it is judged at the 3:1 affordance floor rather than the 4.5:1 body-text
+# one - and the number is printed, not assumed. `#ff453a` on white is 3.41:1 by construction.
+for scope, limit in (("light", 3.0), ("dark", 3.0)):
+    sel = "html.dark" if scope == "dark" else ":root"
+    t, b = parse_color(var("--danger", sel)), parse_color(var("--sheet", sel))
+    r = ratio((t[0], t[1], t[2]), (b[0], b[1], b[2]))
+    worst_rows.append((scope, "destructive menu row (--danger)", round(r, 2), None))
+    check(f"contrast {scope}/destructive menu row (--danger) >= {limit}:1 affordance floor",
+          r >= limit, f"{r:.2f}:1 - the same system red the vault already ships")
+check("round 22: the menu panel is token-bound in the bundle (no literal can survive a theme switch)",
+      "background:`var(--sheet)`,border:`1px solid var(--line)`,boxShadow:`var(--menu-shadow)`" in JS
+      and "style:{color:e.danger?`var(--danger)`:`var(--ink)`}" in JS and "#0b0b0d" not in JS,
+      "panel + rows read --sheet / --line / --menu-shadow / --ink / --danger")
+check("round 22: --menu-shadow exists in both themes and differs (a black shadow over black would not show)",
+      LIGHT.get("--menu-shadow") is not None and DARK.get("--menu-shadow") is not None
+      and LIGHT["--menu-shadow"] != DARK["--menu-shadow"],
+      f"{LIGHT.get('--menu-shadow')} / {DARK.get('--menu-shadow')}")
+
+# ------------------------------------------------------- round 23: the viewer's inert bands
+# The report's fix is behavioural - the empty bands around the opened card stop taking touches - so the
+# audit's half is proving it is *only* behavioural: the shield is paint-only (one background, no blur, no
+# shadow, no extra compositor layer), it rides the `touch-none` utility the stylesheet already ships, and
+# the viewer's deliberately theme-independent colours are untouched. If this round had needed a colour or
+# a material, it would have needed a stylesheet block - and it does not have one.
+INERT = re.search(r"/\*cardwallet:inert-bands\*/\(0,U\.jsx\)\(`div`,\{className:`absolute inset-0`,"
+                  r'"data-cwband":`preview`,style:\{([^}]*)\}\}', JS)
+check("round 23: the inert shield is paint-only - one background, no blur, no shadow, no layer of its own",
+      bool(INERT) and INERT.group(1).strip() == "background:`rgba(9,9,11,0.94)`",
+      INERT.group(1) if INERT else "shield not found in the bundle")
+check("round 23: the band fix adds no stylesheet block and no colour - the viewer keeps its #000-family "
+      "literals (the camera/viewer surfaces stay theme-independent by design)",
+      "Round 23" not in CSS and JS.count("background:`rgba(9,9,11,0.94)`") == 1
+      and "className:`fixed inset-0 z-50 touch-none`" in JS and ".touch-none{touch-action:none}" in CSS,
+      f"css block:{'Round 23' in CSS} backdrop literal:{JS.count('background:`rgba(9,9,11,0.94)`')}")
+
+# ------------------------------------------------ round 24: the action bar's own metrics
+# The bar's *seat* (bottom-right, safe-area padded) is round 16/17 work; this round only set the pill's
+# inner spacing to the old header bar's own (`gap-1 px-2` = 4px/8px, measured out of the round-15 build
+# that still had the bar at the top-right). So the audit's interest is that the change is paint-neutral:
+# the material, the frame and every fallback must be exactly as they were.
+DOCK24 = re.compile(r"\.cw-dock\{gap:4px;padding:6px 8px\}")
+R24_AT = CSS.find("Round 24 - the action bar")
+R24 = CSS[R24_AT:CSS.find("\n.cw-dock{gap:4px", R24_AT) + len("\n.cw-dock{gap:4px;padding:6px 8px}")] if R24_AT >= 0 else ""
+DOCK_RULES = len(re.findall(r"\.cw-dock\{", CSS))
+check("round 24: the pill's inner spacing is the old header bar's own, and it is the last .cw-dock rule",
+      bool(DOCK24.search(CSS)) and CSS.rindex(".cw-dock{") == DOCK24.search(CSS).start()
+      and DOCK_RULES == 5,
+      f"{DOCK_RULES} .cw-dock{{ rules, override last")
+check("round 24: spacing only - the block adds no colour, blur, shadow, radius or motion",
+      bool(R24) and not re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(|backdrop-filter|box-shadow|border|transition|animation|blur", R24),
+      R24.splitlines()[-1] if R24 else "block not found")
+check("round 24: the dock's material and frame are untouched by it (same tier-1 blur, same pill)",
+      "backdrop-filter:blur(22px) saturate(1.78) brightness(1.03)" in dock
+      and "border-radius:999px" in dock and "width:max-content" in dock,
+      "tier-1 fill, pill radius and max-content width all as round 16 built them")
+check("round 24: the bar's seat keeps the bottom safe-area inset (the home indicator / gesture bar)",
+      "pointer-events-none fixed inset-x-0 bottom-0 z-40 px-2" in JS
+      and "paddingBottom:`calc(env(safe-area-inset-bottom) + 10px)`" in JS
+      and "paddingBottom:`calc(env(safe-area-inset-bottom) + 62px)`" in JS,
+      "bar inset + the deck's own reserve")
+
 ALPHAS = {f"{sc}/{n}": parse_color(var(n, "html.dark" if sc == "dark" else ":root"))[3]
           for sc in ("light", "dark") for n in ("--lg-tint", "--lg-tint-2")}
 check("tier-1 fill alpha stays in the glass band (0.45 - 0.92)",
@@ -352,11 +431,29 @@ check("blur radii differ by surface (sheet > control)",
       int(re.sub(r"\D", "", var("--lg-blur"))) > int(re.sub(r"\D", "", var("--lg-blur-ctl"))),
       f"{var('--lg-blur')} sheet vs {var('--lg-blur-ctl')} control")
 SAT1 = "saturate(var(--lg-sat))" in decl or "saturate(1." in decl
+def block_from(marker: str) -> str:
+    """The stylesheet block that starts at `marker`'s banner and ends at the next banner.
+
+    A block owns its banner -> the next banner, which is the convention the appending patches use
+    (patch 33/34's `block_span`, patch 37's `block_of`). The older `CSS[CSS.index(marker):]` slices
+    silently grew into every later round: once round 21 and round 22 appended blocks, round 22's
+    `--menu-shadow` literal appeared inside round 18's "no colour literals" check and round 22's text
+    inside round 19's "stays small" one.
+    """
+    i = CSS.find(marker)
+    if i < 0:
+        return ""
+    start = CSS.rindex("/*", 0, i)
+    nxt = re.search(r"\n/\* ={20,}", CSS[i + 2:])
+    return CSS[start:(i + 2 + nxt.start()) if nxt else len(CSS)]
+
+
+
 check("saturation lift differs by tier too",
       ("1.9" in fab) and SAT1, "controls lift chroma harder - small area, more edge")
 
 # ---------------------------------------------------------------- round 18: the gate + vault rows
-V18 = CSS[CSS.index("Round 18 - the lock gate"):] if "Round 18 - the lock gate" in CSS else ""
+V18 = block_from("Round 18 - the lock gate")
 check("round 18: the lock/backup stylesheet block is in the shipped CSS", bool(V18), f"{len(V18)} chars")
 LOCK = rule(r"\.cw-lock\{", V18)
 # the block's own banner comment *describes* backdrop-filter (to say it is not used), so every rule-level
@@ -398,7 +495,7 @@ check("round 18: backups are AES-GCM under PBKDF2-SHA256, iterations pinned",
 check("round 18: a restore that busts the storage quota keeps the current deck",
       "your current cards are unchanged" in JS, "-")
 
-V19 = CSS[CSS.index("Round 19 - the customization gate"):] if "Round 19 - the customization gate" in CSS else ""
+V19 = block_from("Round 19 - the customization gate")
 BODIES19 = "".join(m.group(2) for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", V19))
 JS19 = JS[JS.index("Round 19 - the customization gate"):] if "Round 19 - the customization gate" in JS else ""
 check("round 19: the customization-gate block is in the shipped CSS and stays small",
@@ -488,13 +585,13 @@ if MAKE_SVG:
         i.append(f'<text x="55" y="{ty+50}" text-anchor="middle" font-family="-apple-system,Helvetica,Arial" '
                  f'font-size="12" font-weight="600" fill="{col("--ink", scope)}">Stack</text>')
         # round 16: the create disc no longer sits in a top bar - Create / Search / More live in one
-        # glass pill at the bottom, so the preview draws that pill (and the wordmark up top).
+        # glass pill at the bottom, so the preview draws that pill.
         # round 17: the pill sits on the right of the wallet column - the same x the controls had
         # in the header, mirrored to the bottom edge - not centred.
+        # round 21: the "Wallet" wordmark that used to sit top-left is gone, so the preview does not
+        # draw one either (the top of the frame is empty - that is the shipped state).
         dw, dh = 3 * 36 + 2 * 10 + 20, 48
         dx, dy = w - dw - 12, h - dh - 10
-        i.append(f'<text x="14" y="26" font-family="-apple-system,Helvetica,Arial" font-size="26" '
-                 f'font-weight="800" letter-spacing="-.6" fill="{col("--ink", scope)}">Wallet</text>')
         i.append(f'<rect x="{dx}" y="{dy}" width="{dw}" height="{dh}" rx="24" fill="{col("--lg-tint-2", scope)}" '
                  f'fill-opacity="{alpha("--lg-tint-2", scope)}" stroke="{rim}" stroke-opacity="{ra}"/>')
         i.append(f'<rect x="{dx}" y="{dy}" width="{dw}" height="{dh/2:.0f}" rx="24" fill="url(#sheen{scope})"/>')
@@ -536,9 +633,9 @@ if MAKE_SVG:
              'font-weight="700" fill="#111113">Liquid Glass - simulated composite from the real '
              'tokens (not a screenshot)</text>',
              '<text x="24" y="54" font-family="-apple-system,Helvetica,Arial" font-size="11" fill="#8e8e93">'
-             'round 16: Create / Search / More sit in one glass dock at the bottom, the wordmark keeps the '
-             'top-left, and the disc inside the dock does not blur again. The sheet blurs at 14px and the '
-             'scrim not at all - that is the round-17 lag fix</text>']
+             'round 16: Create / Search / More sit in one glass dock at the bottom (round 21 removed the '
+             'top-left wordmark, so the top of the frame is empty), and the disc inside the dock does not '
+             'blur again. The sheet blurs at 14px and the scrim not at all - that is the round-17 lag fix</text>']
     parts.append(svg_panel("light", "#ffffff", ["#1f2a44", "#c9a227", "#e6e6ea"], 24, 84, 400, 200, "LIGHT theme - sheet over bright artwork"))
     parts.append(svg_panel("light", "#101014", ["#0b1220", "#5b3df5", "#1f1f22"], 24, 320, 400, 200, "LIGHT theme - sheet over dark artwork"))
     parts.append(svg_panel("dark", "#000000", ["#1c1c1e", "#2f2f34", "#6b4df6"], 476, 84, 400, 200, "DARK theme - sheet over dark artwork"))

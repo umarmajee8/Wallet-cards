@@ -313,3 +313,25 @@ opacity:1;transition:opacity .2s var(--lg-ease)
 html[data-cw-custom="off"] .cw-cust-body{display:none}
 .cw-cust-slot{display:block}
 @media (prefers-reduced-motion:reduce){.cw-cust-slot *{transition:none}}
+
+/* =====================================================================================
+   Round 22 - the overflow menu follows the theme. The panel was the one surface patch 7 painted
+   near-black for the light-theme mock ("#0b0b0d panel, white rows" - an explicit choice while the
+   app had no dark theme), and it kept that literal through every round that made the app
+   theme-aware. Panel, hairline and rows are tokens again; the drop shadow is the only value a
+   token cannot express, so it lives here - literally - once per theme.
+   ===================================================================================== */
+:root{--menu-shadow:0 22px 46px -22px rgba(15,23,42,.28)}
+html.dark{--menu-shadow:0 22px 46px -22px rgba(0,0,0,.75)}
+
+/* =====================================================================================
+   Round 24 - the action bar carries the old header bar's own spacing. The move itself happened in
+   round 16: the same three controls (Add card / Search cards / More, 36px boxes, 19/21px glyphs,
+   tone:auto) now live in a glass pill anchored bottom-right. What had not travelled is the old bar's
+   inner metrics - it was `gap-1 px-2` (4px between the controls, 8px inset), while the pill was built
+   with `gap:10px; padding:6px 10px`. This override puts the pill's inner spacing back on the old
+   numbers, so the relocated bar *is* the old bar's geometry inside the frame the client asked for.
+   The pill's own edge still lands 16px from the screen (container px-2 + row px-2), where the old
+   bar's last control ended - round 17's alignment rule, untouched.
+   ===================================================================================== */
+.cw-dock{gap:4px;padding:6px 8px}

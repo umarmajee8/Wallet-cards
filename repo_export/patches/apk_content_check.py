@@ -68,7 +68,8 @@ MUST = [
     ("round 16  the dock bar is anchored to the bottom edge", "fixed inset-x-0 bottom-0 z-40"),
     ("round 16/17  the option menu opens upward from the dock", "transformOrigin:`right bottom`"),
     ("round 16  the deck reserves the dock's height", "paddingBottom:`calc(env(safe-area-inset-bottom) + 62px)`"),
-    ("round 16  the wordmark is the only thing left in the top bar", "children:`Wallet`})]}),"),
+    ("round 21  the top-left wordmark is gone, and the marker says why the row is empty",
+     "/*cardwallet:no-wordmark*/"),
     ("round 18  the app ships a 4-digit gate with its own digit boxes", "cw-lock-digit"),
     ("round 18  the lock state lives in its own store, apart from settings", "wallet.vault.v1"),
     ("round 18  a backup file is encrypted with AES-GCM under PBKDF2-SHA256", '"PBKDF2-SHA256"'),
@@ -80,12 +81,37 @@ MUST = [
     ("round 19  the gate state is never written to storage (a stale 'on' cannot survive a launch)",
      'var ATTR = "data-cw-custom";'),
     ("carry    NFC and auto-detect stay pinned off at load", "n.autoDetect=!1,n.nfc=!1"),
-    ("carry    the Wallet wordmark is the header's own label", "children:`Wallet`"),
+    ("carry    the header row is empty but still there (the dock's geometry twin, round 17)",
+     "children:[/*cardwallet:header*//*cardwallet:no-wordmark*/]"),
+    ("round 22  the overflow menu rides the theme tokens (sheet, hairline, token shadow)",
+     "background:`var(--sheet)`,border:`1px solid var(--line)`,boxShadow:`var(--menu-shadow)`"),
+    ("round 22  menu rows read --ink, the destructive row --danger",
+     "style:{color:e.danger?`var(--danger)`:`var(--ink)`}"),
+    ("round 23  the viewer overlay refuses pan/zoom/scroll that starts in its empty bands",
+     "className:`fixed inset-0 z-50 touch-none`"),
+    ("round 23  those bands are one marked, inert shield instead of a dismissal target",
+     '"data-cwband":`preview`'),
+    ("round 23  the marker records why the bands are dead",
+     "/*cardwallet:inert-bands*/"),
+    ("round 23  the card keeps its own gesture handlers (it is still the interactive part)",
+     "onPointerDown:re,onPointerMove:M,onPointerUp:N,onPointerCancel:N"),
+    ("round 23  the card's own swipe-down close is still wired",
+     "if(n>90){te();return}"),
+    ("round 23  the two bottom buttons stay hit targets inside the pointer-events:none row",
+     "pointer-events-none absolute inset-x-0 flex justify-center gap-2.5 px-5"),
+    ("round 24  the three controls keep the old header bar's boxes and glyphs (36px, 19/21px)",
+     "flex h-9 items-center justify-center rounded-full"),
+    ("round 24  and the old bar's own order/spacing contract: three tone:auto controls",
+     "chip:!1,tone:`auto`"),
 ]
 MUST_NOT = [
     ("removed feature 'Auto-detect details' must stay out", "Auto-detect details"),
     ("removed feature 'Fill in from picture' must stay out", "Fill in from picture"),
     ("removed feature 'Make your own pouch' must stay out", "Make your own pouch"),
+    ("round 21  the removed 'Wallet' header label must stay out", "children:`Wallet`"),
+    ("round 22  the fixed near-black menu panel must stay out (the report's bug)", "#0b0b0d"),
+    ("round 23  the overlay's band-tap dismissal must stay out (the report's bug)",
+     "transition:{duration:.26},onClick:te"),
     ("no CVV/CVC field may be offered or stored (patch29)", "`CVV`"),
     ("no eval in the shipped bundle", "eval("),
 ]
@@ -102,6 +128,16 @@ MUST_NOT_APP = [
 ]
 # The app's own copy is allowed to *say* CVV (it promises not to ask for one); the data layer may not.
 CVV_COPY = "no CVV, no PIN"
+
+
+def block_from(css: str, marker: str) -> str:
+    """The stylesheet block that starts at `marker`'s banner and ends at the next banner."""
+    i = css.find(marker)
+    if i < 0:
+        return ""
+    start = css.rindex("/*", 0, i)
+    nxt = re.search(r"\n/\* ={20,}", css[i + 2:])
+    return css[start:(i + 2 + nxt.start()) if nxt else len(css)]
 
 
 def main() -> int:
@@ -137,11 +173,29 @@ def main() -> int:
         and "position:fixed" in lock_rule.group(1) and "inset:0" in lock_rule.group(1),
         (lock_rule.group(1)[:70] if lock_rule else "no .cw-lock rule"))
     chk("round 18  the danger colour is a token, not a literal, in the shipped CSS",
-        "--danger:#ff453a" in css and "#ff453a" not in css.split("Round 18 - the lock gate")[-1])
-    g19 = css[css.index("Round 19 - the customization gate"):] if "Round 19 - the customization gate" in css else ""
+        "--danger:#ff453a" in css and "#ff453a" not in block_from(css, "Round 18 - the lock gate"))
+    # A block owns its banner -> the next banner. The plain `css[index(marker):]` slice grew into every
+    # later round: once round 22 appended its block, that block's `rgba(...)` shadow tripped this
+    # round-19 "no colour literals" rule.
+    g19 = block_from(css, "Round 19 - the customization gate")
     chk("round 19  the shipped stylesheet carries the customization-gate block", bool(g19), f"{len(g19)} chars")
     chk("round 19  the gate hides one block only while <html> says off (fail-open if the module is missing)",
         'html[data-cw-custom="off"] .cw-cust-body{display:none}' in g19 and g19.count("display:none") == 1, "-")
+    dock_rules = len(re.findall(r"\.cw-dock\{", css))
+    chk("round 24  the shipped stylesheet carries the action bar's spacing block (and it is the last word on .cw-dock)",
+        "Round 24 - the action bar carries the old header bar's own spacing" in css
+        and ".cw-dock{gap:4px;padding:6px 8px}" in css
+        and css.rindex(".cw-dock{") == css.index(".cw-dock{gap:4px;padding:6px 8px}"),
+        f"{dock_rules} .cw-dock{{ rules, the override last")
+    chk("round 24  the CSS-only change really is CSS-only (the bundle's action-bar markup is untouched)",
+        "cw-dock pointer-events-auto flex items-center" in js
+        and "pointer-events-none fixed inset-x-0 bottom-0 z-40 px-2" in js
+        and "children:[/*cardwallet:header*//*cardwallet:no-wordmark*/]" in js,
+        "the pill, its bottom anchor and the empty top row are all still there")
+    chk("round 22  the shipped stylesheet defines --menu-shadow for both themes (and they differ)",
+        ":root{--menu-shadow:" in css and "html.dark{--menu-shadow:" in css
+        and css.split(":root{--menu-shadow:")[1].split("}")[0] != css.split("html.dark{--menu-shadow:")[1].split("}")[0],
+        "the only value the menu cannot take from an existing token")
     chk("round 19  the gate adds no blurred surface and no colour literal to the app",
         bool(g19) and "backdrop-filter" not in g19 and not re.search(r"#[0-9a-fA-F]{3,8}\b|rgba?\(", g19), "-")
     chk("round 19  the gate's DOM module never builds markup from strings", ".innerHTML" not in js[js.index("window.__cwCust"):] if "window.__cwCust" in js else False, "-")

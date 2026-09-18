@@ -114,6 +114,13 @@ DOWNSTREAM_KEEP = {
     "stack cover: painted from the wallet colour, not glass": "(0.55*sh).toFixed(2)",
 }
 
+# Round 21 (patch 36) deliberately *removes* the wordmark this patch added: the client asked for the
+# top-left label to go. The successor's marker is the proof that this span is still in there, just
+# re-worded downstream - the same trick patch 7/12/21 use for their own superseded spans.
+SUPERSEDED = {
+    "header: bold Wallet wordmark on the left": "/*cardwallet:no-wordmark*/",
+}
+
 
 def status(data):
     """(pending, applied, unrecognised).
@@ -123,7 +130,10 @@ def status(data):
     """
     todo, done, bad = [], [], []
     for old, new, label in EDITS:
-        if not new:                       # a deletion: applied means "the text is gone"
+        keep = SUPERSEDED.get(label)
+        if keep and keep in data:
+            done.append(label)
+        elif not new:                     # a deletion: applied means "the text is gone"
             if old in data:
                 todo.append((old, new, label))
             else:

@@ -291,7 +291,7 @@ What changed in the bundle:
 | `+` | `var(--ink)` glyph, `var(--chip)` behind it when open | `#000` disc, white plus at 2.5 stroke, soft drop shadow, 4px halo while its menu is open |
 | search | same ink glyph on the page | bare `#000` loupe at 2.3 stroke, 26px, no chip |
 | overflow | three vertical dots | **hamburger** — three 2.7-round bars, bare `#000`, 26px |
-| dropdown | `var(--sheet)` panel, `var(--ink)` rows | `#0b0b0d` panel, white rows, `#ff453a` destructive row |
+| dropdown | `var(--sheet)` panel, `var(--ink)` rows | `#0b0b0d` panel, white rows, `#ff453a` destructive row **<- round 22 (patch 37) went back to the stock tokens: the literal was written when the app was light-only and it stopped following the theme, which the client reported** |
 | where the options come from | hard-coded `Add card / Search cards / More` + hard-coded rows | generated from `header_options.json` |
 
 Tap targets are unchanged (44px, `h-11 w-11`) for both filled and bare options, so
@@ -1318,3 +1318,333 @@ na blurred surface - lekin yeh pehla control ha jo **UI ko chupata ha**, is liye
 agar kisi device par switch on hone par bhi controls na aayen, ya off par kaam karte rahen, to gate khuli
 hawa ha. Yeh **UX guard ha, security control nahi** - card data `localStorage` me waisa hi ha asha ta
 pehle tha, aur copy me kabhi "protected" nahi likha gaya.
+
+## 24. Round 20 - scroll gesture ke dauran cards side me shift nahi hote (patch 35), 2026-09-16
+
+**Kya report hua:** *"while scrolling through the passes the cards sometimes shift/slide off to the side
+instead of staying properly centred/stacked in the carousel ... intermittent"*. Do alag races the, dono
+ship-shuda bundle par jsdom me reproduce kiye gaye (numbers ek throwaway jsdom probe se, fix se **pehle** - wahi numbers ab smoke Test 6f/6h me pinned han) -
+yeh layout ka masla nahi tha, is liye koi constraint/padding change nahi hui.
+
+**Defect 1 - patch 14 ka watchdog live finger ke neeche se row kheench leta tha.** Patch 14 "gesture chori
+ho gaya" ka faisla 340 ms ki *event-khamoshi* se karta tha, lekin drag ke dauran **ruki hui** ungli bilkul
+wahi khamoshi paida karti ha: row nearest card par commit ho kar `d.jump(0)` se **106 px** side me uchhal
+jati thi, aur agla `pointermove` poora gesture delta naye base se dobara laga deta tha (doosra **170 px**
+jhatka). 200 px ka drag, 800 ms ruk kar phir jari: `-509.3 | -307.7 | -106.1 | 95.5 | 297.1` ->
+`-403.2 | -201.6 | 0.0 | ...` -> `-573.0 | ...`. Jarh: `mv` `k+s` par chalta tha jahan `k` pointerdown par
+capture hua tha - is liye jo bhi cheez `d` ko gesture ke peeche se hilati thi (watchdog, index effect), agli
+move ko jump bana deti thi.
+
+**Defect 2 - stack me recovery hi nahi thi, aur cancel ek tap tha.** `__cwStack` ko patch 14 kabhi nahi
+mila: system ka khaaya hua gesture deck ko fractional index par **hamesha ke liye** chordeta tha
+(`0.0 | 229.5 | 459.0 | 688.5` -> `-225.8 | 3.7 | 233.2 | 462.7`, 2.5 s aur 4.5 s baad bilkul wahi),
+`drag.current` set reh jane se `drag.current||p.jump(r)` guard ki wajah se deck index changes par bhi nahi
+hilta tha, 480 ms ka long-press timer chalta reh jata tha, aur `pointercancel` **tap** handler par laga
+tha - bina kisi movement ke ek cancel us card ko khol deta tha jis par ungli thi.
+
+**Fix ka rule: ungli glass par ho to row uski ha.** Ek injected helper `__cwPtr` batata ha ke kaun down ha
+(pointerdown -> up / cancel / lostpointercapture) aur `held()`, `quiet(ms)` aur `onGone` deta ha - jahan
+`onGone` WebView ke stream hamesha ke liye khone ke teen asli signals par chalta ha:
+`visibilitychange` (hidden), `blur`, `pagehide`. App ko background karne wala gesture (patch 14 ki apni
+device report: neeche ka gesture strip **home/recents** gesture hi ha) inhi me se ek signal deta ha, is
+liye recovery **foran aur invisible** hoti ha; sirf ruki hui ungli inme se kuch nahi deti, is liye row ko
+koi haath nahi lagata. 1500 ms ka net sirf us ek case ke liye ha jahan koi signal hi na aaye.
+
+**Recovery glide karti ha, aur index commit nahi karti.** Patch 14 `d.jump(0)` + index commit karta tha;
+ab carousel apne maujooda `Cd` tween par ghar jata ha aur index **badalta nahi** - kisi bhi arbitrary
+offset par commit seamless ho hi nahi sakta (fan ko `slide - sideGap` = ~101 px hilata ha), is liye recovery
+user ko usi card par wapas le jati ha jis par wo tha, aur rest state bilkul 0 hi rehti ha. Stack ki recovery
+`snap()` ha, jo index-based ha - is liye by construction smooth tween.
+
+**Drag ab live value par rebase hoti ha** (dono views me): har move par code apne last write se compare
+karta ha, aur agar kisi aur ne row hil a di to pointer ka origin rebase hota ha, pehle kharch ho chuke
+deltas dobara nahi lagte. Isi wajah se "cards side me drift nahi karte" luck ki jagah construction se sach
+ha - aur settling row (ya chori-shuda gesture ke baad off-centre row) ko pakadne par ab snap nahi hota.
+
+**Stack ko patch 14 ki guarantee bhi mil gayi:** cancel ek abort ha (nearest card par `snap`, kabhi open
+nahi), `pointercancel` long-press timer clear karta ha, aur idle watchdog nearest index commit karta ha,
+`drag.current` **aur** gesture ke listeners (`kill.current`) release karta ha - is liye index changes dobara
+deck ko hilate han. Carousel me `g.current` ab settle-to-zero khatam hone par clear hota ha - pehle ek
+**khatam-shuda** animation usme pari rehti thi, jo watchdog ke `if(g.current)return` guard ko chupke se
+agla touch aane tak band kar deti thi (report ka "sometimes" yehi tha).
+
+**Koi nayi motion language nahi:** wahi springs, wahi snap targets, wahi thresholds (18 px carousel
+release, 360 px/s flick, 6/16 px axis lock, 480 ms long-press). Sirf ek jagah jump ki jagah glide aayi ha -
+audit ka spring inventory badla nahi.
+
+**Gates (sab isi tree par, APK ke andar ka payload tree se byte-identical):**
+
+| Gate | Pehle | Ab |
+|---|---|---|
+| `smoke_test_webview.mjs` | 241/241 | **261/261** (Test 6f extended + naya Test 6h) |
+| `qa_feature_suite.mjs` | 259/259 | **281/281** (naya group "36 gestures" = 22) |
+| `apk_content_check.py` | 78/78 | **78/78** (`CardWallet_gesture_fixed.apk`) |
+| `verify_release.py` | 28/29 | 28/29 (akeela FAIL jaan boojh kar: debug cert) |
+| `animation_audit.py` | 10 / 1 warn | 10 / 1 warn (wahi layout-property warning) |
+| `liquid_glass_audit.py` | 105/105 | **105/105** |
+| `replay_chain.py` | patch 34 tak | **patch 35 tak** (previous bundle + patch35 byte-identical) |
+
+**Negative control.** Bundle **patch 35 ke baghair** (= pichhla shipped payload): smoke **246/261**
+(13 naye checks fail - jinme *"front card x 58.36 -> 0.00px across a 900ms hold"*, yani bilkul wahi
+reported symptom, aur *"the sheet opened on a cancel"*), QA group 36 **9/22**. Prone base bundle tree me
+nahi ha, is liye chain ko *pichhle shipped bytes + patch 35* se verify kiya gaya - nateeja byte-identical
+nikla, yani patch 14 ke waqt qaim kiya gaya "tree == scripts ka output" property ab bhi sach ha.
+
+**Artifact:** `CardWallet_gesture_fixed.apk` - **11,669,260 B**, sha256
+`d9370f9cfe91bfd04e15f951223dfe619896766d782ba3b9f98748381803ba6f`, `repo_export/app/index.js` 499,851 B.
+Debug-signed (throwaway key, `repo_export/signing/debug-local.p12`), `allowBackup=false`, release signing
+ki koshish **nahi** ki gayi (`release-key.p12` is environment me mojood nahi). Install se pehle
+`adb uninstall com.arena.cardwallet`.
+
+**Handover:** verdict **wahi - NOT READY FOR CLIENT HANDOVER** (device-unverified MAJOR items waise hi
+khule han). Is round ka apna device work `docs/DEVICE_TEST_PLAN.md` section **AB** (8 rows) ha - us me se
+**AB1** (normal scroll me cards side me na jayen) aur **AB2** (ajeeb swipe ke baad deck jawab deta rahe)
+handover gates han.
+
+## 25. Round 21 - header ke "Wallet" label hata diya gaya (patch 36), 2026-09-16
+
+**Ask, verbatim:** *"Remove the \"Wallet\" text label shown at the top-left of the screen (the app
+title/header text). Keep the rest of the header layout (search icon, menu icon, add button etc.) intact -
+just remove that text element, don't leave empty spacing or misalign the remaining icons after removal."*
+Ye label round 9 ka mandate tha (patch 17: *"header pr top left corner pr bara bold Wallet likho, font ios
+wala ho"*) - yani is round me client ne apna hi purana ask override kiya, aur wo override documented ha
+(patch 17 me `SUPERSEDED` entry, taake chain ka `--check` apni hi edit ko pehchane).
+
+**Jo asal me screen par tha (bundle se naapa gaya, farz nahi kiya):** top-left "Wallet" ek `span` tha
+(28 px / 800, `var(--ink)`), aur round 16 (patch 31) ke baad woh **header row ka wahi ek child** tha -
+Add / Search / More pehle hi footer dock me ja chuke the. Yani ask me jo controls likhe han (search,
+menu, add) woh label ke bhai-behen kabhi the hi nahi, is liye unka misalign hona is change se mumkin nahi.
+Jo container `ref:d` rakhta ha (bahar tap par option menu band karta ha, aur dock us ka child ha) woh,
+dock bar, dock row, menu, aur dono reserves - sab byte-identical rahe. **Patch sirf ek span ko chhoota ha.**
+
+**Row kyun rakhi gayi:** khali flex row zero-height hoti ha (na text, na button, na apni padding) aur
+container `pointer-events:none` ha - is liye na koi patli strip dikhti ha na koi tappable dead zone banti
+ha. Do invariants bach jate han: patch 17 ka rule ke dock row literally header row ki class string ha
+(glass audit `TOP_ROW_CLASS` ko **2** baar ginta ha, aur QA group 33 `dock.parentElement.className ===
+headerRow.className` assert karta ha). Row hataane se dono tootte - bila faide.
+
+**Reserves kyun nahi chhote:** main column upar `safe-area + 58 px` aur neeche `safe-area + 62 px` reserve
+karta ha (round 16/17). Deck in dono ke beech centre hota ha, is liye upar ka reserve label ki height
+jitna kam karne se **har card** hilta - ask tha label hataana, wallet dobara layout karna nahi. Kuch bhi
+nahi hila. (Agar aage chal kar top band tight karna ho to woh apna alag, naapa gaya change ha: deck aadhe
+delta jitna upar aayega.)
+
+**Marker convention:** `/*cardwallet:header*/` barqarar ha - ye patch 8 ka marker ha, aur
+`apk_content_check.py` isi se app-code ka start dhoondta ha (injection checks ka scope), aur
+`verify_release.py` ise literal assert karta ha. Span ki jagah `/*cardwallet:no-wordmark*/` aaya ha - ye
+positive proof ha ke removal chala (smoke checks, content check, glass audit aur patch 17 ka naya
+`SUPERSEDED` entry isi ko dekhte han). Ye entry ek purani `--check` regression bhi theek karti ha: patch 17
+ka wordmark edit round 16 ke baad se **STALE** parh raha tha (patch 31 ne buttons header row se hata diye
+the), aur ab dobara applied parhta ha).
+
+**Gates:** web smoke **261 -> 262/262** (teen wordmark checks ab absence checks han; naye checks: dock ke
+teen controls jahan the wahan han, reserves untouched, header row aur dock row ka geometry twin barqarar,
+container ab bhi `ref:d` ka malik), QA suite **281/281** (group 1 ka header check aur group 33 ka dock
+check ab label ki gair-mojoodgi assert karte han), `apk_content_check.py` **78 -> 79/79** (naye marker ki
+positive row + `MUST_NOT` taake label wapas na aa sake), `liquid_glass_audit.py` **105/105** (preview SVG
+ab wordmark nahi banata), `animation_audit.py` 10 checks / 1 warning (wahi - is patch me koi nayi motion
+nahi), `verify_release.py` **28/29**.
+
+**Negative control:** pichhla bundle (`CardWallet_gesture_fixed.apk` ke bytes) - smoke me **4 checks
+fail** (row khali nahi, 1 wordmark span mojood, marker ghaayab, `ref:d` row ab bhi bhara), aur
+`apk_content_check.py` ki **4 rows** fail, aur QA group 33 me **1** check (29/30 ho gaya). Isi kaam me ek
+trap bhi pakra gaya: QA group 1 ka pehla draft `!/\bWallet\b/.test(text)` tha aur woh **pre-fix** bundle
+par bhi pass ho gaya, kyunke `textContent` bina separator jorta ha - root `"WalletPlatinum Debit Card..."`
+parhta ha, is liye word boundary kabhi match nahi karti. Ab woh **element** ginta ha, jo pakarta ha
+(pre-36 par group-1 family me 1 fail).
+
+**Artifact:** `CardWallet_no_title.apk` - **11,669,121 B**, sha256
+`75f86c0024ab7b1010e50a292694fbf7979190ae0c66cec4f08b52ab58f15ad4`, `repo_export/app/index.js` 499,516 B.
+Debug-signed (wahi throwaway key, `repo_export/signing/debug-local.p12`), `allowBackup=false`, release
+signing ki koshish **nahi** ki gayi (`release-key.p12` is environment me nahi). Install se pehle
+`adb uninstall com.arena.cardwallet`.
+
+**Handover:** verdict wahi - **NOT READY FOR CLIENT HANDOVER** (device-unverified MAJOR items waise hi
+khule han, aur round 20 ke AB1/AB2 ab bhi handover gates han). Is round ka apna device work
+`docs/DEVICE_TEST_PLAN.md` section **AC** (5 rows) ha - khaas kar AC2 (deck ki position pichhle build se
+compare - kuch nahi hilna chahiye) aur AC3 (khali corner par tap/long-press/drag se kuch na ho, aur menu
+bahar-tap par band ho).
+
+## 26. Round 22 - overflow menu dobara theme ke saath chalta ha (patch 37 + stylesheet), 2026-09-16
+
+**Report, verbatim:** *"In Light mode, the app's overflow menu (the dropdown showing \"Settings\" and
+\"Delete all cards\") is still rendering with a dark/black background instead of following the light theme.
+Every other UI element on screen ... correctly switches to light mode - only this specific popup menu
+stays hardcoded dark."* Ask tha: menu ke *"background, text, and icon colors"* ko theme se bandho aur
+System / Light / Dark teeno me confirm karo.
+
+**Ye kahan se aaya:** asal (stock) panel themed tha - `rounded-2xl sheet-bg` + `var(--line)` border. Round
+4 (patch 7, "header look" mock) ne `sheet-bg` hata kar use `#0b0b0d` panel bana diya tha, aur usi patch
+me likha tha: *"that was an explicit choice, not an oversight, so it does not invert"* - us waqt app sirf
+light thi. Uske baad har round ne app ko theme-aware banaya (System/Light/Dark) aur surfaces tokens par
+le gaya - bas yehi ek surface apne literals par reh gaya. Report ka screenshot bilkul wahi ha.
+
+**Fix:** panel `#0b0b0d` -> `var(--sheet)`, hairline `rgba(255,255,255,.14)` -> `var(--line)`, rows
+`#fff`/`#ff453a` -> `var(--ink)`/`var(--danger)`, aur drop shadow - jo ek value kisi mojood token se
+nahi banti aur light vs black backdrop par alag honi chahiye - `--menu-shadow` ban gayi, dono themes ke
+liye ek ek baar round-22 block me (`:root` = `rgba(15,23,42,.28)`, `html.dark` = `rgba(0,0,0,.75)`).
+`#0b0b0d` bundle se poori tarah nikal gaya. Icons ka koi alag kaam nahi chaha: menu ke `<svg>`s
+`currentColor` par stroked han, is liye row ke colour ke saath invert ho jate han - report ka "and icon
+colors" wahi ek declaration ha jo labels ko theek karta ha.
+
+**Jaan-boojh kar nahi chhua:** camera view (live feed par dark chrome), full-screen card viewer (`#000`,
+Photos jaisa), sheet scrims (`rgba(10,10,12,.45)`), toast pill (`rgba(20,20,22,.92)`) aur card artwork -
+ye sab jaan-boojh kar theme-independent han. "Delete all cards" ka confirm sheet pehle se themed tha;
+sirf us ke destructive button par compiled `text-[#ff453a]` class ha, jo wahi rehti ha - dono themes me
+ek hi red, bilkul jaise vault ka `--danger` (aur ab menu ki destructive row bhi wahi token use karti ha).
+
+**Is round ne chain ki teen latent bugs pakri (sab ek hi shakal ki):** round 18, 19 aur 22 har ek
+stylesheet **block append** karta ha, aur kai tools apne block ko *"mere banner se file ke end tak"*
+samajhte the - jo chupke se har baad ke round ko bhi apne andar le leta ha. Round 22 append honay ke baad
+un slices ne round 18 ke block ko round 22 ka shadow literal, round 19 ko "bara" aur round 19 ke "no colour
+literal" rule ko fail karwa diya. Patch 37 ke apne pehle draft me ulti taraf wahi bug tha (us ne banner ko
+fixed `=` run se match kiya jo round 19 ke banner se bhi match ho gaya, aur round 19 ka block rewrite kar
+diya) - commit se pehle pakra gaya, aur isi liye ab file ke aakhir me guard list ha. Fix: patch 33/34 ka
+`sync_appended` aur audit ke `V18`/`V19`, `apk_content_check.py` ke round-18/19 rules aur QA group 35 ka
+`R19` ab **banner -> next banner** convention use karte han; patch 37 khud guess karne se inkaar karta ha
+aur assert karta ha ke round 15/16/17/18/19 ke blocks aur gate ke dono rules stylesheet me mojood han.
+Patch 7 me `DOWNSTREAM_KEEP` entries aayi han taake uska `--check` in tokens ko apna kaam samjhe (wahi
+trick jo patch 21 button sizes ke liye use karta ha).
+
+**Gates:** web smoke **262 -> 266/266** (panel/rows checks ab token-level han - jsdom inline style me
+`var()` resolve nahi karta, is liye woh assert karte han "ye token ka naam leta ha *aur* dono themes me
+token alag resolve hota ha" - saath me usi menu ka dark-mode pass aur `currentColor` icon check), QA suite
+**281 -> 283/283** (group 33: panel token-bound aur tokens ulta resolve karte han),
+`apk_content_check.py` **79 -> 83/83** (do positive rows, ek `MUST_NOT` taake near-black panel wapas na
+aa sake, aur dono themes ka `--menu-shadow` rule), `liquid_glass_audit.py` **105 -> 111/111** (menu rows
+**18.86:1** light / **15.63:1** dark; destructive row naapi aur 3:1 affordance floor par gated -
+**3.41:1** light / **6.03:1** dark, app ka mojooda system red), `animation_audit.py` 10 checks / 1 warning
+(barqarar - koi nayi motion nahi), `verify_release.py` **28/29**.
+
+**Negative control:** pichhla bundle - smoke **260/266** (6 checks fail: panel `rgb(11, 11, 13)`, rows
+`rgb(255, 255, 255)`), `apk_content_check.py` **77/83** (4 nayi rows), QA group 33 **30/32**.
+
+**Artifact:** `CardWallet_themed_menu.apk` - **11,669,355 B**, sha256
+`163c7cbbd4ec3e807857988481f48f233dd640856fe72c8ea389d3c2554deb57`, `repo_export/app/index.js` 499,506 B
+(+ `index.css` 38,011 B). Debug-signed (wahi throwaway key), `allowBackup=false`, release signing ki
+koshish **nahi** ki gayi. Install se pehle `adb uninstall com.arena.cardwallet`.
+
+**Handover:** verdict wahi - **NOT READY FOR CLIENT HANDOVER**. Is round ka device work
+`docs/DEVICE_TEST_PLAN.md` section **AD** (5 rows) ha: menu Light me, Dark me, aur System me phone toggle
+karte hue - aur bahar-tap par dismissal. Round 20 ke **AB1**/**AB2** ab bhi handover gates han.
+
+## 27. Round 23 - card viewer ke khaali bands ab touch nahi lete (patch 38), 2026-09-17
+
+**Report, verbatim:** *"On the card detail/preview screen (shown when a card is opened), the areas above
+and below the card itself (the top region near the header, and the bottom region above the WhatsApp/Save
+buttons - both highlighted in red in the screenshot) should not be interactive/clickable/tappable at all.
+Currently these empty areas seem to register touches or scroll actions, which shouldn't happen."* Scope
+bhi wahi diya gaya: *"Only the two bottom buttons (WhatsApp and Save) remain functional/clickable"*, aur
+card *"keeps whatever interaction it currently has (e.g. viewing/zooming)"*.
+
+**Ye bands asal me kya thi:** viewer (`function jd`) ek hi `fixed inset-0 z-50` box ha jis ke teen bachay
+han - poora backdrop, card box, aur button row. Top aur bottom band me sirf backdrop hota ha, is liye wahan
+ka har touch usi par girta tha - aur us ke parent par `onClick:te` laga tha, yani viewer ka apna close
+routine. Natija: **khaali band me kahin bhi tap = card preview band**. Yehi report ka "registers touches"
+wala hissa ha. Dusri taraf overlay apne liye koi `touch-action` declare nahi karta tha, is liye band me
+drag browser ke liye aam pan gesture ban jata tha - "or scroll actions" wala hissa. Round 9 (patch 15) ne
+yehi class ka bug **pouch row** ke liye theek kiya tha (`<main>` par `touch-action:none`, ek
+`pointer-events:none` wrapper, aur drag par `closest('[data-cwc]')` guard) - lekin woh guard `<main>` par
+ha, aur ye overlay `<main>` ka **sibling** ha, is liye yahan tak pohanchta hi nahi. (Round 9 ka apna test
+comment - *"yeh jaga kam na kray - is pr touch swipe kuch b kam na kray"* - bilkul yehi report ha, ek
+screen pehle.)
+
+**Fix** (sirf overlay root par): `className` me `touch-none` (yani `touch-action:none`), root se `onClick:te`
+hata diya, aur backdrop ko `data-cwband:"preview"` + `/*cardwallet:inert-bands*/` marker ke saath inert
+shield bana diya. `touch-action:none` is screen ke liye round-9 wala guard ha: band ka har touch isi ke
+andar shuru hota ha, is liye browser wahan se pan, zoom, rubber-band ya double-tap-zoom nahi kar sakta.
+Click handler hatana wohi cheez ha jo report ne maangi - bands ab kuch dismiss nahi karte. Aur backdrop ko
+hit target **rakhna** (usay `pointer-events:none` banane ke bajaye) hi bands ko "transparent" ke bajaye
+"dead" banata ha: shield touch ko khud kha jata ha, is liye woh overlay ke peeche z-40 par baithe dock ke
+Create/Search/More buttons tak nahi pohanch sakta.
+
+**Jaan-boojh kar nahi chhua:** card box aur uske gesture handlers (`onPointerDown:re` -> long-press details
+/ double-tap flip / pinch zoom / `onWheel`), do bottom buttons (`pointer-events:none` row ke andar
+`pointer-events-auto`), viewer ke colours (`#09090b` card, `rgba(9,9,11,0.94)` backdrop - design se
+theme-independent, Photos ki tarah), aur stylesheet: is round me **koi CSS block nahi** aata, ye bundle me
+pehle se mojood `.touch-none{touch-action:none}` utility use karta ha.
+
+**Band ke ilawa viewer band karne ke tareeqay jo bache hain** (report ne viewer ko na-band karne ko nahi
+kaha tha): card ko neeche swipe karna - card ka apna gesture, `if(n>90){te();return}` - aur patch 26 ka
+Android Back / history contract (`shut=()=>{if(f){p(null);…}`). Tap-outside dismissal issi round me
+retire hota ha.
+
+**Gates:** web smoke **266 -> 286/286** (naya Test 6n, round 9 ke Test 6g ki shakal me: bands ek marked
+shield han, dono bands me tap ab dismiss nahi karta, band me drag kuch nahi badalta, do buttons hi overlay
+ke waahid controls han *aur* un ke taps apne handlers tak pohanchte han - `navigator.vibrate` spy - jabke
+card ab bhi double-tap par flip hota ha aur swipe-down par band hota ha), QA suite **283 -> 300/300**
+(group 37 yehi contract end-to-end dohrata ha, Save button ke "Saved to gallery" feedback ke saath),
+`apk_content_check.py` **83 -> 90/90** (teen positive rows, ek `MUST_NOT` taake band-tap dismissal wapas na
+aa sake, aur carry rows jo card ke handlers, uska swipe-down close aur button row pin karte han),
+`liquid_glass_audit.py` **111 -> 113/113** (fix *sirf* behavioural ha: shield paint-only ha - ek background,
+na blur na shadow - aur round koi stylesheet block ya colour nahi laata), `animation_audit.py` 10 checks /
+1 warning (barqarar), `verify_release.py` **28/29**.
+
+**Negative control:** pichhla bundle - smoke **278/286** (8 checks fail: shield unmarked, overlay par koi
+touch guard nahi, aur dono band taps viewer dismiss kar dete han), QA **293/300** (group 37 **10/17**),
+`apk_content_check.py` **85/90** `CardWallet_themed_menu.apk` ke against (4 rows). 11 "kept working" checks
+- buttons, share/save paths, card gestures, swipe-down close - **dono** bundles par pass hote han, aur
+yehi unhe saboot banata ha ke fix ne unhein chhua nahi.
+
+**Artifact:** `CardWallet_inert_bands.apk` - **11,669,370 B**, sha256
+`5a64084f429fd2de8d66fad82d374987df592f751010e93204420d971acf443e`, `repo_export/app/index.js` 499,556 B
+(+ `index.css` 38,011 B - is round me bilkul wahi). Debug-signed (wahi throwaway key), `allowBackup=false`,
+release signing ki koshish **nahi** ki gayi. Install se pehle `adb uninstall com.arena.cardwallet`.
+
+**Handover:** verdict wahi - **NOT READY FOR CLIENT HANDOVER**. Is round ka device work
+`docs/DEVICE_TEST_PLAN.md` section **AE** (5 rows) ha: dono khaali bands (dono themes me), un me drag /
+scroll ki koshish, do buttons, card ke apne gestures, aur viewer band karne ke do bache hue tareeqay. Round
+20 ke **AB1**/**AB2** ab bhi handover gates han.
+
+## 28. Round 24 - action bar bottom-right, purani header bar ke apne metrics (patch 39, CSS only), 2026-09-17
+
+**Request, verbatim:** *"Move the top-right action bar (currently containing "+" Add button, Search icon,
+and Menu/Settings icon) from the top of the screen to the bottom-right corner instead - same exact
+grouping, icons, and functionality, just relocated."* Saath: content ke upar float kare (bottom nav ke
+upar nahi), safe-area padding rahe, actions wahi rahen, aur har screen par seat fixed rahe.
+
+**Move khud pehle ho chuka tha.** Round 16-17 (patches 31-32, 2026-09-07) ne wohi teen controls usi
+request par bottom-right glass pill me bitha diye the (*"header pr jo b ha - create, search, setting - sab
+ko footer pr set kro"*), aur tab se har build me `apk_content_check.py` ise pin karta aaya ha. Jo cheez
+nahi aayi thi woh ye round laata ha: **purani bar ka apna spacing.**
+
+**Naapa gaya, andaza nahi.** Aakhri build jis me bar ab bhi top-right par thi
+(`CardWallet_liquid_glass.apk`, round 15) aur stock app se: purani bar teen nange `h-9 w-9` (36px)
+buttons thi, `gap-1` (4px) ka faasla, `px-2` (8px) inset, glyphs 19px (create disc) / 21px, `tone:auto`,
+labels Add card / Search cards / More - apna koi container nahi. Round 16 ne wohi controls **verbatim**
+uthaye (is liye size, labels, icons, order aur tone pehle se match the) aur unhe `.cw-dock` pill me wrap
+kiya jo `gap:10px; padding:6px 10px` par bani thi. Farq bas usi inner spacing ka tha.
+
+**Fix:** ek appended rule, sheet me sab se aakhir - `.cw-dock{gap:4px;padding:6px 8px}`. Round 16 ka apna
+block byte-identical ha (assert hota ha), koi colour, blur, shadow, radius ya motion nahi; pill ka frame
+wahi rehta ha jahan purani bar ka aakhri control khatam hota tha (container `px-2` + row `px-2` = screen se
+16px - round 17 ka alignment rule).
+
+**Jaan-boojh kar wahi:** bottom-right seat, `env(safe-area-inset-bottom) + 10px` bar padding, deck ka apna
+`+62px` reserve, teeno handlers, upar khulne wala 248px menu, material/fallbacks - aur bundle khud: is
+round me **koi JavaScript likha hi nahi gaya.**
+
+**Gates:** web smoke **286 -> 308/308** (naya Test 6o: pill par purani bar ke metrics, bottom-right par
+waahid control cluster aur screen ka top khaali, seat **identical** paanch boots par (carousel / stack /
+cover-off / dark / empty wallet), seat search, option menu, dono sheets aur card viewer ke saath bhi wahi,
+aur teeno actions ab bhi chalte han), QA suite **300 -> 323/323** (group 38 = 23 checks, small-phone aur
+landscape viewports sameet), liquid-glass audit **113 -> 117/117** (change paint-neutral ha: wahi tier-1
+blur, wahi pill, aur block me koi colour/blur/shadow/motion nahi), `apk_content_check.py` **90 -> 94/94**,
+`animation_audit.py` 10 checks / 1 warning (barqarar), `verify_release.py` **28/29**.
+
+**Do negative controls** (kyunke ye round placement ka claim ha): (a) pre-patch tree - smoke **306/308**,
+QA group 38 **21/23**, yani bilkul wahi do metric rows katte han; (b) report ki regression dobara banai -
+wahi bar wapas top-right par (`bottom-0` -> `top-0`, menu `mb-1` -> `mt-1`): smoke **296/308** (9 round-24
+rows + round-16/17 ke "bottom-anchored pill" aur "opens upward" rows), QA group 38 **15/23**. Dono controls
+me "kept working" rows green rehte han - isi liye woh saboot han, decoration nahi.
+
+**Artifact:** `CardWallet_bottom_centered.apk` - **11,669,825 B**, sha256
+`9adcbf84c9294bb5d36185b2c8ed9cad6b3735dfc5c3b9e6a96963c5cca42a20`, `repo_export/app/index.js` 499,384 B
+(is round me bilkul wahi) + `index.css` 38,994 B (is round me +983 B, sirf round-24 block). Debug-signed
+(throwaway key dobara ban gayi - pehle `adb uninstall com.arena.cardwallet`), `allowBackup=false`,
+release signing ki koshish **nahi** ki gayi.
+
+**Handover:** verdict wahi - **NOT READY FOR CLIENT HANDOVER**. Is round ka device work
+`docs/DEVICE_TEST_PLAN.md` section **AF** (5 rows) ha. Round 20 ke **AB1**/**AB2** ab bhi handover gates
+han.
+

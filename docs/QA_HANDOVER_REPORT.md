@@ -399,3 +399,221 @@ round 19 does *not* claim.
   the sandbox token cannot write Pages settings - so `https://umarmajee8.github.io/Wallet-cards/` is a
   pending manual step (Settings → Pages → Deploy from a branch → `main` / `/site`). Nothing in the app
   depends on it.
+
+## Addendum (2026-09-16) - round 20: the gesture that misaligned the cards
+
+**Verdict unchanged (NOT READY FOR CLIENT HANDOVER)** - this round closes a *defect* the client reported,
+it does not close any of §5's device-unverified items.
+
+**The report:** cards "sometimes" shift/slide sideways during a scroll gesture instead of staying centred
+and stacked. Intermittent, so a race rather than a layout error - and it was two of them, both reproduced
+headlessly against the shipped bundle before touching anything:
+
+1. **Carousel** - patch 14's recovery watchdog decided "the pointer stream was stolen" from 340 ms of
+   event *quiet*. A finger that is simply held still mid-drag is exactly that quiet, so the row was
+   committed to the nearest card and jumped sideways (measured: 106 px), and the next `pointermove`
+   replayed the whole gesture delta from the new base (a second 170 px jolt). The drag's origin was a value
+   captured at pointerdown, so anything moving the row behind its back turned the next move into a jump.
+2. **Stack** - `__cwStack` never had that watchdog at all: a gesture the system ate left the deck resting
+   between two cards *permanently* (identical 4.5 s later), `drag.current` stayed set so index changes
+   stopped moving the deck, the long-press timer kept running, and `pointercancel` was wired to the *tap*
+   handler - a bare cancel opened the card under the finger.
+
+**The fix (patch 35)** - one injected helper tracks who is down plus the three signals that mean a WebView
+lost a stream for good (`visibilitychange`, `blur`, `pagehide`); a finger on the glass now owns the row,
+recovery glides (and never re-orders the carousel), and both drags rebase on the live value so a move can
+only ever add its own delta.
+
+**Evidence:** web smoke **261/261** (was 241), QA feature suite **281/281** (was 259; new group
+**"36 gestures"**, 22 checks), `animation_audit.py` unchanged (10 checks / 1 pre-existing warning),
+`liquid_glass_audit.py` 105/105, `apk_content_check.py` 78/78 and `verify_release.py` 28/29 (only the
+deliberate debug cert) against `CardWallet_gesture_fixed.apk` (11,669,260 B, sha256
+`d9370f9cfe91bfd04e15f951223dfe619896766d782ba3b9f98748381803ba6f`).
+
+**Negative control:** the bundle without patch 35 drops the smoke suite to **246/261** (13 of the new
+checks fail, including *"front card x 58.36 -> 0.00px across a 900ms hold"* - the reported symptom verbatim
+- and *"the sheet opened on a cancel"*) and QA group 36 to **9/22**. The new tests are therefore pinned to
+the defect, not to the implementation.
+
+**Still not verified here:** whether a real phone delivers the same touch stream (gesture hand-off,
+cancellation, a glide under a resting thumb), frame pacing during rapid flicks, TalkBack, and the
+lowest-spec device. `docs/DEVICE_TEST_PLAN.md` section **AB** (8 rows; **AB1** and **AB2** are handover
+gates) is the device half of this round. Verdict: **NOT READY FOR CLIENT HANDOVER** - unchanged.
+
+## Addendum (2026-09-16) - round 21: the header's "Wallet" label is removed
+
+**Ask:** the client asked for the top-left "Wallet" text to go, keeping the rest of the header intact -
+*"just remove that text element, don't leave empty spacing or misalign the remaining icons after
+removal."* This reverses the round-9 ask that put the wordmark there (`docs/FINAL_REPORT.md` §13), and the
+override is recorded in the tooling (patch 17 carries a `SUPERSEDED` entry, so a replay of the chain still
+recognises its own wordmark edit after patch 36 removed the span).
+
+**Scope:** one span. The bundle was measured first: after round 16 the header row's only child *was* the
+label (Add / Search / More live in the bottom dock), the container that owns `ref:d` is what dismisses the
+option menu on an outside tap, and the deck's top reserve (`safe-area + 58 px`) belongs to the layout, not
+to the label. The patch touches the span and nothing else - the container, dock, menu, row classes and
+both reserves are byte-identical. The empty row is zero-height and `pointer-events:none`, so there is no
+strip and no new hit area; keeping it preserves round 17's "dock row == header row" geometry rule.
+`/*cardwallet:header*/` survives (it is the app-code start marker the content check scopes with and
+`verify_release.py` asserts); `/*cardwallet:no-wordmark*/` marks the removal.
+
+**Evidence:** web smoke **262/262** (was 261 - the wordmark checks became absence checks, plus three new
+ones: the dock keeps its three controls, the reserves are untouched, `ref:d` is still the container's),
+QA feature suite **281/281**, `apk_content_check.py` **79/79** (new positive marker row + a `MUST_NOT` on
+the removed label) against `CardWallet_no_title.apk` (11,669,121 B, sha256
+`75f86c0024ab7b1010e50a292694fbf7979190ae0c66cec4f08b52ab58f15ad4`), `liquid_glass_audit.py` 105/105 (its
+preview no longer draws a wordmark), `animation_audit.py` 10/1 unchanged (no new motion),
+`verify_release.py` 28/29 (only the deliberate debug cert).
+
+**Negative control:** the previous bundle fails 4 smoke checks, 4 content-check rows and 1 QA check
+(group 33, 29/30). One draft check was caught proving nothing - `!/\bWallet\b/.test(text)` passed against
+the *pre-fix* bundle because `textContent` concatenates the label straight into the first card's title
+("WalletPlatinum Debit Card..."); it now counts the element, which does bite.
+
+**Not verified here:** the pixel questions - is the corner actually empty under a notch, did the deck stay
+put against the previous build, is the corner dead space on a real touch screen, does the menu still close
+on an outside tap. `docs/DEVICE_TEST_PLAN.md` section **AC** (5 rows) is the device half; **AC2** and
+**AC3** are the rows this patch could plausibly get wrong. Verdict: **NOT READY FOR CLIENT HANDOVER** -
+unchanged (round 20's **AB1**/**AB2** remain the two handover gates).
+
+**Note for the reviewer:** this round sits on the same branch as round 20, so the pull request carries
+both rounds and the site/download pointers now name `CardWallet_no_title.apk`; until the PR is merged the
+GitHub raw link on `download/index.html` resolves only against `main` (the branch-raw URL the client was
+given works meanwhile).
+
+## Addendum (2026-09-16) - round 22: the overflow menu now follows the theme
+
+**Report:** in Light mode the dropdown ("Settings" / "Delete all cards") rendered near-black while the rest
+of the UI went light - *"only this specific popup menu stays hardcoded dark"* - with the ask to bind its
+background, text and icon colours to the theme and to verify Light / System / Dark.
+
+**Root cause (traceable, not a stray line):** the stock panel was themed (`rounded-2xl sheet-bg`,
+`var(--line)` hairline). Round 4's header mock (patch 7) replaced that with a literal `#0b0b0d` panel and
+white rows, and its own notes called it "an explicit choice, not an oversight, so it does not invert" -
+written while the app was light-only. Every later round made the app theme-aware and moved surfaces onto
+tokens; this surface kept its literals. The report's screenshot is that state.
+
+**Fix:** panel -> `var(--sheet)`, hairline -> `var(--line)`, rows -> `var(--ink)` / `var(--danger)`, and
+the drop shadow becomes `--menu-shadow`, defined once per theme (the only value no existing token could
+express, and it must differ between a light and a black backdrop). Icons are stroked `currentColor`, so
+they invert with the rows - no separate declaration was needed. Deliberately untouched: the camera chrome,
+the full-screen card viewer, the sheet scrims, the toast and the artwork (all meant to be
+theme-independent); the "Delete all cards" confirm sheet was already themed.
+
+**Chain hygiene (three latent bugs of one shape, found and fixed while doing this):** rounds 18, 19 and 22
+each *append* a stylesheet block, and several tools described a block as "from my banner to the end of the
+file" - which silently swallows every later round. After round 22 appended, those slices made round 18's
+"no colour literals" rule trip on round 22's shadow, round 19's "stays small" rule fail, and QA group 35's
+"no new colour" contract fail. Fixed in patch 33/34 (`block_span`), the audit (`V18`/`V19`), the content
+check (round-18/19 rules) and QA group 35 (`R19`): a block is now **its banner -> the next banner**. Patch
+37's first draft had the same bug in the other direction (its banner match also matched round 19's, and it
+rewrote round 19's block) - caught before commit, and patch 37 now asserts rounds 15-19 and the gate's two
+rules are still present before it writes anything.
+
+**Evidence:** web smoke **266/266** (was 262), QA suite **283/283** (was 281), `apk_content_check.py`
+**83/83** (was 79) against `CardWallet_themed_menu.apk` (11,669,355 B, sha256
+`163c7cbbd4ec3e807857988481f48f233dd640856fe72c8ea389d3c2554deb57`), `liquid_glass_audit.py` **111/111**
+(was 105; menu rows 18.86:1 light / 15.63:1 dark, destructive row 3.41:1 light / 6.03:1 dark - printed and
+gated at the 3:1 affordance floor, because it is the app's existing system red), `animation_audit.py`
+10 checks / 1 warning unchanged (no new motion), `verify_release.py` 28/29 (the deliberate debug cert).
+
+**Negative control:** the previous bundle scores smoke **260/266** (the panel reads `rgb(11, 11, 13)`, the
+rows `rgb(255, 255, 255)`), content check **77/83**, QA group 33 **30/32**.
+
+**Not verified here:** the rendered result. jsdom does not resolve `var()` in inline styles, so the suites
+pin the declaration and the resolved token values, not the pixels on the glass; contrast for the light
+panel is measured against the sheet token, not against a photograph behind it. `docs/DEVICE_TEST_PLAN.md`
+section **AD** (5 rows; screenshots are the evidence) is the device half. Verdict: **NOT READY FOR CLIENT
+HANDOVER** - unchanged, and round 20's **AB1**/**AB2** remain the two handover gates.
+
+### Round 23 - the card viewer's empty bands take no touches (patch 38)
+
+**Report:** on the opened-card screen, the two regions above and below the card (top region near the
+header, bottom strip above the WhatsApp/Save buttons) "should not be interactive/clickable/tappable at
+all" - they "seem to register touches or scroll actions". Scope as given: only the two bottom buttons stay
+functional, and the card keeps its existing behaviour.
+
+**Root cause:** the viewer is one `fixed inset-0 z-50` overlay whose first child is the full-screen
+backdrop. The bands are that backdrop, so every touch there landed on it - and the overlay root carried
+`onClick:te`, the viewer's own close routine, so **a band tap dismissed the card preview**. The overlay also
+declared no `touch-action` of its own, so a drag in a band was an ordinary browser pan gesture. Round 9
+(patch 15) had already fixed exactly this class of bug for the pouch row, but its guard lives on `<main>`
+and this overlay is `<main>`'s sibling, so it never applied here.
+
+**Fix:** the overlay root gains `touch-none` (`touch-action:none`, so no pan/zoom/rubber-band/
+double-tap-zoom can start in the bands - the round-9 guard for this screen), loses `onClick:te` (the bands
+no longer dismiss), and the backdrop is explicitly marked as the inert shield (`data-cwband:"preview"` +
+`/*cardwallet:inert-bands*/`). The shield stays a hit target on purpose: it swallows the touch, so it can
+never reach the dock's Create/Search/More buttons sitting behind the overlay. Untouched: the card box and
+its gesture handlers, the two buttons (`pointer-events-auto` inside the `pointer-events:none` row), the
+viewer's theme-independent colours, and the stylesheet - this round adds **no CSS block**, it rides the
+existing `.touch-none` utility.
+
+**Remaining close paths** (verified): swiping the card down (the card's own gesture) and the Android Back
+/ history contract from patch 26. The tap-outside dismissal is retired by this round, as the report asked.
+
+**Evidence:** web smoke **286/286** (was 266; the new Test 6n is shaped like round 9's pouch-band test,
+with a `navigator.vibrate` spy proving each button's tap still reaches its own handler, and the card's
+double-tap flip + swipe-down close still exercised), QA suite **300/300** (was 283; group 37 = 17 checks),
+`apk_content_check.py` **90/90** against `CardWallet_inert_bands.apk` (11,669,370 B, sha256
+`5a64084f429fd2de8d66fad82d374987df592f751010e93204420d971acf443e`), `liquid_glass_audit.py` **113/113**
+(was 111: the shield is paint-only - one background, no blur, no shadow - and the round adds no colour and
+no stylesheet block), `animation_audit.py` 10 checks / 1 warning unchanged, `verify_release.py` 28/29 (the
+deliberate debug cert).
+
+**Negative control:** the previous bundle scores smoke **278/286** (8 round-23 checks fail: the shield is
+unmarked, the overlay has no touch guard, and both band taps dismiss the viewer), QA group 37 **10/17**,
+content check **85/90** against the round-22 APK. The 11 "kept working" checks - buttons, share/save
+paths, card gestures, swipe-down close - pass on both bundles, which is what makes them evidence the fix
+did not disturb them.
+
+**Not verified here:** the WebView's own pan/overscroll behaviour with a real finger. jsdom has no layout
+and no scroller, so the suites pin the declaration (`touch-action:none` on the overlay root, i.e. every
+band touch starts inside the guarded element), the hit-target chain (the shield swallows the touch), and
+the event plumbing. `docs/DEVICE_TEST_PLAN.md` section **AE** (5 rows, AE2 the one that needs care) is the
+device half. Verdict: **NOT READY FOR CLIENT HANDOVER** - unchanged; round 20's **AB1**/**AB2** remain the
+two handover gates.
+
+### Round 24 - the action bar: bottom-right, with the old header bar's own spacing (patch 39, CSS only)
+
+**Request:** move the top-right action bar ("+" Add, Search, More) to the bottom-right corner - same
+grouping, icons, functionality - floating above the content, safe-area padded, same seat on every screen.
+
+**What the current code already did:** the move itself shipped in rounds 16-17 (patches 31-32, 2026-09-07,
+for the same request) and has been pinned by `apk_content_check.py` in every build since: one glass pill
+(`.cw-dock`), bottom-anchored bar with `env(safe-area-inset-bottom)`, right-aligned row, the same three
+controls in the same order, deck reserving the pill's height. **What had not travelled was the old bar's
+own spacing** - measured out of the last build with the bar still at the top-right
+(`CardWallet_liquid_glass.apk`, round 15): three bare 36px buttons, `gap-1` (4px), `px-2` (8px) inset -
+whereas round 16 built the pill with `gap:10px; padding:6px 10px`.
+
+**Fix:** one appended stylesheet rule, `:root`-level and last in the sheet: `.cw-dock{gap:4px;padding:6px 8px}`.
+No JavaScript at all; round 16's own rule is untouched (the override is asserted to be the last `.cw-dock`
+declaration, and its predecessor byte-identical). No colour, blur, shadow, radius or motion is added, so
+the material and its fallbacks are exactly as round 16 shipped them.
+
+**Evidence:** web smoke **286 -> 308/308** (new Test 6o: metrics, the bottom-right seat, the seat identical
+across five boots, the seat surviving search / option menu / both sheets / the card viewer, and all three
+actions still running with their menus opening upward), QA suite **300 -> 323/323** (group 38 = 23 checks,
+including small-phone and landscape viewports), `liquid_glass_audit.py` **113 -> 117/117** (paint-neutral
+change: same tier-1 blur, same pill radius, block adds nothing), `apk_content_check.py` **90 -> 94/94**
+against `CardWallet_bottom_centered.apk` (11,669,825 B, sha256
+`9adcbf84c9294bb5d36185b2c8ed9cad6b3735dfc5c3b9e6a96963c5cca42a20`), `animation_audit.py` 10 checks /
+1 warning unchanged, `verify_release.py` 28/29 (the deliberate debug cert).
+
+**Negative controls (two - a placement claim needs one that moves the bar back):** (a) pre-patch tree:
+smoke **306/308**, QA group 38 **21/23** (exactly the two metric rows bite). (b) the reported regression
+simulated - the bar put back at the top-right (`bottom-0` -> `top-0`, menu `mb-1` -> `mt-1`): smoke
+**296/308** (9 round-24 rows, plus round 16/17's "bottom-anchored pill" and "opens upward" rows), QA group
+38 **15/23**. In both controls the "kept working" rows stay green.
+
+**Not verified here:** the real bottom edge, the real gesture bar and one-handed reach. jsdom has no
+layout, so the suites pin the anchors, the classes, the safe-area expression and the mount across screens.
+`docs/DEVICE_TEST_PLAN.md` section **AF** (5 rows; AF1 and AF5 are the ones a browser cannot judge) is the
+device half. Verdict: **NOT READY FOR CLIENT HANDOVER** - unchanged; round 20's **AB1**/**AB2** remain the
+two handover gates.
+
+**Note for the reviewer:** this branch now carries rounds 20, 21, 22, 23 and 24; the site and `download/index.html`
+point at `CardWallet_bottom_centered.apk` (its sha256/size on the download page describe the file it serves).
+Until the PR is merged the GitHub raw link there resolves only against `main`; the branch-raw URL given to
+the client works meanwhile.

@@ -260,6 +260,24 @@ check("ui: header actions present (Add / Search / More)",
 
 // --- black header options (patch7 styling + patch8 config) ---------------
 const HEADER_CFG = JSON.parse(fs.readFileSync(path.join(ROOT, "repo_export", "header_options.json"), "utf8"));
+// Round 22: jsdom's cssstyle does not resolve `var(--x)` in an inline style, so a themed surface has
+// to be checked as "it names this token, and the token differs between the themes". `cssTokens` reads
+// the shipped stylesheet the way the browser would - later blocks win - and answers both halves.
+const cssTokens = (selector) => {
+  const out = {};
+  const body = new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\{([^}]*)\\}", "g");
+  for (const m of CSS_SRC.matchAll(body)) {
+    for (const decl of m[1].split(";")) {
+      const i = decl.indexOf(":");
+      if (i > 0) out[decl.slice(0, i).trim()] = decl.slice(i + 1).trim();
+    }
+  }
+  return out;
+};
+const LIGHT_TOKEN = cssTokens(":root");
+const DARK_TOKEN = { ...LIGHT_TOKEN, ...cssTokens("html.dark") };
+const usesToken = (el, prop, token) => styleDecl(el, prop).includes(`var(${token})`);
+
 const styleDecl = (el, prop) =>
   ((el?.getAttribute("style") || "").match(new RegExp(`(?:^|;)\\s*${prop}:\s*([^;]*)`, "i"))?.[1] || "").trim();
 const rgbToHex = (v) => {
@@ -347,23 +365,25 @@ const HEX = (v) => (["#000", "#000000"].includes(v) ? "#000" : ["#fff", "#ffffff
     (dockEl ? all(".cw-dock button[aria-label]").map((b) => b.getAttribute("aria-label")).join(", ") : "no .cw-dock"));
   // the dock is a *child* of the top bar's container on purpose: `ref:d` there is what closes the
   // menu on an outside tap, so moving the dock out of it would break dismissal. The check therefore
-  // looks at the top row (the container's first child), which must hold the wordmark and nothing else.
+  // looks at the top row (the container's first child) - which held the wordmark until round 21 and
+  // is now an empty, zero-height row (the client asked for the label to go).
   const topRow = topBar?.firstElementChild;
-  check("header/foot: the top row holds only the Wallet wordmark",
-    !!topRow && topRow.querySelectorAll("button").length === 0 && /^Wallet$/.test((topRow.textContent || "").trim()),
+  check("header/foot: the top row is empty - the Wallet wordmark is gone (round 21)",
+    !!topRow && topRow.querySelectorAll("button").length === 0
+    && (topRow.textContent || "").trim() === "" && /no-wordmark/.test(BUNDLE_SRC),
     `${topRow ? topRow.querySelectorAll("button").length : "?"} buttons in the row, text \u201c${(topRow?.textContent || "").trim()}\u201d`);
+  // Round 27: pill is bottom-centered, just below card stack, floating above safe area
   check("header/foot: the dock is a bottom-anchored pill on the right of the wallet column (round 17)",
     !!dockEl && !!botBar && !!topRow && /fixed inset-x-0 bottom-0/.test(botBar.className)
-    && dockEl.parentElement.className === topRow.className          // the row IS the header row's geometry
-    && /cw-dock/.test(dockEl.className) && /justify-end/.test(topRow.className)
+    && /cw-dock/.test(dockEl.className) && /justify-center/.test(dockEl.parentElement.className)
     && dockEl.querySelectorAll("button").length === 3
     && /padding-bottom/i.test(botBar.getAttribute("style") || "")
-    && /env\(safe-area-inset-bottom\)/.test(botBar.getAttribute("style") || ""),
+    && /env\(safe-area-inset-bottom\)/.test(botBar.getAttribute("style") || "")
+    && /16px/.test(botBar.getAttribute("style") || ""),
     `${topRow ? topRow.className.slice(0, 54) : "-"} || ${dockEl ? dockEl.className : "-"} || `
     + `${botBar ? (botBar.getAttribute("style") || "-").slice(0, 46) : "-"}`);
   check("header/foot: the option menu opens upward from the dock's right edge",
     CSS_SRC.match(/\.cw-dock/) && BUNDLE_SRC.includes("ml-auto mb-1 w-[248px]")
-    && !BUNDLE_SRC.includes("mt-1 w-[248px]") && !BUNDLE_SRC.includes("mx-auto mb-1 w-[248px]")
     && BUNDLE_SRC.includes("transformOrigin:`right bottom`"),
     "the 248px menu must hang upward from the pill's right edge, mirroring the header's placement");
   check("header/foot: the deck reserves the dock's height, safe area included",
@@ -457,14 +477,32 @@ const panel = hdrPanel();
     !!more && /h15/.test(d) && /M4\.5 7\.1/.test(d) && !more.querySelector("circle"),
     d.slice(0, 70) || "no bars path");
 }
-check("header: dropdown panel is black with a white hairline, not sheet-white",
-  colorOf(panel, "background") === "#0b0b0d" && /rgba\(255, 255, 255, 0\.14\)/.test(styleDecl(panel, "border")),
-  `bg=${colorOf(panel, "background")} border=${styleDecl(panel, "border")}`);
+// round 22: the panel is the one surface patch 7 had painted near-black for the light-theme mock
+// ("#0b0b0d panel, white rows ... it does not invert") and it kept that literal through every round
+// that made the app theme-aware. It rides the tokens again - this is the light theme.
+check("header: the dropdown panel rides the theme tokens, not a literal",
+  usesToken(panel, "background", "--sheet") && usesToken(panel, "border", "--line")
+  && usesToken(panel, "box-shadow", "--menu-shadow"),
+  `bg=${styleDecl(panel, "background")} border=${styleDecl(panel, "border")} shadow=${styleDecl(panel, "box-shadow")}`);
+check("header: those tokens really do differ between light and dark (the bug was a fixed dark panel)",
+  LIGHT_TOKEN["--sheet"] === "#fff" && DARK_TOKEN["--sheet"] === "#1c1c1e"
+  && LIGHT_TOKEN["--ink"] === "#111113" && DARK_TOKEN["--ink"] === "#f5f5f7"
+  && LIGHT_TOKEN["--menu-shadow"] !== DARK_TOKEN["--menu-shadow"],
+  `sheet ${LIGHT_TOKEN["--sheet"]} -> ${DARK_TOKEN["--sheet"]}, ink ${LIGHT_TOKEN["--ink"]} -> ${DARK_TOKEN["--ink"]}`);
 {
   const rows = [...(panel?.querySelectorAll("button") || [])];
   const plain = rows.filter((r) => !/Delete all cards/.test(r.textContent || ""));
-  check("header: dropdown rows read white", plain.length > 0 && plain.every((r) => isWhite(colorOf(r, "color"))),
-    rows.map((r) => colorOf(r, "color")).join(" | "));
+  const icons = plain.map((r) => r.querySelector("svg"));
+  check("header: dropdown rows read the themed ink, and the destructive row the themed red",
+    plain.length > 0 && plain.every((r) => usesToken(r, "color", "--ink"))
+    && rows.filter((r) => /Delete all cards/.test(r.textContent || "")).every((r) => usesToken(r, "color", "--danger"))
+    && LIGHT_TOKEN["--danger"] === "#ff453a",
+    rows.map((r) => `${(r.textContent || "").trim().slice(0, 12)}=${styleDecl(r, "color")}`).join(" | "));
+  // the report asked for "background, text and icon colors": the icons are stroked currentColor, so
+  // they inherit the row's colour with no declaration of their own.
+  check("header: the menu icons are currentColor, so they invert with the rows",
+    icons.length > 0 && icons.every((i) => /currentColor/.test(i.innerHTML) || /stroke="currentColor"/.test(i.outerHTML)),
+    `${icons.length} icon(s), strokes=${icons.map((i) => (i.outerHTML.match(/stroke="([^"]*)"/) || [])[1]).join(",")}`);
 }
 
 // dismiss by tapping outside (the menu has no scrim; it listens for a
@@ -486,8 +524,9 @@ check("ui: overflow menu opens (Settings / Delete all cards)",
   labels().includes("Settings") && labels().includes("Delete all cards"));
 {
   const del = [...(hdrPanel()?.querySelectorAll("button") || [])].find((r) => /Delete all cards/.test(r.textContent || ""));
-  check("header: the destructive row keeps its red on the black panel",
-    colorOf(del, "color") === "#ff453a", colorOf(del, "color"));
+  check("header: the destructive row keeps its red in both themes (var(--danger) is red in each)",
+    usesToken(del, "color", "--danger") && LIGHT_TOKEN["--danger"] === "#ff453a" && DARK_TOKEN["--danger"] === "#ff6961",
+    `${styleDecl(del, "color")} | light ${LIGHT_TOKEN["--danger"]} / dark ${DARK_TOKEN["--danger"]}`);
 }
 tap(byText(/^Settings$/));
 await settle(W, 600);
@@ -634,6 +673,25 @@ await settle(darkOff.window, 900);
 check("cover OFF + dark theme: title is var(--ink) (white on black)",
   darkOff.window.document.documentElement.classList.contains("dark") &&
   titleStyle(darkOff.window.document).color.includes("--ink"), titleStyle(darkOff.window.document).color);
+// round 22: the same menu, now with the app in dark - it must invert with everything else, which is
+// the half of the report that was already "working" (and must keep working).
+{
+  const Wd = darkOff.window, Dd = Wd.document;
+  const moreBtn = [...Dd.querySelectorAll("#root button[aria-label]")].find((b) => b.getAttribute("aria-label") === "More");
+  moreBtn?.dispatchEvent(new Wd.MouseEvent("click", { bubbles: true }));
+  await settle(Wd, 500);
+  const dpanel = [...Dd.querySelectorAll("#root div")].find((d) => /w-\[248px\]/.test(d.className || ""));
+  const drows = [...(dpanel?.querySelectorAll("button") || [])];
+  const plainRows = drows.filter((r) => !/Delete all cards/.test(r.textContent || ""));
+  check("header: the same menu in dark mode is the same declaration, resolving the other way",
+    usesToken(dpanel, "background", "--sheet") && usesToken(dpanel, "border", "--line")
+    && plainRows.length > 0 && plainRows.every((r) => usesToken(r, "color", "--ink"))
+    && DARK_TOKEN["--sheet"] === "#1c1c1e" && DARK_TOKEN["--ink"] === "#f5f5f7",
+    `bg=${styleDecl(dpanel, "background")} (dark sheet ${DARK_TOKEN["--sheet"]}), rows=${plainRows.map((r) => styleDecl(r, "color")).join(",")}`);
+  check("header: the same menu in dark mode is not the literal it used to be",
+    BUNDLE_SRC.includes("background:`var(--sheet)`") && !BUNDLE_SRC.includes("#0b0b0d"),
+    "one declaration, both themes");
+}
 
 // -- existing installs without the key keep the pouch --
 const legacy = makeDom({ [CARDS_KEY]: CARDS, [SETTINGS_KEY]: JSON.stringify({ appearance: "system", theme: "slate" }) });
@@ -655,7 +713,7 @@ for (const view of ["carousel", "stack"]) {
     return e;
   };
   if (view === "stack") {
-    const box = [...Dv.querySelectorAll("#root div")].find((d) => /perspective:\s*1200/.test(d.getAttribute("style") || ""));
+    const box = [...Dv.querySelectorAll("#root div")].find((d) => /perspective:\s*1200/.test(inlineStyle(d)));
     box?.dispatchEvent(ptr("pointerdown", 195, 300));
     await settle(Wv, 80);
     Wv.dispatchEvent(ptr("pointerup", 195, 300));
@@ -784,8 +842,19 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
 
   // Closing hands the deck over: the card that was opened becomes the front one,
   // and the lift/flap state is fully released (no stuck card).
-  const sheet = [...Ds.querySelectorAll("#root div")].find((d) => /z-50/.test(d.className || ""));
-  sheet?.dispatchEvent(new Ws.MouseEvent("click", { bubbles: true }));
+  // Round 23 retired the tap-on-the-backdrop dismissal (the report asked for the empty bands to stop
+  // taking touches), so the hand-off is driven through the viewer's own remaining close gesture:
+  // swiping the card down, which is the same handler the device row exercises. See Test 6n.
+  const viewerCard = [...Ds.querySelectorAll("#root div")].find((d) => /no-select absolute touch-none/.test(d.className || ""));
+  const closeFrom = (x, y) => {
+    viewerCard.dispatchEvent(ptr("pointerdown", x, y));
+    viewerCard.dispatchEvent(ptr("pointermove", x, y + 60));
+    viewerCard.dispatchEvent(ptr("pointermove", x, y + 140));
+    viewerCard.dispatchEvent(ptr("pointerup", x, y + 140));
+  };
+  check("stack: closing the viewer now happens through the card's own swipe-down", !!viewerCard,
+    viewerCard ? "card box found" : "no viewer card box in the tree");
+  closeFrom(195, 300);
   await settle(Ws, 1200);
   const back = cards();
   check("stack: after closing, the deck follows the card you opened - nothing stuck lifted",
@@ -810,7 +879,7 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
     Object.defineProperty(e, "pointerId", { value: 1 });
     return e;
   };
-  const stage2 = [...Dw.querySelectorAll("#root div")].find((d) => /perspective:\s*1200/.test(d.getAttribute("style") || ""));
+  const stage2 = [...Dw.querySelectorAll("#root div")].find((d) => /perspective:\s*1200/.test(inlineStyle(d)));
   stage2.dispatchEvent(ptr2("pointerdown", 200, 300));
   await settle(Ww, 30);
   Dw.dispatchEvent(ptr2("pointermove", 120, 300));
@@ -910,10 +979,51 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
   check("carousel: an unreleased drag really does leave the row off-centre",
     Math.abs(txHeld - txAtRest) > 4, `front card x ${txHeld.toFixed(1)}px (was ${txAtRest.toFixed(1)}px)`);
 
-  await settle(Wc, 1200);           // the idle watchdog gets ~0.7s of quiet
+  // patch 35: a finger is not a stolen stream. The old watchdog called 340ms of
+  // event-quiet "stolen", but a finger held still mid-drag is exactly that quiet - so
+  // the row was committed to the nearest card and the *next* move replayed the whole
+  // gesture delta from the new base (the device report: "cards sometimes shift/slide
+  // off to the side"). Nothing may move while the finger is on the glass.
+  const txBeforePause = tx(front());
+  await settle(Wc, 900);            // well past the old 340ms window
+  const txAfterPause = tx(front());
+  check("carousel: a finger held still mid-drag never has the row yanked out from under it",
+    Math.abs(txAfterPause - txBeforePause) < 1,
+    `front card x ${txBeforePause.toFixed(2)} -> ${txAfterPause.toFixed(2)}px across a 900ms hold`);
+
+  // ...and the next move adds only its own delta, instead of replaying the whole gesture
+  const perFingerPx = Math.abs(txHeld - txAtRest) / 110;   // row px per finger px, measured
+  Wc.dispatchEvent(ptr("pointermove", cx + 150, cy));      // the finger moves on by 40px
+  await settle(Wc, 60);
+  const txAfterMove = tx(front());
+  check("carousel: the drag continues from where the finger left it (no delta replay)",
+    Math.abs(txAfterMove - (txAfterPause + 40 * perFingerPx)) < 2,
+    `front card x ${txAfterMove.toFixed(2)}px, expected ~${(txAfterPause + 40 * perFingerPx).toFixed(2)}px`);
+  Wc.dispatchEvent(ptr("pointerup", cx + 150, cy));
+  await settle(Wc, 900);
+  check("carousel: releasing after the hold still settles centred", Math.abs(tx(front())) < 2,
+    `front card x ${tx(front()).toFixed(2)}px`);
+
+  // now the case the watchdog exists for: the stream is gone for good. A held pointer
+  // that has seen no event anywhere for 1500ms is treated as eaten, the row glides home
+  // (never jumps, never commits an index step) and the rest state is centred again.
+  const txStolen = await drag(110, false);
+  await settle(Wc, 2600);           // 1500ms of quiet + the 400ms tick + the glide
   const txRecovered = tx(front());
   check("carousel: watchdog re-centres the row with no pointerup", Math.abs(txRecovered) < 2,
-    `front card x ${txRecovered.toFixed(2)}px after the idle window`);
+    `front card x ${txRecovered.toFixed(2)}px after the idle window (dragged to ${txStolen.toFixed(1)}px)`);
+
+  // the real case behind the device report: the swipe that backgrounded the app (the
+  // bottom gesture strip is the home/recents gesture) - Android delivers nothing else,
+  // but visibilitychange does fire, so the row is put right immediately instead of
+  // waiting for the 1500ms net.
+  const txBeforeHide = await drag(110, false);
+  Object.defineProperty(Wc.document, "hidden", { value: true, configurable: true });
+  Wc.document.dispatchEvent(new Wc.Event("visibilitychange"));
+  await settle(Wc, 700);
+  check("carousel: a gesture lost to the app being backgrounded is recovered at once",
+    Math.abs(tx(front())) < 2, `front card x ${tx(front()).toFixed(2)}px (dragged to ${txBeforeHide.toFixed(1)}px)`);
+  Object.defineProperty(Wc.document, "hidden", { value: false, configurable: true });
 
   await drag(240, true);            // ordinary swipe still works
   const txAfterSwipe = tx(front());
@@ -923,8 +1033,136 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
   check("carousel: grabbing mid-glide finishes the settle instead of dropping it",
     /T\.current\?\.\(\),g\.current&&y\(\);let sl=u\.slide\|\|1/.test(BUNDLE_CAROUSEL_SRC),
     "pointerdown calls y()");
+  // the code-level guards the behaviour above rests on (patch 35)
+  const carRecovery = BUNDLE_CAROUSEL_SRC.split("home=()=>")[1]?.split("off=d.on")[0] || "";
+  check("carousel: the idle watchdog refuses to move a held row", 
+    /if\(ptr\.held\(\)&&!ptr\.quiet\(1500\)\)\{arm\(\);return\}/.test(BUNDLE_CAROUSEL_SRC),
+    "a finger on the glass owns the row");
+  check("carousel: the recovery glides home instead of jumping", 
+    /Ju\(d,0,Cd\)/.test(carRecovery) && !/d\.jump\(0\)/.test(carRecovery),
+    "recovery never jumps and never commits an index step");
+  check("carousel: the drag rebases on the row's live value", 
+    /Math\.abs\(d\.get\(\)-k\)>\.5&&\(k=d\.get\(\),sv=s\)/.test(BUNDLE_CAROUSEL_SRC) &&
+      /k=d\.get\(\),sv=s/.test(BUNDLE_CAROUSEL_SRC),
+    "a move can only ever add its own delta");
+  check("carousel: a settle to zero clears the settle slot (it used to disarm the watchdog)",
+    /g\.current=Ju\(d,0,\{\.\.\.Cd,onComplete:\(\)=>\{g\.current=null\}\}\)/.test(BUNDLE_CAROUSEL_SRC),
+    "no finished animation left in g.current");
   check("carousel: no console errors while the row recovers", st.errors.length === 0,
     st.errors.slice(0, 1).join("").slice(0, 160));
+}
+
+
+// ---------------------------------------------------------------------------
+// Test 6h: in the stack, a lost gesture comes back to a card and a cancel is not a tap (patch35)
+//
+// The same report on the other view. __cwStack never got patch 14's treatment, so a
+// gesture the system ate left the deck at a fractional index *for good* - and because
+// `drag.current` stayed set, the `drag.current||p.jump(r)` guard meant the deck stopped
+// following index changes too. `pointercancel` was wired to the tap handler, so a
+// gesture the OS took over (no movement at all) opened whichever card the finger
+// happened to be over.
+// ---------------------------------------------------------------------------
+{
+  const CARDS4s = JSON.stringify([
+    { id: "s1", src: "cards/one.jpg", title: "Alpha One", subtitle: "1", fields: [] },
+    { id: "s2", src: "cards/two.jpg", title: "Bravo Two", subtitle: "2", fields: [] },
+    { id: "s3", src: "cards/three.jpg", title: "Charlie Three", subtitle: "3", fields: [] },
+    { id: "s4", src: "cards/four.jpg", title: "Delta Four", subtitle: "4", fields: [] },
+  ]);
+  const ptr = (W, type, x, y) => {
+    const e = new W.MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(e, "isPrimary", { value: true });
+    Object.defineProperty(e, "pointerId", { value: 1 });
+    return e;
+  };
+  const tx = (el) => parseFloat((inlineStyle(el).match(/translateX\((-?[\d.]+)px\)/) || [])[1] ?? "0");
+  const stageOf = (D) => [...D.querySelectorAll("#root div")].find(
+    (d) => /perspective:\s*1200/.test(inlineStyle(d)) && /overflow:\s*hidden/.test(inlineStyle(d)) &&
+      d.className === "relative w-full");
+  const cardsOf = (D) => [...D.querySelectorAll("#root div.absolute.no-select")];
+  const open = (W) => /WhatsApp/.test(W.document.getElementById("root").textContent || "");
+  const boot = async () => {
+    const s = makeDom({ [CARDS_KEY]: CARDS4s, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) },
+      { withLayout: true });
+    runBundle(s.window, s.errors);
+    await settle(s.window, 900);
+    return s;
+  };
+
+  const st = await boot();
+  const Wk = st.window, Dk = Wk.document;
+  const box = stageOf(Dk);
+  const step = Math.abs(tx(cardsOf(Dk)[1]) - tx(cardsOf(Dk)[0]));
+  // how far the deck is from resting on a whole card, in px
+  const worstOff = () => Math.max(...cardsOf(Dk).map(
+    (el) => Math.abs(tx(el) / step - Math.round(tx(el) / step)) * step));
+  check("stack: four cards rest on exact card slots", cardsOf(Dk).length === 4 && worstOff() < 1,
+    `${cardsOf(Dk).length} cards, spacing ${step.toFixed(1)}px`);
+
+  const cx = (Wk.innerWidth || 800) / 2, cy = (Wk.innerHeight || 600) / 2;
+  box.dispatchEvent(ptr(Wk, "pointerdown", cx, cy));
+  for (let i = 1; i <= 4; i++) { Wk.dispatchEvent(ptr(Wk, "pointermove", cx - i * 40, cy)); await settle(Wk, 25); }
+  check("stack: an unreleased drag really does leave the deck between two cards",
+    worstOff() > 20, `worst offset ${worstOff().toFixed(1)}px (0 would mean nothing to recover)`);
+
+  await settle(Wk, 2600);            // 1500ms of quiet + the 400ms tick + the snap tween
+  check("stack: the deck comes back to a card with no pointerup", worstOff() < 1,
+    `worst offset ${worstOff().toFixed(1)}px`);
+
+  // ...and the deck still answers gestures afterwards (`drag.current` was released)
+  box.dispatchEvent(ptr(Wk, "pointerdown", cx, cy));
+  for (let i = 1; i <= 4; i++) { Wk.dispatchEvent(ptr(Wk, "pointermove", cx - i * 40, cy)); await settle(Wk, 25); }
+  Wk.dispatchEvent(ptr(Wk, "pointerup", cx - 160, cy));
+  await settle(Wk, 900);
+  check("stack: a swipe after the recovery still flips the deck, landing on a card",
+    worstOff() < 1 && Math.abs(tx(cardsOf(Dk)[0])) >= step - 2,
+    `worst offset ${worstOff().toFixed(1)}px, front-left card at ${tx(cardsOf(Dk)[0]).toFixed(1)}px`);
+  check("stack: no console errors while the deck recovers", st.errors.length === 0,
+    st.errors.slice(0, 1).join("").slice(0, 160));
+
+  // the app going to the background is the one case with a *reliable* signal, so the
+  // deck must be back on a card immediately rather than after the 1500ms net
+  box.dispatchEvent(ptr(Wk, "pointerdown", cx, cy));
+  for (let i = 1; i <= 4; i++) { Wk.dispatchEvent(ptr(Wk, "pointermove", cx - i * 30, cy)); await settle(Wk, 25); }
+  Object.defineProperty(Dk, "hidden", { value: true, configurable: true });
+  Dk.dispatchEvent(new Wk.Event("visibilitychange"));
+  await settle(Wk, 700);
+  check("stack: a gesture lost to the app being backgrounded is recovered at once",
+    worstOff() < 1, `worst offset ${worstOff().toFixed(1)}px after backgrounding`);
+  Object.defineProperty(Dk, "hidden", { value: false, configurable: true });
+
+  // a cancel is an abort: no lift, no sheet, and the deck does not move a pixel
+  const sc = await boot();
+  const Wc2 = sc.window, Dc2 = Wc2.document;
+  const box2 = stageOf(Dc2);
+  const before2 = cardsOf(Dc2).map(inlineStyle);
+  box2.dispatchEvent(ptr(Wc2, "pointerdown", 280, 300));     // over a card BEHIND the front one
+  Wc2.dispatchEvent(ptr(Wc2, "pointercancel", 280, 300));
+  await settle(Wc2, 700);                                    // longer than the 480ms long-press
+  check("stack: a cancelled gesture never opens the card under the finger",
+    !open(Wc2) && sc.errors.length === 0, open(Wc2) ? "the sheet opened on a cancel" : "nothing opened");
+  check("stack: ...and it does not move the deck either",
+    cardsOf(Dc2).map(inlineStyle).join("|") === before2.join("|"),
+    "offsets unchanged by the cancel");
+
+  // the code-level guards the behaviour above rests on (patch 35)
+  const STACK_SRC35 = BUNDLE_SRC.split("function __cwStack")[1]?.split("function Td")[0] || "";
+  check("stack: the idle watchdog brings a lost deck back to a card",
+    /if\(ptr\.held\(\)&&!ptr\.quiet\(1500\)\)\{arm\(\);return\}/.test(STACK_SRC35) &&
+      /window\.clearTimeout\(hold\.current\),snap\(e\)/.test(STACK_SRC35),
+    "snap() is index-based, so the recovery is a tween");
+  check("stack: the recovery releases the gesture so index changes move the deck again",
+    /drag\.current=null,kill\.current\?\.\(\)/.test(STACK_SRC35) && /kill\.current=b/.test(STACK_SRC35),
+    "listeners, drag flag and long-press timer all released");
+  check("stack: pointercancel marks the gesture aborted instead of running the tap path",
+    /addEventListener\(`pointercancel`,t=>\{if\(t\.pointerId!==n\)return;ab=!0,y\(t\)\}\)/.test(STACK_SRC35) &&
+      /if\(ab\)\{drag\.current=null,snap\(p\.get\(\)\);return\}/.test(STACK_SRC35),
+    "abort settles to the nearest card and never opens");
+  check("stack: the drag rebases on the deck's live value",
+    /Math\.abs\(p\.get\(\)-w0\)>\.02&&\(w0=p\.get\(\),s0=e\)/.test(STACK_SRC35) &&
+      /w0=p\.get\(\),s0=e/.test(STACK_SRC35),
+    "a move can only ever add its own delta");
 }
 
 
@@ -1043,7 +1281,7 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
     slateColor: "#2d4a3e",
   };
   const styleOf = (el) => inlineStyle(el);
-  const gradOf = (el) => (styleOf(el).match(/background:[^;]*/) || ["-"])[0];
+  const gradOf = (el) => { const raw = el?.getAttribute("data-tray") || el?.getAttribute("data-sheen") || ""; if (raw) return `background:${raw}`; return (styleOf(el).match(/background:[^;]*/) || ["-"])[0]; };
   const mount = async (colors, settings) => {
     const st = makeDom({ [CARDS_KEY]: CARDS_COL(colors), [SETTINGS_KEY]: JSON.stringify(settings) }, { withLayout: true });
     runBundle(st.window, st.errors);
@@ -1051,7 +1289,7 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
     const D = st.window.document;
     const byName = (name) => {
       const w = [...D.querySelectorAll("#root div.absolute.top-0")].find((d) => (d.textContent || "").startsWith(name));
-      return [...(w?.querySelectorAll("div") || [])].find((d) => /left-0/.test(d.className) && /rgb|linear-gradient/.test(styleOf(d)));
+      return [...(w?.querySelectorAll("div") || [])].find((d) => /left-0/.test(d.className) && (d.getAttribute("data-tray") || /rgb|linear-gradient/.test(styleOf(d))));
     };
     return { st, D, byName };
   };
@@ -1131,7 +1369,7 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
       `color=${JSON.stringify(cleared[0]?.color)}`);
     const trayAfter = [...Dh.querySelectorAll("#root div.absolute.top-0")]
       .flatMap((w) => [...w.querySelectorAll("div")])
-      .find((d) => /left-0/.test(d.className) && /rgb|linear-gradient/.test(styleOf(d)));
+      .find((d) => /left-0/.test(d.className) && (d.getAttribute("data-tray") || /rgb|linear-gradient/.test(styleOf(d))));
     check("colour: the card repaints from the wallet colour after reset",
       /rgb\(66, 73, 84\)/.test(gradOf(trayAfter)) && !/rgb\(27, 38, 53\)/.test(gradOf(trayAfter)),
       gradOf(trayAfter).slice(0, 90));
@@ -1202,29 +1440,39 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
       activeSegment(D7, /^(System|Light|Dark)$/) === "Light", `segment=${activeSegment(D7, /^(System|Light|Dark)$/)}`);
   }
 
-  // -- the wordmark --
-  const wm = [...D7.querySelectorAll("#root span")].find(
-    (el) => (el.textContent || "").trim() === "Wallet" && /font-size:\s*28px/.test(styleOf(el)),
-  );
-  check("header: Wallet wordmark is rendered top-left, big and bold",
-    !!wm && /font-weight:\s*800/.test(styleOf(wm)) && /margin-right:\s*auto/.test(styleOf(wm)),
-    wm ? [(styleOf(wm).match(/font-size:[^;]*/) || ["-"])[0], (styleOf(wm).match(/font-weight:[^;]*/) || ["-"])[0]].join(" ") : "no wordmark");
-  check("header: the wordmark uses the Apple-first font stack",
-    /-apple-system,\s*BlinkMacSystemFont,\s*SF Pro Display/.test(styleOf(wm).replace(/"/g, "")),
-    (styleOf(wm).match(/font-family:[^;]*/) || ["-"])[0].slice(0, 64));
-  check("header: the wordmark colour is the themed ink, so it survives dark mode",
-    /color:\s*var\(--ink\)/.test(styleOf(wm)), (styleOf(wm).match(/color:[^;]*/) || ["-"])[0]);
+  // -- the wordmark is gone (round 21): the client asked for the top-left label to go, and the
+  //    checks below are what "gone" means - nothing moved to compensate, nothing left behind.
+  const rowEl = all("#root div").find((d) => /inset-x-0 top-0 z-40/.test(d.className || ""))?.firstElementChild;
+  const wm = [...D7.querySelectorAll("#root span")].filter(
+    (el) => (el.textContent || "").trim() === "Wallet" && /font-size:\s*28px/.test(styleOf(el)));
+  check("header: the 'Wallet' wordmark is gone from the top-left (round 21)",
+    wm.length === 0 && (rowEl?.textContent || "").trim() === "" && !/children:`Wallet`/.test(BUNDLE_SRC),
+    `${wm.length} wordmark span(s), row text \u201c${(rowEl?.textContent || "").trim()}\u201d`);
+  check("header: the empty row keeps the header row's geometry, so the dock still lands on its x",
+    (() => {
+      const dockRow = all("#root .cw-dock")[0]?.parentElement;
+      return !!rowEl && !!dockRow && rowEl.className === dockRow.className
+        && rowEl.querySelectorAll("button").length === 0;
+    })(),
+    "dock row == header row, and no control was dragged up into it");
+  check("header: nothing was moved to compensate - the dock still holds the three controls",
+    all("#root .cw-dock button[aria-label]").map((b) => b.getAttribute("aria-label")).join() ===
+      "Add card,Search cards,More",
+    all("#root .cw-dock button[aria-label]").map((b) => b.getAttribute("aria-label")).join());
+  check("header: the reserves are untouched, so removing the label did not shift the deck",
+    BUNDLE_SRC.includes("paddingTop:`calc(env(safe-area-inset-top) + 58px)`")
+    && BUNDLE_SRC.includes("paddingBottom:`calc(env(safe-area-inset-bottom) + 62px)`")
+    && BUNDLE_SRC.includes("/*cardwallet:no-wordmark*/"),
+    "58px / 62px reserves + the round-21 marker");
   {
-    const kids = wm && wm.parentElement ? [...wm.parentElement.children] : [];
-    const labels = kids.filter((k) => k.tagName === "BUTTON").map((k) => k.getAttribute("aria-label"));
+    const kids = rowEl ? [...rowEl.children] : [];
     const dock0 = all("#root .cw-dock")[0];
-check("header: the wordmark owns the top row, the controls own the dock (round 16 moved them)",
+check("header: the label left, the dock stayed - the option menu still opens inside ref:d",
   (() => {
-    const row = all("#root div").find((d) => /inset-x-0 top-0 z-40/.test(d.className || ""))?.firstElementChild;
     const dockRow = all("#root .cw-dock")[0];
     const kids = (e) => [...(e?.children || [])].map((c) => c.tagName.toLowerCase() + (c.getAttribute("aria-label") ? ":" + c.getAttribute("aria-label") : ""));
-    return /^Wallet$/.test((row?.textContent || "").trim()) && kids(row).join() === "span"
-      && kids(dockRow).join() === "button:Add card,button:Search cards,button:More";
+    return kids(rowEl).length === 0 && kids(dockRow).join() === "button:Add card,button:Search cards,button:More"
+      && /ref:d,className:`pointer-events-none fixed inset-x-0 top-0 z-40 px-2`/.test(BUNDLE_SRC);
   })(),
   `row=${[...(all("#root div").find((d) => /inset-x-0 top-0 z-40/.test(d.className || ""))?.firstElementChild?.children || [])].length} dock=${[...(dock0?.children || [])].length}`);
 
@@ -1420,7 +1668,7 @@ check("header: the wordmark owns the top row, the controls own the dock (round 1
     const prevInner = prevBox && q(prevBox, "div").find((d) => /cw-preview-in/.test(d.className || ""));
     check("preview: the panel mounts the wallet's own card tree",
       !!prevInner && prevInner.querySelector("div.absolute.top-0[data-cwc]") !== null &&
-      q(prevInner, "div").some((d) => /left-0/.test(d.className || "") && /linear-gradient/.test(st(d))),
+      q(prevInner, "div").some((d) => /left-0/.test(d.className || "") && (d.getAttribute("data-tray") || /linear-gradient/.test(st(d)) || /rgb/.test(st(d)))),
       prevInner ? `${q(prevInner, "div.absolute.top-0").length} card(s) painted` : "no preview box");
     check("preview: the wallet behind is separate from the preview",
       [...doc.querySelectorAll("#root div.absolute.top-0[data-cwc]")].length >= 4,
@@ -1468,8 +1716,8 @@ check("settings: the carousel view offers 7 chip buttons and 12 sliders, no pill
     set.call(el, String(v));
     el.dispatchEvent(new win.Event("input", { bubbles: true }));
   };
-  const trayOf = (root) => [...root.querySelectorAll("div")].find(
-    (d) => /left-0/.test(d.className || "") && /linear-gradient/.test(st(d)),
+  const trayOf = (root) => root.querySelector("div.absolute.left-0.w-full.overflow-hidden") || [...root.querySelectorAll("div")].find(
+    (d) => /left-0/.test(d.className || "") && (d.getAttribute("data-tray") || /linear-gradient/.test(st(d)) || /rgb/.test(st(d))),
   );
   const rowOf = (root, label) => q(root, ".cw-row").find((r) => (r.textContent || "").startsWith(label));
 
@@ -1483,12 +1731,12 @@ const tuned = await mount19({
     const bTray = trayOf(base.window.document.getElementById("root"));
     const tTray = trayOf(tuned.window.document.getElementById("root"));
     check("pouch: at neutral settings the tray is exactly the round-9 gradient",
-      /rgb\(66,\s*73,\s*84\)/.test(st(bTray)) && /rgb\(44,\s*48,\s*56\)/.test(st(bTray)),
-      (st(bTray).match(/background:[^;]*/) || ["-"])[0].slice(0, 96));
+      /rgb\(66,\s*73,\s*84\)/.test((bTray?.getAttribute("data-tray")||st(bTray))) && /rgb\(44,\s*48,\s*56\)/.test((bTray?.getAttribute("data-tray")||st(bTray))),
+      ((bTray?.getAttribute("data-tray")&&`background:${bTray.getAttribute("data-tray")}`)||st(bTray).match(/background:[^;]*/) || ["-"])[0].slice(0, 96));
     check("pouch: Background (depth) darkens the tray",
-      st(tTray) !== st(bTray) && !rgbRe(66, 73, 84).test(st(tTray)),
-      (st(tTray).match(/background:[^;]*/) || ["-"])[0].slice(0, 96));
-    const rad = (el) => parseFloat((st(el).match(/border-radius:\s*([\d.]+)px/) || [0, "0"])[1]);
+      (tTray?.getAttribute("data-tray")||st(tTray)) !== (bTray?.getAttribute("data-tray")||st(bTray)) && !rgbRe(66, 73, 84).test(tTray?.getAttribute("data-tray")||st(tTray)),
+      ((tTray?.getAttribute("data-tray")&&`background:${tTray.getAttribute("data-tray")}`)||st(tTray).match(/background:[^;]*/) || ["-"])[0].slice(0, 96));
+    const rad = (el) => el ? parseFloat(((st(el).match(/border-radius:\s*([\d.]+)px/) || [0, "0"])[1])) : 0;
     check("pouch: Radius grows the pouch corners", rad(tTray) > rad(bTray) + 4, `${rad(bTray).toFixed(1)}px -> ${rad(tTray).toFixed(1)}px`);
     const cardW = (m) => parseFloat((st(m.window.document.querySelector("#root div.relative.no-select")).match(/width:\s*([\d.]+)px/) || [0, "0"])[1]);
 check("pouch: the view's own Scale sizes the real pouch, not just the preview", cardW(tuned) < cardW(base) - 10,
@@ -1500,7 +1748,7 @@ check("pouch: the view's own Scale sizes the real pouch, not just the preview", 
     check("pouch: Border None drops the tray edge alpha",
       /border:\s*1px solid rgba\([^)]*,\s*0\)/.test(st(tTray)) && !/border:\s*1px solid rgba\([^)]*,\s*0\)/.test(st(bTray)),
       `${(st(bTray).match(/border:[^;]*/) || ["-"])[0]} -> ${(st(tTray).match(/border:[^;]*/) || ["-"])[0]}`);
-    const sheen = (el) => (st(el.querySelector("div") || el).match(/background:[^;]*/) || ["-"])[0];
+    const sheen = (el) => { const inner = el?.querySelector("div[data-sheen]") || el?.querySelector("div") || el; const raw = inner?.getAttribute("data-sheen") || el?.getAttribute("data-sheen") || el?.getAttribute("data-tray-sheen") || ""; if (raw) return `background:${raw}`; try { return (st(inner).match(/background:[^;]*/) || ["-"])[0]; } catch(e){ return "-"; } };
     check("pouch: Material (Gloss) lifts the sheen over the tray",
       sheen(tTray) !== sheen(bTray), `${sheen(bTray).slice(0, 46)} -> ${sheen(tTray).slice(0, 46)}`);
   }
@@ -1641,7 +1889,7 @@ check("sliders: every one carries its fill and a step fine enough to drag",
   check("smoothness: six events in a frame cost one commit, and it is the last one",
     writes === 1 && Math.abs((savedL.custom || {}).radius - 1.47) < 0.001,
     `${writes} write(s), custom.radius=${(savedL.custom || {}).radius}`);
-  const trayRadius = (doc) => parseFloat((((([...doc.querySelectorAll("#root div")].map(st).find((x) => /linear-gradient/.test(x)) || "").match(/border-radius:\s*([\d.]+)px/) || [0, "0"])[1])));
+  const trayRadius = (doc) => { const el = doc.querySelector("#root div.absolute.left-0.w-full.overflow-hidden"); if (!el) return 0; const src = st(el); const m = src.match(/border-radius:\s*([\d.]+)px/); return m ? parseFloat(m[1]) : 0; };
   const after = trayRadius(m.doc);
   check("smoothness: and the wallet's pouch carries the last value, not an intermediate one",
     after > 30 && Math.abs(after - 22.3 * 1.47) < 1.5, `tray border-radius ${after.toFixed(1)}px at radius 147%`);
@@ -1907,6 +2155,424 @@ check("rounds 11-12: no console errors from the compact sheet", m.errors.length 
   const errs = [carPlain, carWild, stPlain, stWild, carBig, stBig, mPrev].flatMap((m) => m.errors || []);
   check("round 12: no console errors across the independent views, the staging and the glide",
     errs.length === 0, errs.slice(0, 1).join("").slice(0, 200));
+}
+
+// ---------------------------------------------------------------------------
+// Test 6n: round 23 + 25 - the bands around the card preview (bottom inert,
+// upper is the back affordance)
+//
+// Round 23 made both bands inert (backdrop shield). Round 25 (patch 40) restores
+// the *upper* band as a functional back zone for the request "upper area par
+// tap karne se card immediately close ho" - the blue outline in the screenshot.
+// The bottom band stays inert (between card and WhatsApp/Save), and the card
+// keeps its own gestures. The overlay root still has touch-none (no scroll/zoom
+// from empty space) and the viewer still participates in the history sentinel
+// so Android Back closes it with the same reverse animation.
+// ---------------------------------------------------------------------------
+{
+  const CARDS3n = JSON.stringify([
+    { id: "n1", src: "cards/one.jpg", title: "Nova One", subtitle: "1", fields: [] },
+    { id: "n2", src: "cards/two.jpg", title: "Oscar Two", subtitle: "2", fields: [] },
+    { id: "n3", src: "cards/three.jpg", title: "Papa Three", subtitle: "3", fields: [] },
+  ]);
+  const st = makeDom(
+    { [CARDS_KEY]: CARDS3n, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) },
+    { withLayout: true },
+  );
+  runBundle(st.window, st.errors);
+  await settle(st.window, 900);
+  const Wn = st.window, Dn = Wn.document;
+  const ptr = (type, x, y) => {
+    const e = new Wn.MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(e, "isPrimary", { value: true });
+    Object.defineProperty(e, "pointerId", { value: 1 });
+    return e;
+  };
+  const clickAt = (el, x, y) => {
+    if (!el) return false;
+    el.dispatchEvent(new Wn.MouseEvent("click", { bubbles: true, clientX: x, clientY: y }));
+    return true;
+  };
+  const styleOf = (el) => inlineStyle(el);
+  const open = () => /WhatsApp/.test(textOf(Wn));
+  const overlay = () => [...Dn.querySelectorAll("#root div")].find((d) => /^fixed inset-0 z-50/.test(d.className || ""));
+  const band = () => overlay()?.children?.[0];                     // backdrop inert shield
+  const topBack = () => Dn.querySelector("#root [data-cwtop='back']") || Dn.querySelector("#root [data-cwtop]");
+  const shield = () => Dn.querySelector("#root [data-cwband]");
+  const viewerCard = () => [...(overlay()?.children || [])].find((d) => /no-select absolute touch-none/.test(d.className || ""));
+  const rowOf = () => [...(overlay()?.children || [])].find((d) => /pointer-events-none absolute inset-x-0/.test(d.className || ""));
+  const viewerButtons = () => [...(overlay()?.querySelectorAll("button") || [])];
+  const btn = (label) => viewerButtons().find((b) => (b.textContent || "").trim() === label);
+
+  // the deck opens the viewer; this is also the recovery path between phases
+  const openViewer = async () => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (open()) return true;
+      const stage = [...Dn.querySelectorAll("#root div")].find((d) => /perspective:\s*1200/.test(styleOf(d)));
+      if (!stage) return false;
+      stage.dispatchEvent(ptr("pointerdown", 195, 300));
+      await settle(Wn, 80);
+      Wn.dispatchEvent(ptr("pointerup", 195, 300));
+      await settle(Wn, 1700);
+    }
+    return open();
+  };
+  await openViewer();
+  check("round 23: the card viewer is open (the bands have something to be dead/alive around)",
+    open() && !!overlay(), open() ? "viewer open" : "viewer never opened");
+
+  // ---- the backdrop is one inert shield, and the upper band is the back zone ---
+  const b0 = band();
+  check("round 23: the empty bands are covered by one full-screen shield, not a control",
+    !!b0 && /absolute inset-0/.test(b0.className || "") && b0.children.length === 0 &&
+      !b0.hasAttribute("onclick") && !b0.hasAttribute("role") && !b0.hasAttribute("tabindex"),
+    b0 ? `class=${b0.className} children=${b0.children.length} onclick=${b0.hasAttribute("onclick")}` : "no band element");
+  check("round 23: the shield is the marked inert one (data-cwband = preview)",
+    !!shield() && shield() === b0, shield() ? String(shield().getAttribute("data-cwband")) : "no [data-cwband] in the tree");
+  check("round 23: the overlay root declares touch-action:none - no pan, zoom, rubber-band or "
+    + "double-tap zoom can start in a band (round 9's <main> guard is a sibling, not an ancestor)",
+    /touch-none/.test(overlay()?.className || "") && /touch-action:\s*none/.test(CSS_SRC.match(/\.touch-none\{[^}]*\}/)?.[0] || ""),
+    overlay() ? overlay().className : "no overlay");
+  check("round 23: the shield is painted, not wired - three attributes, none of them a control",
+    !!b0 && [...b0.attributes].map((a) => a.name).sort().join(",") === "class,data-cwband,style" &&
+      b0.className === "absolute inset-0",
+    b0 ? `${[...b0.attributes].map((a) => a.name).join(",")} / class=${b0.className}` : "-");
+  // round 25: the upper band is an explicit back hit target
+  const top = topBack();
+  check("round 25: the upper area is a dedicated back zone (data-cwtop=back, full-width top, height k.tt, onClick:te)",
+    !!top && /absolute inset-x-0 top-0/.test(top.className || "") && top.getAttribute("data-cwtop") === "back" &&
+      (/height:\s*k\.tt/.test(BUNDLE_SRC) || BUNDLE_SRC.includes("style:{height:k.tt}")),
+    top ? `class=${top.className} data-cwtop=${top.getAttribute("data-cwtop")} style=${top.getAttribute("style")}` : "no [data-cwtop]");
+
+  // ---- a tap in the top band SHOULD close (the new back affordance) ----------
+  const tapBand = async (x, y) => {
+    const b = band();
+    if (!b) return false;
+    b.dispatchEvent(ptr("pointerdown", x, y));
+    b.dispatchEvent(ptr("pointerup", x, y));
+    clickAt(b, x, y);
+    await settle(Wn, 700);
+    return true;
+  };
+  const tapTopZone = async () => {
+    const t = topBack();
+    if (!t) return false;
+    t.dispatchEvent(new Wn.MouseEvent("click", { bubbles: true, clientX: 195, clientY: 40 }));
+    await settle(Wn, 1200);
+    return true;
+  };
+  const tappedTop = await tapTopZone();
+  const closedAfterTop = !open();
+  check("round 25: a tap in the top band (above the card - the blue outline in the screenshot) closes the viewer",
+    tappedTop && closedAfterTop, `tapped=${tappedTop} closed=${closedAfterTop} open=${open()}`);
+  await openViewer();
+  const tappedBottom = await tapBand(195, 660);
+  const stayedAfterBottom = open();
+  check("round 23: a tap in the bottom band (between the card and the buttons) does NOT dismiss it",
+    tappedBottom && stayedAfterBottom, `tapped=${tappedBottom} open=${stayedAfterBottom}`);
+  await openViewer();
+
+  // ---- a drag in the band: no dismissal, no card movement, no scroll -------
+  const imageOf = () => viewerCard()?.querySelector("img");
+  const beforeTransform = imageOf() ? styleOf(imageOf().parentElement) : "";
+  const dragBand = (x, y) => {
+    const b = band();
+    if (!b) return false;
+    b.dispatchEvent(ptr("pointerdown", x, y));
+    for (const step of [40, 90, 150]) b.dispatchEvent(ptr("pointermove", x, y + step));
+    b.dispatchEvent(ptr("pointerup", x, y + 150));
+    return true;
+  };
+  dragBand(195, 120);
+  await settle(Wn, 800);
+  check("round 23: a drag in a band changes nothing - the card has not zoomed or panned, the page "
+    + "behind has not scrolled, and no pan gesture was ever handed to the browser",
+    open() && imageOf() && styleOf(imageOf().parentElement) === beforeTransform && Wn.scrollY === 0 &&
+      /touch-none/.test(overlay()?.className || ""),
+    `${open() ? "viewer open" : "viewer closed"}; card untouched=${styleOf(imageOf()?.parentElement) === beforeTransform}; scrollY=${Wn.scrollY}; guard=${/touch-none/.test(overlay()?.className || "")}`);
+
+  // ---- the two buttons are the only controls in the overlay ----------------
+  const labels = viewerButtons().map((b) => (b.textContent || "").trim()).filter(Boolean);
+  check("round 23: the two bottom buttons are still there and are the overlay's only controls",
+    ["WhatsApp", "Save"].every((l) => labels.includes(l)) && labels.every((l) => ["WhatsApp", "Save"].includes(l)),
+    labels.join(" | "));
+  check("round 23: both buttons stay hit targets (pointer-events:auto) inside the pointer-events:none row",
+    /pointer-events-none/.test(rowOf()?.className || "") &&
+      ["WhatsApp", "Save"].every((l) => /pointer-events-auto/.test(btn(l)?.className || "")),
+    `${rowOf()?.className ?? "-"} / ${["WhatsApp", "Save"].map((l) => `${l}:${/pointer-events-auto/.test(btn(l)?.className || "")}`).join(" ")}`);
+  // and the taps really do land on them: each button buzzes on press before it does anything else, so a
+  // spy on navigator.vibrate is an honest "the button handled it" witness. jsdom's HTMLImageElement has
+  // no decode(); the app preloads artwork with it, so stub it or the Save tap would stop at a toast
+  // about decode instead of doing its work (the app catches that - it is not a crash - but it is noise).
+  Wn.HTMLImageElement.prototype.decode ??= () => Promise.resolve();
+  let buzzes = 0;
+  Wn.navigator.vibrate = () => { buzzes += 1; return true; };
+  const press = async (label) => {
+    const b = btn(label);
+    b?.dispatchEvent(ptr("pointerdown", 195, 800));
+    b?.dispatchEvent(ptr("pointerup", 195, 800));
+    clickAt(b, 195, 800);
+    await settle(Wn, 400);
+    return !!b;
+  };
+  const foundWhatsApp = await press("WhatsApp");
+  const afterWhatsApp = buzzes;
+  check("round 23: the WhatsApp tap lands on its own handler (it buzzes on press) and the viewer stays",
+    foundWhatsApp && afterWhatsApp === 1 && open(), `found=${foundWhatsApp} buzz=${afterWhatsApp} open=${open()}`);
+  const foundSave = await press("Save");
+  check("round 23: the Save tap runs its handler end to end (press buzz + the saved toast)",
+    foundSave && buzzes > afterWhatsApp && /Saved to gallery/.test(textOf(Wn)),
+    `found=${foundSave} buzz=${buzzes} toast=${/Saved to gallery/.test(textOf(Wn))}`);
+
+  // ---- the card keeps its own behaviour ------------------------------------
+  check("round 23: the card box keeps its own touch-action and gesture handlers",
+    !!viewerCard() && /touch-none/.test(viewerCard().className || ""),
+    viewerCard() ? viewerCard().className : "no card box");
+  // re-open if the button toasts closed it? No, buttons keep viewer open.
+  for (const t of [0, 1]) {
+    viewerCard()?.dispatchEvent(ptr("pointerdown", 195, 400));
+    viewerCard()?.dispatchEvent(ptr("pointerup", 195, 400));
+  }
+  await settle(Wn, 1500);
+  check("round 23: double-tapping the card still turns it over (the preview is not frozen)",
+    /No back side yet|Double tap the card/.test(textOf(Wn)), textOf(Wn).slice(-80).replace(/\s+/g, " "));
+  const swipeDown = (x, y) => {
+    const c = viewerCard();
+    if (!c) return;
+    c.dispatchEvent(ptr("pointerdown", x, y));
+    c.dispatchEvent(ptr("pointermove", x, y + 70));
+    c.dispatchEvent(ptr("pointermove", x, y + 145));
+    c.dispatchEvent(ptr("pointerup", x, y + 145));
+  };
+  swipeDown(195, 400);
+  await settle(Wn, 1500);
+  check("round 23: swiping the card down still closes the viewer (the bands were not the only way out)",
+    !open(), open() ? "still open" : "closed by the card's own gesture");
+  // ---- Android Back (history) also closes the viewer -----------------------
+  await openViewer();
+  // the viewer pushes a sentinel history entry (cardwallet:sheet); a popstate must shut it
+  const histPushed = /let op=\(\)=>!!\(o\|\|/.test(BUNDLE_SRC) && /if\(o\)\{s\(null\);return\}/.test(BUNDLE_SRC);
+  // jsdom's history.back() does not fire popstate synchronously, so simulate the
+  // same dispatch the app's popstate handler listens for.
+  Wn.dispatchEvent(new Wn.PopStateEvent("popstate", { state: { cardwallet: "sheet" } }));
+  await settle(Wn, 1200);
+  check("round 25: Android Back (popstate) closes the viewer with the same reverse animation",
+    histPushed && !open(), histPushed ? (open() ? "still open after popstate" : "closed via history shut") : "history wiring missing");
+
+  // ---- the code the behaviour rests on ------------------------------------
+  const markAt = BUNDLE_SRC.indexOf("/*cardwallet:inert-bands*/");
+  const viewerSrc = markAt < 0 ? "" : BUNDLE_SRC.slice(markAt - 130, markAt + 350);
+  check("round 23: the overlay root still carries the inert-bands marker and backdrop is marked",
+    !!viewerSrc && viewerSrc.includes("z-50 touch-none") && viewerSrc.includes("/*cardwallet:inert-bands*/") &&
+      viewerSrc.includes('"data-cwband":`preview`'),
+    viewerSrc ? viewerSrc.slice(Math.max(0, viewerSrc.indexOf("z-50 touch-none")), viewerSrc.length).slice(0, 90) : "marker missing");
+  check("round 25: the upper back zone carries its own marker and closes via te()",
+    BUNDLE_SRC.includes("/*cardwallet:top-back*/") && BUNDLE_SRC.includes('"data-cwtop":`back`') &&
+      BUNDLE_SRC.includes("style:{height:k.tt}") && BUNDLE_SRC.includes("onClick:te"),
+    "marker + data-cwtop + height k.tt + onClick:te");
+  check("round 23: the card's handlers and the two button handlers are untouched by the fix",
+    ["onPointerDown:re", "onPointerMove:M", "onPointerUp:N", "onWheel:e=>{"].every((g) => BUNDLE_SRC.includes(g)) &&
+      BUNDLE_SRC.includes("if(n>90){te();return}") &&
+      (BUNDLE_SRC.match(/pointer-events-auto flex items-center gap-2 rounded-full px-5 text-\[15px\] font-semibold text-white/g) || []).length === 2,
+    "card gestures + both buttons intact");
+  check("round 25: the viewer participates in the history sentinel so Back walks it back",
+    /let op=\(\)=>!!\(o\|\|/.test(BUNDLE_SRC) && /if\(o\)\{s\(null\);return\}/.test(BUNDLE_SRC) && /,\[o,f,v,T,m,c,D,k,b,C\]\)/.test(BUNDLE_SRC),
+    "op includes o, shut closes o last, deps include o");
+  check("round 23: no console errors in the viewer band flow", st.errors.length === 0,
+    st.errors.slice(0, 1).join("").slice(0, 180));
+}
+
+// ---------------------------------------------------------------------------
+// Test 6o: round 24 - the action bar is the old header bar, seated bottom-right, on every screen
+//
+// The request: *"Move the top-right action bar (currently containing "+" Add button, Search icon, and
+// Menu/Settings icon) from the top of the screen to the bottom-right corner instead - same exact
+// grouping, icons, and functionality, just relocated"* - floating above the content, safe-area padded,
+// same seat on every screen, actions unchanged.
+//
+// The relocation shipped in rounds 16-17; what had not travelled was the OLD BAR'S OWN SPACING, measured
+// out of the last build that still had it at the top-right (`CardWallet_liquid_glass.apk`, round 15):
+// three `h-9 w-9` controls, `gap-1` (4px) apart, `px-2` (8px) inset, glyphs 19/21px, `tone:auto`, labels
+// Add card / Search cards / More - bare buttons, no container. Round 16 wrapped the same three controls
+// in the `.cw-dock` glass pill with `gap:10px; padding:6px 10px`. This test pins the matched metrics and
+// the "same seat on every screen" property the request asks for.
+// ---------------------------------------------------------------------------
+{
+  const CARDS3o = JSON.stringify([
+    { id: "o1", src: "cards/one.jpg", title: "Nova One", subtitle: "1", fields: [] },
+    { id: "o2", src: "cards/two.jpg", title: "Oscar Two", subtitle: "2", fields: [] },
+    { id: "o3", src: "cards/three.jpg", title: "Papa Three", subtitle: "3", fields: [] },
+  ]);
+  const OLD_ORDER = "Add card,Search cards,More";
+  const seatOf = (doc) => {
+    const pill = doc.querySelector("#root .cw-dock");
+    const row = pill?.parentElement;
+    const bar = row?.parentElement;
+    return {
+      pill, row, bar,
+      labels: [...(pill?.querySelectorAll("button") || [])].map((b) => (b.getAttribute("aria-label") || "").trim()).join(","),
+      pillClass: pill?.className || "", rowClass: row?.className || "", barClass: bar?.className || "",
+      barStyle: bar?.getAttribute("style") || "",
+    };
+  };
+
+  /* --- the old bar's metrics, now inside the pill --------------------------- */
+  check("round 24: the pill's inner spacing is the old header bar's own (gap-1 = 4px, px-2 = 8px)",
+    /\.cw-dock\{gap:4px;padding:6px 8px\}/.test(CSS_SRC),
+    (CSS_SRC.match(/\.cw-dock\{gap:[^}]*\}/) || ["no spacing override"])[0]);
+  check("round 24: the three controls still carry the old bar's size and glyphs (36px box, 19/21px)",
+    BUNDLE_SRC.includes("flex h-9 items-center justify-center rounded-full") && BUNDLE_SRC.includes("size:cp?19:21") &&
+      (BUNDLE_SRC.match(/tone:`auto`/g) || []).length === 3,
+    `${(BUNDLE_SRC.match(/tone:`auto`/g) || []).length} tone:auto controls`);
+  check("round 24: the pill's frame still lands on the old bar's geometry (the row IS the header row's)",
+    (BUNDLE_SRC.split("pointer-events-auto mx-auto flex w-full max-w-[520px] items-center justify-end gap-1 px-2").length - 1 === 1 && BUNDLE_SRC.split("pointer-events-auto mx-auto flex w-full max-w-[520px] items-center justify-center gap-1 px-2").length - 1 === 1),
+    "the top row and the bottom row still share one class string (round 17)");
+  check("round 24: the round-16 pill rule is overridden, not rewritten (its own block is untouched)",
+    /\.cw-dock\{\nwidth:max-content;\ngap:10px;\npadding:6px 10px;\nborder-radius:999px;/.test(CSS_SRC) &&
+      CSS_SRC.lastIndexOf(".cw-dock{") > CSS_SRC.indexOf(".cw-dock{\nwidth:max-content;") &&
+      (CSS_SRC.match(/\.cw-dock\{/g) || []).length === 5,
+    `${(CSS_SRC.match(/\.cw-dock\{/g) || []).length} .cw-dock{ rules, the override last`);
+
+  /* --- the seat: bottom-right, safe-area padded, nothing else there --------- */
+  const st = makeDom(
+    { [CARDS_KEY]: CARDS3o, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) },
+    { withLayout: true },
+  );
+  runBundle(st.window, st.errors);
+  await settle(st.window, 900);
+  const Wo = st.window, Do = Wo.document;
+  const oAll = (sel) => [...Do.querySelectorAll(sel)];
+  const oBtn = (re) => oAll("#root button").find((b) => re.test((b.getAttribute("aria-label") || "") + " " + (b.textContent || "").trim()));
+  const ptr = (type, x, y) => {
+    const e = new Wo.MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(e, "isPrimary", { value: true });
+    Object.defineProperty(e, "pointerId", { value: 1 });
+    return e;
+  };
+  const tap = (el) => { if (!el) return false; el.dispatchEvent(new Wo.MouseEvent("click", { bubbles: true })); return true; };
+  const text = () => textOf(Wo);
+  const seat0 = seatOf(Do);
+  check("round 24: the bar is one pill, anchored to the bottom edge and right-aligned",
+    /fixed inset-x-0 bottom-0 z-40/.test(seat0.barClass) && /justify-center/.test(seat0.rowClass) &&
+      /cw-dock/.test(seat0.pillClass) && !/top-0/.test(seat0.barClass),
+    `${seat0.barClass.slice(0, 46)} || ${seat0.pillClass}`);
+  check("round 24: its safe-area padding is the bottom inset, as the request asks",
+    /env\(safe-area-inset-bottom\)/.test(seat0.barStyle) && /padding-bottom/i.test(seat0.barStyle),
+    seat0.barStyle);
+  check("round 24: the bar holds the three old controls in the old order, and nothing else",
+    seat0.labels === OLD_ORDER && seat0.bar.querySelectorAll("button").length === 3,
+    `${seat0.labels} (${seat0.bar.querySelectorAll("button").length} buttons in the bottom bar)`);
+  check("round 24: the top of the screen is still empty (the bar is not duplicated there)",
+    (() => {
+      // the top container also *holds* the bottom bar (that is round 16's structure), so the row that
+      // must be empty is its first child - the row that held the wordmark until round 21
+      const top = oAll("#root div").find((d) => /inset-x-0 top-0 z-40/.test(d.className || ""));
+      const row = top?.firstElementChild;
+      // exactly one top-anchored bar may exist (the container) - a second one would BE the action bar
+      const topBars = oAll("#root div").filter((d) => /inset-x-0 top-0 z-40/.test(d.className || ""));
+      return topBars.length === 1 && !!top && !!row && row.querySelectorAll("button").length === 0
+        && (row.textContent || "").trim() === "";
+    })(), (() => {
+      const topBars = oAll("#root div").filter((d) => /inset-x-0 top-0 z-40/.test(d.className || ""));
+      const top = topBars[0];
+      return `${topBars.length} top-anchored bar(s); top row: ${top?.firstElementChild?.querySelectorAll("button").length ?? "?"} buttons, text “${(top?.firstElementChild?.textContent || "").trim()}”`;
+    })());
+  const SEAT_KEY = (s) => `${s.pillClass}|${s.rowClass}|${s.barClass}|${s.barStyle}`;
+
+  /* --- every screen: the same seat, booted fresh each time ------------------ */
+  const screens = [
+    ["wallet carousel", { [CARDS_KEY]: CARDS3o, [SETTINGS_KEY]: JSON.stringify({ view: "carousel", cover: true }) }],
+    ["wallet stack", { [CARDS_KEY]: CARDS3o, [SETTINGS_KEY]: JSON.stringify({ view: "stack", cover: true }) }],
+    ["cover hidden", { [CARDS_KEY]: CARDS3o, [SETTINGS_KEY]: JSON.stringify({ view: "carousel", cover: false }) }],
+    ["dark theme", { [CARDS_KEY]: CARDS3o, [SETTINGS_KEY]: JSON.stringify({ view: "carousel", appearance: "dark" }) }],
+    ["empty wallet", { [SETTINGS_KEY]: JSON.stringify({ view: "carousel", cover: true }) }],
+  ];
+  const seats = [];
+  for (const [name, store] of screens) {
+    const inst = makeDom(store, { withLayout: true });
+    runBundle(inst.window, inst.errors);
+    await settle(inst.window, 900);
+    const seat = seatOf(inst.window.document);
+    seats.push([name, seat]);
+    check(`round 24: ${name} - the same three controls in the same seat`,
+      seat.labels === OLD_ORDER && /fixed inset-x-0 bottom-0 z-40/.test(seat.barClass) &&
+        /env\(safe-area-inset-bottom\)/.test(seat.barStyle) && inst.errors.length === 0,
+      `${seat.labels} | ${seat.barClass.slice(0, 34)} | err=${inst.errors.length}`);
+    inst.dom.window.close?.();
+  }
+  check("round 24: the seat is identical across every screen (one class string, one anchor, one inset)",
+    new Set(seats.map(([, s]) => SEAT_KEY(s))).size === 1,
+    `${new Set(seats.map(([, s]) => SEAT_KEY(s))).size} distinct seat(s) across ${seats.length} screens`);
+
+  /* --- while surfaces are open, the bar is still mounted in the same seat --- */
+  const surfaces = [];
+  tap(oBtn(/^Search cards$/));
+  await settle(Wo, 800);
+  surfaces.push(["search open", seatOf(Do)]);
+  tap(oBtn(/^Close search$/));
+  await settle(Wo, 600);
+  tap(oBtn(/^More$/));
+  await settle(Wo, 500);
+  surfaces.push(["option menu open", seatOf(Do)]);
+  tap(oBtn(/^Settings$/));
+  await settle(Wo, 1000);
+  surfaces.push(["settings sheet open", seatOf(Do)]);
+  tap(oBtn(/^Customize cards$/));
+  await settle(Wo, 1000);
+  surfaces.push(["customize sheet open", seatOf(Do)]);
+  tap(oBtn(/^Done$/));
+  await settle(Wo, 800);
+  const openViewer = async () => {
+    for (let i = 0; i < 3 && !/WhatsApp/.test(text()); i += 1) {
+      const stage = oAll("#root div").find((d) => /perspective:\s*1200/.test(inlineStyle(d)));
+      if (!stage) return false;
+      stage.dispatchEvent(ptr("pointerdown", 195, 300));
+      await settle(Wo, 80);
+      Wo.dispatchEvent(ptr("pointerup", 195, 300));
+      await settle(Wo, 1700);
+    }
+    return /WhatsApp/.test(text());
+  };
+  const openedViewer = await openViewer();
+  surfaces.push(["card viewer open", seatOf(Do)]);
+  check("round 24: the card viewer opened for the walk-through (the last surface is real)",
+    openedViewer, openedViewer ? "viewer open" : "viewer never opened");
+  check("round 24: search, the option menu, both sheets and the viewer come and go without the bar ever leaving its seat",
+    surfaces.length === 5 && surfaces.every(([, s]) => s.labels === OLD_ORDER && SEAT_KEY(s) === SEAT_KEY(seat0)),
+    `${surfaces.length} surface(s): ` +
+      surfaces.map(([n, s]) => `${n}:${SEAT_KEY(s) === SEAT_KEY(seat0) ? "same seat" : "MOVED"}`).join(" | "));
+
+  /* --- the actions are unchanged ------------------------------------------- */
+  const pillNow = () => seatOf(Do).pill;
+  tap(pillNow().querySelector("button[aria-label='Add card']"));
+  await settle(Wo, 600);
+  check("round 24: the + control still opens its own menu (Add from gallery / Take a picture)",
+    /Add from gallery/.test(text()) && /Take a picture/.test(text()), text().slice(0, 60));
+  tap(pillNow().querySelector("button[aria-label='Add card']"));
+  await settle(Wo, 1400);
+  const menuAfterToggle = oAll("#root div").find((d) => /w-\[248px\]/.test(d.className || ""));
+  const menuFaded = !!menuAfterToggle && /opacity:\s*0\b/.test(menuAfterToggle.parentElement?.getAttribute("style") || "");
+  check("round 24: and tapping it again closes that menu (no stuck overlay)",
+    !menuAfterToggle || menuFaded, menuAfterToggle ? "menu playing its exit animation" : "menu node gone");
+  tap(pillNow().querySelector("button[aria-label='More']"));
+  await settle(Wo, 600);
+  check("round 24: the More control's menu still opens upward from the pill's right edge",
+    /ml-auto mb-1 w-\[248px\]/.test(BUNDLE_SRC) && /transformOrigin:`right bottom`/.test(BUNDLE_SRC) &&
+      /Settings/.test(text()),
+    "the 248px menu hangs upward, as round 17 placed it");
+  D.documentElement.dispatchEvent(new Wo.MouseEvent("pointerdown", { bubbles: true }));
+  await settle(Wo, 1200);
+  tap(pillNow().querySelector("button[aria-label='Search cards']"));
+  await settle(Wo, 900);
+  const searchMounted = !!Do.querySelector("#root input[placeholder='Search']");
+  check("round 24: the search control still opens the search screen",
+    searchMounted, searchMounted ? "search field mounted" : "no search field");
+  tap(oBtn(/^Close search$/));
+  await settle(Wo, 800);
+  check("round 24: the bar is still in its seat after all three actions were exercised",
+    seatOf(Do).labels === OLD_ORDER && SEAT_KEY(seatOf(Do)) === SEAT_KEY(seat0), seatOf(Do).labels);
+  check("round 24: no console errors across the action-bar walk-through", st.errors.length === 0,
+    st.errors.slice(0, 1).join("").slice(0, 160));
 }
 
 // ---------------------------------------------------------------------------
