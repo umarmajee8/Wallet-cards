@@ -1638,7 +1638,7 @@ wahi bar wapas top-right par (`bottom-0` -> `top-0`, menu `mb-1` -> `mt-1`): smo
 rows + round-16/17 ke "bottom-anchored pill" aur "opens upward" rows), QA group 38 **15/23**. Dono controls
 me "kept working" rows green rehte han - isi liye woh saboot han, decoration nahi.
 
-**Artifact:** `CardWallet_floating_pill.apk` - **11,669,816 B**, sha256
+**Artifact:** `CardWallet_bottom_centered.apk` - **11,669,825 B**, sha256
 `9adcbf84c9294bb5d36185b2c8ed9cad6b3735dfc5c3b9e6a96963c5cca42a20`, `repo_export/app/index.js` 499,384 B
 (is round me bilkul wahi) + `index.css` 38,994 B (is round me +983 B, sirf round-24 block). Debug-signed
 (throwaway key dobara ban gayi - pehle `adb uninstall com.arena.cardwallet`), `allowBackup=false`,

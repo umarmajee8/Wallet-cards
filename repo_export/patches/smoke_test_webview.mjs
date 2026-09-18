@@ -355,7 +355,7 @@ const HEX = (v) => (["#000", "#000000"].includes(v) ? "#000" : ["#fff", "#ffffff
     `light a=${alphaOf(glassLt)}, dark a=${alphaOf(glassDk)}`);
   const dockEl = all("#root .cw-dock")[0];
   const topBar = all("#root div").find((d) => /inset-x-0 top-0 z-40/.test(d.className || ""));
-  const botBar = all("#root div").find((d) => /inset-x-0 bottom-0 z-40/.test(d.className || "")) || all("#root div").find((d) => /inset-x-0 top-0 z-40/.test(d.className || "") && /calc\(env\(safe-area-inset-top\) \+ 36px\)/.test(d.getAttribute("style") || ""));
+  const botBar = all("#root div").find((d) => /inset-x-0 bottom-0 z-40/.test(d.className || ""));
   const inDock = (l) => {
     const b = byLabel(l);
     return !!b && !!b.closest(".cw-dock");
@@ -372,18 +372,19 @@ const HEX = (v) => (["#000", "#000000"].includes(v) ? "#000" : ["#fff", "#ffffff
     !!topRow && topRow.querySelectorAll("button").length === 0
     && (topRow.textContent || "").trim() === "" && /no-wordmark/.test(BUNDLE_SRC),
     `${topRow ? topRow.querySelectorAll("button").length : "?"} buttons in the row, text \u201c${(topRow?.textContent || "").trim()}\u201d`);
-  // Round 26: pill moved from bottom-right to top-center, 36px below safe area, above the card
+  // Round 27: pill is bottom-centered, just below card stack, floating above safe area
   check("header/foot: the dock is a bottom-anchored pill on the right of the wallet column (round 17)",
-    !!dockEl && (!!botBar || !!topBar) && !!topRow && /fixed inset-x-0 (top|bottom)-0/.test((botBar||topBar).className)
-    && /cw-dock/.test(dockEl.className) && (/justify-end/.test(topRow.className) || /justify-center/.test((botBar||topBar).firstElementChild?.className || "") || /justify-center/.test(dockEl.parentElement.className))
+    !!dockEl && !!botBar && !!topRow && /fixed inset-x-0 bottom-0/.test(botBar.className)
+    && /cw-dock/.test(dockEl.className) && /justify-center/.test(dockEl.parentElement.className)
     && dockEl.querySelectorAll("button").length === 3
-    && (/padding-(top|bottom)/i.test((botBar||topBar).getAttribute("style") || ""))
-    && /env\(safe-area-inset-(top|bottom)\)/.test((botBar||topBar).getAttribute("style") || ""),
+    && /padding-bottom/i.test(botBar.getAttribute("style") || "")
+    && /env\(safe-area-inset-bottom\)/.test(botBar.getAttribute("style") || "")
+    && /16px/.test(botBar.getAttribute("style") || ""),
     `${topRow ? topRow.className.slice(0, 54) : "-"} || ${dockEl ? dockEl.className : "-"} || `
     + `${botBar ? (botBar.getAttribute("style") || "-").slice(0, 46) : "-"}`);
   check("header/foot: the option menu opens upward from the dock's right edge",
-    CSS_SRC.match(/\.cw-dock/) && BUNDLE_SRC.includes("ml-auto mt-1 w-[248px]")
-    && BUNDLE_SRC.includes("transformOrigin:`right top`"),
+    CSS_SRC.match(/\.cw-dock/) && BUNDLE_SRC.includes("ml-auto mb-1 w-[248px]")
+    && BUNDLE_SRC.includes("transformOrigin:`right bottom`"),
     "the 248px menu must hang upward from the pill's right edge, mirroring the header's placement");
   check("header/foot: the deck reserves the dock's height, safe area included",
     // jsdom normalises the calc() operand order, so accept either
@@ -402,7 +403,7 @@ const HEX = (v) => (["#000", "#000000"].includes(v) ? "#000" : ["#fff", "#ffffff
   const menuNode = all("#root div").find((d) => /w-\[248px\]/.test(d.className || ""));
   const openRows = all("button").map((b) => (b.textContent || "").trim());
   check("header/foot: the More menu still opens, and it opens above the dock",
-    openRows.some((t) => /^Settings$/.test(t)) && !!menuNode && (!!botBar?.contains(menuNode) || !!topBar?.contains(menuNode)) && /mt-1/.test(menuNode.className),
+    openRows.some((t) => /^Settings$/.test(t)) && !!menuNode && !!botBar?.contains(menuNode) && /mb-1/.test(menuNode.className),
     menuNode ? `rows: ${openRows.slice(-4).join(",")} | ${menuNode.className.slice(0, 40)}` : "no menu mounted");
   tap(byLabel("More"));
   await settle(W, 1400);
@@ -2452,7 +2453,7 @@ check("rounds 11-12: no console errors from the compact sheet", m.errors.length 
   const text = () => textOf(Wo);
   const seat0 = seatOf(Do);
   check("round 24: the bar is one pill, anchored to the bottom edge and right-aligned",
-    /fixed inset-x-0 top-0 z-40/.test(seat0.barClass) && /justify-center/.test(seat0.rowClass) &&
+    /fixed inset-x-0 bottom-0 z-40/.test(seat0.barClass) && /justify-center/.test(seat0.rowClass) &&
       /cw-dock/.test(seat0.pillClass) && !/top-0/.test(seat0.barClass),
     `${seat0.barClass.slice(0, 46)} || ${seat0.pillClass}`);
   check("round 24: its safe-area padding is the bottom inset, as the request asks",
@@ -2494,7 +2495,7 @@ check("rounds 11-12: no console errors from the compact sheet", m.errors.length 
     const seat = seatOf(inst.window.document);
     seats.push([name, seat]);
     check(`round 24: ${name} - the same three controls in the same seat`,
-      seat.labels === OLD_ORDER && /fixed inset-x-0 top-0 z-40/.test(seat.barClass) &&
+      seat.labels === OLD_ORDER && /fixed inset-x-0 bottom-0 z-40/.test(seat.barClass) &&
         /env\(safe-area-inset-bottom\)/.test(seat.barStyle) && inst.errors.length === 0,
       `${seat.labels} | ${seat.barClass.slice(0, 34)} | err=${inst.errors.length}`);
     inst.dom.window.close?.();
@@ -2556,7 +2557,7 @@ check("rounds 11-12: no console errors from the compact sheet", m.errors.length 
   tap(pillNow().querySelector("button[aria-label='More']"));
   await settle(Wo, 600);
   check("round 24: the More control's menu still opens upward from the pill's right edge",
-    /ml-auto mt-1 w-\[248px\]/.test(BUNDLE_SRC) && /transformOrigin:`right top`/.test(BUNDLE_SRC) &&
+    /ml-auto mb-1 w-\[248px\]/.test(BUNDLE_SRC) && /transformOrigin:`right bottom`/.test(BUNDLE_SRC) &&
       /Settings/.test(text()),
     "the 248px menu hangs upward, as round 17 placed it");
   D.documentElement.dispatchEvent(new Wo.MouseEvent("pointerdown", { bubbles: true }));

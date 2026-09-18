@@ -10,7 +10,7 @@ SHA-256: `63dbd8b1929fdbcb673a19ebab585c0c723ae41518188ff437e84da0c2233e9a`
 Signer cert SHA-256: `86383a7f13662e8b55885cb5331341f8db964ad065da074cc360082a3e436726`
 
 **Currently on device:** the rounds since §M ship as debug-signed builds because no release
-keystore is available here - the newest is `CardWallet_floating_pill.apk` (2026-09-17, rounds
+keystore is available here - the newest is `CardWallet_bottom_centered.apk` (2026-09-17, rounds
 §N-§AF: stack eject, carousel settle, inert bands + per-card pouch colour, cover colour +
 NFC/appearance defaults + header wordmark, no header wordmark (round 21), the overflow menu
 following the theme (round 22), the card viewer's empty bands taking no touches (round 23), and -
@@ -667,7 +667,7 @@ seat and metrics),
 `smoke_test_webview.mjs` 308/308, `liquid_glass_audit.py` 117/117
 (tier rules, the cost model, the WCAG contrast engine, the round-18 gate's opacity/token rules and
 the round-22 menu contrast), `verify_release.py` 28/29 with the only FAIL being the deliberate debug
-signature, and `apk_content_check.py` 94/94 against `CardWallet_floating_pill.apk` (the
+signature, and `apk_content_check.py` 94/94 against `CardWallet_bottom_centered.apk` (the
 four-blurred-selector budget plus the round-18 copy, store key, crypto markers, the gate's opacity and
 round 24's action-bar metrics - all read out of the shipped entries, not the tree). The jsdom suites need `jsdom@27` + `cssstyle@4.6.0`; on other pairings 11 checks
 fail on *any* bundle because cssstyle does not serialise `backdrop-filter` into the `style` attribute - the
