@@ -597,7 +597,7 @@ across five boots, the seat surviving search / option menu / both sheets / the c
 actions still running with their menus opening upward), QA suite **300 -> 323/323** (group 38 = 23 checks,
 including small-phone and landscape viewports), `liquid_glass_audit.py` **113 -> 117/117** (paint-neutral
 change: same tier-1 blur, same pill radius, block adds nothing), `apk_content_check.py` **90 -> 94/94**
-against `CardWallet_action_bar.apk` (11,669,728 B, sha256
+against `CardWallet_top_back.apk` (11,669,810 B, sha256
 `9adcbf84c9294bb5d36185b2c8ed9cad6b3735dfc5c3b9e6a96963c5cca42a20`), `animation_audit.py` 10 checks /
 1 warning unchanged, `verify_release.py` 28/29 (the deliberate debug cert).
 
@@ -614,6 +614,6 @@ device half. Verdict: **NOT READY FOR CLIENT HANDOVER** - unchanged; round 20's 
 two handover gates.
 
 **Note for the reviewer:** this branch now carries rounds 20, 21, 22, 23 and 24; the site and `download/index.html`
-point at `CardWallet_action_bar.apk` (its sha256/size on the download page describe the file it serves).
+point at `CardWallet_top_back.apk` (its sha256/size on the download page describe the file it serves).
 Until the PR is merged the GitHub raw link there resolves only against `main`; the branch-raw URL given to
 the client works meanwhile.

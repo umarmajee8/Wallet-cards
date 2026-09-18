@@ -122,7 +122,15 @@ else:
     print("skip  the viewer's bands are already inert")
 
 # ------------------------------------------------------------------------- guards
-assert "onClick:te" not in js, "the overlay's dismissal click is still bound somewhere"
+# Round 25 (patch 40) re-activates the *upper* band as a back zone via a new
+# `data-cwtop:back` hit target that also uses `onClick:te`. The old bug was the
+# *root* carrying that handler (`fixed inset-0 z-50` + onClick:te). Allow the
+# new zone's single occurrence while still forbidding the root's.
+assert ROOT_OLD not in js, "the overlay root still carries the old dismissal click"
+assert js.count("onClick:te") <= 1, f"expected at most the top-back zone's onClick:te, found {js.count('onClick:te')}"
+if "onClick:te" in js:
+    assert "/*cardwallet:top-back*/" in js and '"data-cwtop":`back`' in js, "onClick:te must belong to the top-back zone"
+    assert js.count('"data-cwtop":`back`') == 1, "top-back attr must appear exactly once"
 # (2) the card box and its gesture handlers are untouched - the report keeps the preview interactive
 CARD = "className:`no-select absolute touch-none`"
 assert js.count(CARD) == 1, "the preview card box moved"

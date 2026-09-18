@@ -713,7 +713,7 @@ for (const view of ["carousel", "stack"]) {
     return e;
   };
   if (view === "stack") {
-    const box = [...Dv.querySelectorAll("#root div")].find((d) => /perspective:\s*1200/.test(d.getAttribute("style") || ""));
+    const box = [...Dv.querySelectorAll("#root div")].find((d) => /perspective:\s*1200/.test(inlineStyle(d)));
     box?.dispatchEvent(ptr("pointerdown", 195, 300));
     await settle(Wv, 80);
     Wv.dispatchEvent(ptr("pointerup", 195, 300));
@@ -879,7 +879,7 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
     Object.defineProperty(e, "pointerId", { value: 1 });
     return e;
   };
-  const stage2 = [...Dw.querySelectorAll("#root div")].find((d) => /perspective:\s*1200/.test(d.getAttribute("style") || ""));
+  const stage2 = [...Dw.querySelectorAll("#root div")].find((d) => /perspective:\s*1200/.test(inlineStyle(d)));
   stage2.dispatchEvent(ptr2("pointerdown", 200, 300));
   await settle(Ww, 30);
   Dw.dispatchEvent(ptr2("pointermove", 120, 300));
@@ -1281,7 +1281,7 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
     slateColor: "#2d4a3e",
   };
   const styleOf = (el) => inlineStyle(el);
-  const gradOf = (el) => (styleOf(el).match(/background:[^;]*/) || ["-"])[0];
+  const gradOf = (el) => { const raw = el?.getAttribute("data-tray") || el?.getAttribute("data-sheen") || ""; if (raw) return `background:${raw}`; return (styleOf(el).match(/background:[^;]*/) || ["-"])[0]; };
   const mount = async (colors, settings) => {
     const st = makeDom({ [CARDS_KEY]: CARDS_COL(colors), [SETTINGS_KEY]: JSON.stringify(settings) }, { withLayout: true });
     runBundle(st.window, st.errors);
@@ -1289,7 +1289,7 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
     const D = st.window.document;
     const byName = (name) => {
       const w = [...D.querySelectorAll("#root div.absolute.top-0")].find((d) => (d.textContent || "").startsWith(name));
-      return [...(w?.querySelectorAll("div") || [])].find((d) => /left-0/.test(d.className) && /rgb|linear-gradient/.test(styleOf(d)));
+      return [...(w?.querySelectorAll("div") || [])].find((d) => /left-0/.test(d.className) && (d.getAttribute("data-tray") || /rgb|linear-gradient/.test(styleOf(d))));
     };
     return { st, D, byName };
   };
@@ -1369,7 +1369,7 @@ check("header: the create button is the compact round-12 size (36px box, 19/21px
       `color=${JSON.stringify(cleared[0]?.color)}`);
     const trayAfter = [...Dh.querySelectorAll("#root div.absolute.top-0")]
       .flatMap((w) => [...w.querySelectorAll("div")])
-      .find((d) => /left-0/.test(d.className) && /rgb|linear-gradient/.test(styleOf(d)));
+      .find((d) => /left-0/.test(d.className) && (d.getAttribute("data-tray") || /rgb|linear-gradient/.test(styleOf(d))));
     check("colour: the card repaints from the wallet colour after reset",
       /rgb\(66, 73, 84\)/.test(gradOf(trayAfter)) && !/rgb\(27, 38, 53\)/.test(gradOf(trayAfter)),
       gradOf(trayAfter).slice(0, 90));
@@ -1668,7 +1668,7 @@ check("header: the label left, the dock stayed - the option menu still opens ins
     const prevInner = prevBox && q(prevBox, "div").find((d) => /cw-preview-in/.test(d.className || ""));
     check("preview: the panel mounts the wallet's own card tree",
       !!prevInner && prevInner.querySelector("div.absolute.top-0[data-cwc]") !== null &&
-      q(prevInner, "div").some((d) => /left-0/.test(d.className || "") && /linear-gradient/.test(st(d))),
+      q(prevInner, "div").some((d) => /left-0/.test(d.className || "") && (d.getAttribute("data-tray") || /linear-gradient/.test(st(d)) || /rgb/.test(st(d)))),
       prevInner ? `${q(prevInner, "div.absolute.top-0").length} card(s) painted` : "no preview box");
     check("preview: the wallet behind is separate from the preview",
       [...doc.querySelectorAll("#root div.absolute.top-0[data-cwc]")].length >= 4,
@@ -1716,8 +1716,8 @@ check("settings: the carousel view offers 7 chip buttons and 12 sliders, no pill
     set.call(el, String(v));
     el.dispatchEvent(new win.Event("input", { bubbles: true }));
   };
-  const trayOf = (root) => [...root.querySelectorAll("div")].find(
-    (d) => /left-0/.test(d.className || "") && /linear-gradient/.test(st(d)),
+  const trayOf = (root) => root.querySelector("div.absolute.left-0.w-full.overflow-hidden") || [...root.querySelectorAll("div")].find(
+    (d) => /left-0/.test(d.className || "") && (d.getAttribute("data-tray") || /linear-gradient/.test(st(d)) || /rgb/.test(st(d))),
   );
   const rowOf = (root, label) => q(root, ".cw-row").find((r) => (r.textContent || "").startsWith(label));
 
@@ -1731,12 +1731,12 @@ const tuned = await mount19({
     const bTray = trayOf(base.window.document.getElementById("root"));
     const tTray = trayOf(tuned.window.document.getElementById("root"));
     check("pouch: at neutral settings the tray is exactly the round-9 gradient",
-      /rgb\(66,\s*73,\s*84\)/.test(st(bTray)) && /rgb\(44,\s*48,\s*56\)/.test(st(bTray)),
-      (st(bTray).match(/background:[^;]*/) || ["-"])[0].slice(0, 96));
+      /rgb\(66,\s*73,\s*84\)/.test((bTray?.getAttribute("data-tray")||st(bTray))) && /rgb\(44,\s*48,\s*56\)/.test((bTray?.getAttribute("data-tray")||st(bTray))),
+      ((bTray?.getAttribute("data-tray")&&`background:${bTray.getAttribute("data-tray")}`)||st(bTray).match(/background:[^;]*/) || ["-"])[0].slice(0, 96));
     check("pouch: Background (depth) darkens the tray",
-      st(tTray) !== st(bTray) && !rgbRe(66, 73, 84).test(st(tTray)),
-      (st(tTray).match(/background:[^;]*/) || ["-"])[0].slice(0, 96));
-    const rad = (el) => parseFloat((st(el).match(/border-radius:\s*([\d.]+)px/) || [0, "0"])[1]);
+      (tTray?.getAttribute("data-tray")||st(tTray)) !== (bTray?.getAttribute("data-tray")||st(bTray)) && !rgbRe(66, 73, 84).test(tTray?.getAttribute("data-tray")||st(tTray)),
+      ((tTray?.getAttribute("data-tray")&&`background:${tTray.getAttribute("data-tray")}`)||st(tTray).match(/background:[^;]*/) || ["-"])[0].slice(0, 96));
+    const rad = (el) => el ? parseFloat(((st(el).match(/border-radius:\s*([\d.]+)px/) || [0, "0"])[1])) : 0;
     check("pouch: Radius grows the pouch corners", rad(tTray) > rad(bTray) + 4, `${rad(bTray).toFixed(1)}px -> ${rad(tTray).toFixed(1)}px`);
     const cardW = (m) => parseFloat((st(m.window.document.querySelector("#root div.relative.no-select")).match(/width:\s*([\d.]+)px/) || [0, "0"])[1]);
 check("pouch: the view's own Scale sizes the real pouch, not just the preview", cardW(tuned) < cardW(base) - 10,
@@ -1748,7 +1748,7 @@ check("pouch: the view's own Scale sizes the real pouch, not just the preview", 
     check("pouch: Border None drops the tray edge alpha",
       /border:\s*1px solid rgba\([^)]*,\s*0\)/.test(st(tTray)) && !/border:\s*1px solid rgba\([^)]*,\s*0\)/.test(st(bTray)),
       `${(st(bTray).match(/border:[^;]*/) || ["-"])[0]} -> ${(st(tTray).match(/border:[^;]*/) || ["-"])[0]}`);
-    const sheen = (el) => (st(el.querySelector("div") || el).match(/background:[^;]*/) || ["-"])[0];
+    const sheen = (el) => { const inner = el?.querySelector("div[data-sheen]") || el?.querySelector("div") || el; const raw = inner?.getAttribute("data-sheen") || el?.getAttribute("data-sheen") || el?.getAttribute("data-tray-sheen") || ""; if (raw) return `background:${raw}`; try { return (st(inner).match(/background:[^;]*/) || ["-"])[0]; } catch(e){ return "-"; } };
     check("pouch: Material (Gloss) lifts the sheen over the tray",
       sheen(tTray) !== sheen(bTray), `${sheen(bTray).slice(0, 46)} -> ${sheen(tTray).slice(0, 46)}`);
   }
@@ -1889,7 +1889,7 @@ check("sliders: every one carries its fill and a step fine enough to drag",
   check("smoothness: six events in a frame cost one commit, and it is the last one",
     writes === 1 && Math.abs((savedL.custom || {}).radius - 1.47) < 0.001,
     `${writes} write(s), custom.radius=${(savedL.custom || {}).radius}`);
-  const trayRadius = (doc) => parseFloat((((([...doc.querySelectorAll("#root div")].map(st).find((x) => /linear-gradient/.test(x)) || "").match(/border-radius:\s*([\d.]+)px/) || [0, "0"])[1])));
+  const trayRadius = (doc) => { const el = doc.querySelector("#root div.absolute.left-0.w-full.overflow-hidden"); if (!el) return 0; const src = st(el); const m = src.match(/border-radius:\s*([\d.]+)px/); return m ? parseFloat(m[1]) : 0; };
   const after = trayRadius(m.doc);
   check("smoothness: and the wallet's pouch carries the last value, not an intermediate one",
     after > 30 && Math.abs(after - 22.3 * 1.47) < 1.5, `tray border-radius ${after.toFixed(1)}px at radius 147%`);
@@ -2158,22 +2158,16 @@ check("rounds 11-12: no console errors from the compact sheet", m.errors.length 
 }
 
 // ---------------------------------------------------------------------------
-// Test 6n: round 23 - the empty bands around the card preview take no touches
+// Test 6n: round 23 + 25 - the bands around the card preview (bottom inert,
+// upper is the back affordance)
 //
-// The report framed the dead space above and below the opened card in red: "the areas above and below
-// the card itself ... should not be interactive/clickable/tappable at all. Currently these empty areas
-// seem to register touches or scroll actions, which shouldn't happen", with "Only the two bottom
-// buttons (WhatsApp and Save) remain functional/clickable" and the card itself keeping its behaviour.
-//
-// Those bands were the viewer's own backdrop: it is the only thing under them, and its parent (the
-// `fixed inset-0 z-50` overlay root) carried `onClick:te` - the viewer's close routine - so a tap in the
-// band dismissed the card. The overlay also declared no `touch-action`, so a drag there was left to the
-// browser as a pan gesture. Round 9's guard for the same class of bug lives on `<main>`, and this
-// overlay is `<main>`'s sibling, so none of it reached the bands. This block is the same shape as Test
-// 6g (the pouch row's dead bands), applied to the viewer.
-//
-// Every phase re-opens the viewer if a check closed it (that is the pre-patch failure mode), so a
-// regression fails a handful of named checks instead of aborting the suite.
+// Round 23 made both bands inert (backdrop shield). Round 25 (patch 40) restores
+// the *upper* band as a functional back zone for the request "upper area par
+// tap karne se card immediately close ho" - the blue outline in the screenshot.
+// The bottom band stays inert (between card and WhatsApp/Save), and the card
+// keeps its own gestures. The overlay root still has touch-none (no scroll/zoom
+// from empty space) and the viewer still participates in the history sentinel
+// so Android Back closes it with the same reverse animation.
 // ---------------------------------------------------------------------------
 {
   const CARDS3n = JSON.stringify([
@@ -2202,7 +2196,8 @@ check("rounds 11-12: no console errors from the compact sheet", m.errors.length 
   const styleOf = (el) => inlineStyle(el);
   const open = () => /WhatsApp/.test(textOf(Wn));
   const overlay = () => [...Dn.querySelectorAll("#root div")].find((d) => /^fixed inset-0 z-50/.test(d.className || ""));
-  const band = () => overlay()?.children?.[0];                     // backdrop == the band hit target
+  const band = () => overlay()?.children?.[0];                     // backdrop inert shield
+  const topBack = () => Dn.querySelector("#root [data-cwtop='back']") || Dn.querySelector("#root [data-cwtop]");
   const shield = () => Dn.querySelector("#root [data-cwband]");
   const viewerCard = () => [...(overlay()?.children || [])].find((d) => /no-select absolute touch-none/.test(d.className || ""));
   const rowOf = () => [...(overlay()?.children || [])].find((d) => /pointer-events-none absolute inset-x-0/.test(d.className || ""));
@@ -2223,10 +2218,10 @@ check("rounds 11-12: no console errors from the compact sheet", m.errors.length 
     return open();
   };
   await openViewer();
-  check("round 23: the card viewer is open (the bands have something to be dead around)",
+  check("round 23: the card viewer is open (the bands have something to be dead/alive around)",
     open() && !!overlay(), open() ? "viewer open" : "viewer never opened");
 
-  // ---- the bands are one inert shield --------------------------------------
+  // ---- the backdrop is one inert shield, and the upper band is the back zone ---
   const b0 = band();
   check("round 23: the empty bands are covered by one full-screen shield, not a control",
     !!b0 && /absolute inset-0/.test(b0.className || "") && b0.children.length === 0 &&
@@ -2242,8 +2237,14 @@ check("rounds 11-12: no console errors from the compact sheet", m.errors.length 
     !!b0 && [...b0.attributes].map((a) => a.name).sort().join(",") === "class,data-cwband,style" &&
       b0.className === "absolute inset-0",
     b0 ? `${[...b0.attributes].map((a) => a.name).join(",")} / class=${b0.className}` : "-");
+  // round 25: the upper band is an explicit back hit target
+  const top = topBack();
+  check("round 25: the upper area is a dedicated back zone (data-cwtop=back, full-width top, height k.tt, onClick:te)",
+    !!top && /absolute inset-x-0 top-0/.test(top.className || "") && top.getAttribute("data-cwtop") === "back" &&
+      (/height:\s*k\.tt/.test(BUNDLE_SRC) || BUNDLE_SRC.includes("style:{height:k.tt}")),
+    top ? `class=${top.className} data-cwtop=${top.getAttribute("data-cwtop")} style=${top.getAttribute("style")}` : "no [data-cwtop]");
 
-  // ---- a tap in the top band, then in the bottom band ----------------------
+  // ---- a tap in the top band SHOULD close (the new back affordance) ----------
   const tapBand = async (x, y) => {
     const b = band();
     if (!b) return false;
@@ -2253,15 +2254,22 @@ check("rounds 11-12: no console errors from the compact sheet", m.errors.length 
     await settle(Wn, 700);
     return true;
   };
-  const tappedTop = await tapBand(195, 60);
-  const stayedAfterTop = open();
-  check("round 23: a tap in the top band (above the card, under the header) no longer dismisses the "
-    + "opened card", tappedTop && stayedAfterTop, `tapped=${tappedTop} open=${stayedAfterTop}`);
+  const tapTopZone = async () => {
+    const t = topBack();
+    if (!t) return false;
+    t.dispatchEvent(new Wn.MouseEvent("click", { bubbles: true, clientX: 195, clientY: 40 }));
+    await settle(Wn, 1200);
+    return true;
+  };
+  const tappedTop = await tapTopZone();
+  const closedAfterTop = !open();
+  check("round 25: a tap in the top band (above the card - the blue outline in the screenshot) closes the viewer",
+    tappedTop && closedAfterTop, `tapped=${tappedTop} closed=${closedAfterTop} open=${open()}`);
   await openViewer();
   const tappedBottom = await tapBand(195, 660);
   const stayedAfterBottom = open();
-  check("round 23: a tap in the bottom band (between the card and the buttons) does not dismiss it "
-    + "either", tappedBottom && stayedAfterBottom, `tapped=${tappedBottom} open=${stayedAfterBottom}`);
+  check("round 23: a tap in the bottom band (between the card and the buttons) does NOT dismiss it",
+    tappedBottom && stayedAfterBottom, `tapped=${tappedBottom} open=${stayedAfterBottom}`);
   await openViewer();
 
   // ---- a drag in the band: no dismissal, no card movement, no scroll -------
@@ -2320,6 +2328,7 @@ check("rounds 11-12: no console errors from the compact sheet", m.errors.length 
   check("round 23: the card box keeps its own touch-action and gesture handlers",
     !!viewerCard() && /touch-none/.test(viewerCard().className || ""),
     viewerCard() ? viewerCard().className : "no card box");
+  // re-open if the button toasts closed it? No, buttons keep viewer open.
   for (const t of [0, 1]) {
     viewerCard()?.dispatchEvent(ptr("pointerdown", 195, 400));
     viewerCard()?.dispatchEvent(ptr("pointerup", 195, 400));
@@ -2339,22 +2348,36 @@ check("rounds 11-12: no console errors from the compact sheet", m.errors.length 
   await settle(Wn, 1500);
   check("round 23: swiping the card down still closes the viewer (the bands were not the only way out)",
     !open(), open() ? "still open" : "closed by the card's own gesture");
+  // ---- Android Back (history) also closes the viewer -----------------------
+  await openViewer();
+  // the viewer pushes a sentinel history entry (cardwallet:sheet); a popstate must shut it
+  const histPushed = /let op=\(\)=>!!\(o\|\|/.test(BUNDLE_SRC) && /if\(o\)\{s\(null\);return\}/.test(BUNDLE_SRC);
+  // jsdom's history.back() does not fire popstate synchronously, so simulate the
+  // same dispatch the app's popstate handler listens for.
+  Wn.dispatchEvent(new Wn.PopStateEvent("popstate", { state: { cardwallet: "sheet" } }));
+  await settle(Wn, 1200);
+  check("round 25: Android Back (popstate) closes the viewer with the same reverse animation",
+    histPushed && !open(), histPushed ? (open() ? "still open after popstate" : "closed via history shut") : "history wiring missing");
 
   // ---- the code the behaviour rests on ------------------------------------
   const markAt = BUNDLE_SRC.indexOf("/*cardwallet:inert-bands*/");
-  const viewerSrc = markAt < 0 ? "" : BUNDLE_SRC.slice(markAt - 130, markAt + 150);
-  check("round 23: the overlay root no longer closes on a click (the old dismissal is gone)",
-    !BUNDLE_SRC.includes("transition:{duration:.26},onClick:te") && /z-50 touch-none/.test(BUNDLE_SRC),
-    /z-50 touch-none/.test(BUNDLE_SRC) ? "touch-action guard in the bundle" : "guard missing");
-  check("round 23: the shield carries the marker that says why the bands are dead",
+  const viewerSrc = markAt < 0 ? "" : BUNDLE_SRC.slice(markAt - 130, markAt + 350);
+  check("round 23: the overlay root still carries the inert-bands marker and backdrop is marked",
     !!viewerSrc && viewerSrc.includes("z-50 touch-none") && viewerSrc.includes("/*cardwallet:inert-bands*/") &&
       viewerSrc.includes('"data-cwband":`preview`'),
-    viewerSrc ? viewerSrc.slice(Math.max(0, viewerSrc.indexOf("z-50 touch-none")), viewerSrc.length).slice(0, 70) : "marker missing");
+    viewerSrc ? viewerSrc.slice(Math.max(0, viewerSrc.indexOf("z-50 touch-none")), viewerSrc.length).slice(0, 90) : "marker missing");
+  check("round 25: the upper back zone carries its own marker and closes via te()",
+    BUNDLE_SRC.includes("/*cardwallet:top-back*/") && BUNDLE_SRC.includes('"data-cwtop":`back`') &&
+      BUNDLE_SRC.includes("style:{height:k.tt}") && BUNDLE_SRC.includes("onClick:te"),
+    "marker + data-cwtop + height k.tt + onClick:te");
   check("round 23: the card's handlers and the two button handlers are untouched by the fix",
     ["onPointerDown:re", "onPointerMove:M", "onPointerUp:N", "onWheel:e=>{"].every((g) => BUNDLE_SRC.includes(g)) &&
       BUNDLE_SRC.includes("if(n>90){te();return}") &&
       (BUNDLE_SRC.match(/pointer-events-auto flex items-center gap-2 rounded-full px-5 text-\[15px\] font-semibold text-white/g) || []).length === 2,
     "card gestures + both buttons intact");
+  check("round 25: the viewer participates in the history sentinel so Back walks it back",
+    /let op=\(\)=>!!\(o\|\|/.test(BUNDLE_SRC) && /if\(o\)\{s\(null\);return\}/.test(BUNDLE_SRC) && /,\[o,f,v,T,m,c,D,k,b,C\]\)/.test(BUNDLE_SRC),
+    "op includes o, shut closes o last, deps include o");
   check("round 23: no console errors in the viewer band flow", st.errors.length === 0,
     st.errors.slice(0, 1).join("").slice(0, 180));
 }
